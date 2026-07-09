@@ -49,13 +49,16 @@ Color Index
 #define EPD_7IN3E_BLUE    0x5   /// 101
 #define EPD_7IN3E_GREEN   0x6   /// 110
 
-void EPD_7IN3E_Init(void);
+#define EPD_7IN3E_BUSY_TIMEOUT_MS 5000
+
+bool EPD_7IN3E_Init(void);
 void EPD_7IN3E_Init_Fast(void);
 void EPD_7IN3E_Clear(UBYTE color);
 void EPD_7IN3E_Show7Block(void);
 void EPD_7IN3E_Show(void);
-void EPD_7IN3E_Display(UBYTE *Image);
+bool EPD_7IN3E_Display(UBYTE *Image);
 void EPD_7IN3E_DisplayPart(const UBYTE *Image, UWORD xstart, UWORD ystart, UWORD image_width, UWORD image_heigh);
 void EPD_7IN3E_Sleep(void);
+bool EPD_7IN3E_WaitBusyH(unsigned long timeoutMs);
 
 #endif

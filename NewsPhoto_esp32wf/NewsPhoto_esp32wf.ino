@@ -129,8 +129,14 @@ bool displayFrameBuffer(const uint8_t *payload, size_t payloadLen) {
   ensureEpdReady();
   if (!epdReady) return false;
 
-  EPD_7IN3E_Init();
-  EPD_7IN3E_Display((UBYTE *)payload);
+  if (!EPD_7IN3E_Init()) {
+    Serial.println("display: EPD init failed (BUSY timeout?)");
+    return false;
+  }
+  if (!EPD_7IN3E_Display((UBYTE *)payload)) {
+    Serial.println("display: EPD display failed (BUSY timeout?)");
+    return false;
+  }
   DEV_Delay_ms(500);
   EPD_7IN3E_Sleep();
   Serial.printf("displayFrameBuffer done, payload=%u, epd slept\n", (unsigned)payloadLen);

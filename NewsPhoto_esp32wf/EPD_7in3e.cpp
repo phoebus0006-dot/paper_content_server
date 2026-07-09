@@ -71,27 +71,34 @@ static void EPD_7IN3E_SendData(UBYTE Data)
 }
 
 /******************************************************************************
-function :  Wait until the busy_pin goes LOW
+function :  Wait until the busy_pin goes LOW (with timeout)
 parameter:
+    timeoutMs: maximum wait time in milliseconds (0 = use default)
 ******************************************************************************/
-static void EPD_7IN3E_ReadBusyH(void)
+static bool EPD_7IN3E_ReadBusyH(unsigned long timeoutMs = 0)
 {
+    if (timeoutMs == 0) timeoutMs = EPD_7IN3E_BUSY_TIMEOUT_MS;
     Debug("e-Paper busy H\r\n");
-    while(!DEV_Digital_Read(EPD_BUSY_PIN)) {      //LOW: busy, HIGH: idle
+    unsigned long start = millis();
+    while (!DEV_Digital_Read(EPD_BUSY_PIN)) {      //LOW: busy, HIGH: idle
+        if (millis() - start >= timeoutMs) {
+            Debug("e-Paper busy H timeout\r\n");
+            return false;
+        }
         DEV_Delay_ms(1);
     }
     Debug("e-Paper busy H release\r\n");
+    return true;
 }
 
 /******************************************************************************
 function :  Turn On Display
 parameter:
 ******************************************************************************/
-static void EPD_7IN3E_TurnOnDisplay(void)
+static bool EPD_7IN3E_TurnOnDisplay(void)
 {
-    
     EPD_7IN3E_SendCommand(0x04); // POWER_ON
-    EPD_7IN3E_ReadBusyH();
+    if (!EPD_7IN3E_ReadBusyH()) return false;
 
     //Second setting 
     EPD_7IN3E_SendCommand(0x06);
@@ -102,21 +109,23 @@ static void EPD_7IN3E_TurnOnDisplay(void)
 
     EPD_7IN3E_SendCommand(0x12); // DISPLAY_REFRESH
     EPD_7IN3E_SendData(0x00);
-    EPD_7IN3E_ReadBusyH();
-    
+    if (!EPD_7IN3E_ReadBusyH()) return false;
+
     EPD_7IN3E_SendCommand(0x02); // POWER_OFF
     EPD_7IN3E_SendData(0X00);
-    EPD_7IN3E_ReadBusyH();
+    if (!EPD_7IN3E_ReadBusyH()) return false;
+
+    return true;
 }
 
 /******************************************************************************
 function :  Initialize the e-Paper register
 parameter:
 ******************************************************************************/
-void EPD_7IN3E_Init(void)
+bool EPD_7IN3E_Init(void)
 {
     EPD_7IN3E_Reset();
-    EPD_7IN3E_ReadBusyH();
+    if (!EPD_7IN3E_ReadBusyH()) return false;
     DEV_Delay_ms(30);
 
     EPD_7IN3E_SendCommand(0xAA);    // CMDH
@@ -181,8 +190,9 @@ void EPD_7IN3E_Init(void)
     EPD_7IN3E_SendData(0x2F);
 
     EPD_7IN3E_SendCommand(0x04);     //PWR on  
-    EPD_7IN3E_ReadBusyH();          //waiting for the electronic paper IC to release the idle signal
+    if (!EPD_7IN3E_ReadBusyH()) return false;
 
+    return true;
 }
 
 /******************************************************************************
@@ -269,7 +279,7 @@ void EPD_7IN3E_Show(void)
 function :  Sends the image buffer in RAM to e-Paper and displays
 parameter:
 ******************************************************************************/
-void EPD_7IN3E_Display(UBYTE *Image)
+bool EPD_7IN3E_Display(UBYTE *Image)
 {
     UWORD Width, Height;
     Width = (EPD_7IN3E_WIDTH % 2 == 0)? (EPD_7IN3E_WIDTH / 2 ): (EPD_7IN3E_WIDTH / 2 + 1);
@@ -281,7 +291,7 @@ void EPD_7IN3E_Display(UBYTE *Image)
             EPD_7IN3E_SendData(Image[i + j * Width]);
         }
     }
-    EPD_7IN3E_TurnOnDisplay();
+    return EPD_7IN3E_TurnOnDisplay();
 }
 
 void EPD_7IN3E_DisplayPart(const UBYTE *Image, UWORD xstart, UWORD ystart, UWORD image_width, UWORD image_heigh)
@@ -317,5 +327,10 @@ void EPD_7IN3E_Sleep(void)
 
     EPD_7IN3E_SendCommand(0x07); // DEEP_SLEEP
     EPD_7IN3E_SendData(0XA5);
+}
+
+bool EPD_7IN3E_WaitBusyH(unsigned long timeoutMs)
+{
+    return EPD_7IN3E_ReadBusyH(timeoutMs);
 }
 
