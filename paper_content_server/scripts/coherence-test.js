@@ -90,6 +90,29 @@ async function crossBoundaryCase(label, stateIso, frameIso, expStateMode, expSta
 
 async function main() {
   console.log('=== Coherence Test ===\n');
+
+  // Record real data file SHA256 before test
+  var hashBefore = {};
+  var realDataFiles = ['news_cache.json', 'library_state.json', 'news_rotation_state.json', 'image_index.json'];
+  var dataDir = path.join(CWD, 'data');
+  realDataFiles.forEach(function(file) {
+    var p = path.join(dataDir, file);
+    try {
+      var buf = require('fs').readFileSync(p);
+      hashBefore[file] = crypto.createHash('sha256').update(buf).digest('hex');
+    } catch (e) { hashBefore[file] = 'MISSING'; }
+  });
+
+  // Create temp data directory AND copy fixture BEFORE starting server
+  try { require('fs').mkdirSync(TMPDIR, { recursive: true }); } catch (e) {}
+  try {
+    var f = require('fs');
+    ['image_index.json', 'raw_index.json', 'library_state.json', 'news_cache.json', 'news_rotation_state.json'].forEach(function(file) {
+      var src = path.join(dataDir, file);
+      if (f.existsSync(src)) f.copyFileSync(src, path.join(TMPDIR, file));
+    });
+  } catch (e) { console.log('  (fixture copy: ' + e.message + ')'); }
+
   console.log('Starting server on port ' + PORT + '...');
 
   var server = spawn(process.execPath, [SRV], {
@@ -97,19 +120,6 @@ async function main() {
     cwd: CWD,
     stdio: ['ignore', 'pipe', 'pipe']
   });
-  server.stderr.on('data', function(d) { process.stdout.write('[SRV] ' + d.toString().slice(0, 200) + '\n'); });
-
-  // Create temp data directory with minimal fixture
-  try { require('fs').mkdirSync(TMPDIR, { recursive: true }); } catch (e) {}
-  // Copy minimal required data files so server doesn't fail on startup
-  try {
-    var f = require('fs');
-    var srcDir = path.join(CWD, 'data');
-    ['image_index.json', 'raw_index.json', 'library_state.json', 'news_cache.json', 'news_rotation_state.json'].forEach(function(file) {
-      var src = path.join(srcDir, file);
-      if (f.existsSync(src)) f.copyFileSync(src, path.join(TMPDIR, file));
-    });
-  } catch (e) { console.log('  (fixture copy: ' + e.message + ')'); }
 
   var timer = setTimeout(function() {
     console.log('FAIL: server did not start within 35s');
@@ -181,7 +191,24 @@ async function main() {
     failed++; exitCode = 1;
   }
 
+  // Stop server and wait for exit before cleanup
   server.kill();
+  await new Promise(function(r) { server.on('exit', r); setTimeout(r, 3000); });
+
+  // Verify real data files were NOT modified
+  console.log('\n--- Data Isolation ---');
+  var dataOk = true;
+  realDataFiles.forEach(function(file) {
+    var p = path.join(dataDir, file);
+    var hashAfter;
+    try { hashAfter = crypto.createHash('sha256').update(require('fs').readFileSync(p)).digest('hex'); } catch (e) { hashAfter = 'MISSING'; }
+    var ok = hashBefore[file] === hashAfter;
+    if (!ok) dataOk = false;
+    check('REAL_DATA_HASH_UNCHANGED ' + file, ok);
+  });
+  if (dataOk) check('REAL_DATA_HASH_UNCHANGED ALL', true);
+
+  // Clean up temp directory
   try { require('fs').rmdirSync(TMPDIR, { recursive: true }); } catch (e) {}
   console.log('\n=== Summary ===');
   console.log(passed + ' passed, ' + failed + ' failed out of ' + (passed + failed) + ' tests');

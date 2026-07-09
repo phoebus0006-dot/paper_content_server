@@ -147,13 +147,13 @@ const ENABLE_DEBUG_ROUTES = String(process.env.ENABLE_DEBUG_ROUTES || '').toLowe
 const DATA_DIR = resolveConfiguredPath(APP_CONFIG.dataDir || 'data');
 const IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.imageRoot || 'images');
 const FEEDS_FILE = resolveConfiguredPath(APP_CONFIG.feedsFile || 'feeds.json');
-const NEWS_CACHE_FILE = resolveConfiguredPath(APP_CONFIG.newsCacheFile || path.join(APP_CONFIG.dataDir || 'data', 'news_cache.json'));
-const NEWS_ROTATION_FILE = resolveConfiguredPath(APP_CONFIG.newsRotationFile || path.join(APP_CONFIG.dataDir || 'data', 'news_rotation_state.json'));
-const LIBRARY_STATE_FILE = resolveConfiguredPath(APP_CONFIG.libraryStateFile || path.join(APP_CONFIG.dataDir || 'data', 'library_state.json'));
-const IMAGE_INDEX_FILE = resolveConfiguredPath(APP_CONFIG.imageIndexFile || path.join(APP_CONFIG.dataDir || 'data', 'image_index.json'));
-const RAW_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.rawImagesDir || path.join(APP_CONFIG.dataDir || 'data', 'raw_images'));
-const PROCESSED_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.processedImagesDir || path.join(APP_CONFIG.dataDir || 'data', 'processed_images'));
-const IMPORT_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.importImagesDir || path.join(APP_CONFIG.dataDir || 'data', 'import_images'));
+const NEWS_CACHE_FILE = resolveConfiguredPath(APP_CONFIG.newsCacheFile || path.join(DATA_DIR, 'news_cache.json'));
+const NEWS_ROTATION_FILE = resolveConfiguredPath(APP_CONFIG.newsRotationFile || path.join(DATA_DIR, 'news_rotation_state.json'));
+const LIBRARY_STATE_FILE = resolveConfiguredPath(APP_CONFIG.libraryStateFile || path.join(DATA_DIR, 'library_state.json'));
+const IMAGE_INDEX_FILE = resolveConfiguredPath(APP_CONFIG.imageIndexFile || path.join(DATA_DIR, 'image_index.json'));
+const RAW_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.rawImagesDir || path.join(DATA_DIR, 'raw_images'));
+const PROCESSED_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.processedImagesDir || path.join(DATA_DIR, 'processed_images'));
+const IMPORT_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.importImagesDir || path.join(DATA_DIR, 'import_images'));
 
 const runtime = {
   feeds: null,
@@ -267,8 +267,9 @@ function loadAppConfig() {
     imageRoot: process.env.IMAGE_ROOT || fileConfig.imageRoot || 'images',
     dataDir: process.env.DATA_DIR || fileConfig.dataDir || 'data',
     feedsFile: process.env.FEEDS_FILE || fileConfig.feedsFile || 'feeds.json',
-    newsCacheFile: process.env.NEWS_CACHE_FILE || fileConfig.newsCacheFile || path.join('data', 'news_cache.json'),
-    libraryStateFile: process.env.LIBRARY_STATE_FILE || fileConfig.libraryStateFile || path.join('data', 'library_state.json'),
+    newsCacheFile: process.env.NEWS_CACHE_FILE || fileConfig.newsCacheFile || '',
+    libraryStateFile: process.env.LIBRARY_STATE_FILE || fileConfig.libraryStateFile || '',
+    newsRotationFile: process.env.NEWS_ROTATION_FILE || fileConfig.newsRotationFile || '',
     translationProvider: String(process.env.TRANSLATION_PROVIDER || fileConfig.translationProvider || DEFAULT_PROVIDER).toLowerCase(),
     dithering: process.env.DITHERING ?? fileConfig.dithering ?? '0',
     timezone: process.env.TZ || fileConfig.timezone || DEFAULT_TIMEZONE,
