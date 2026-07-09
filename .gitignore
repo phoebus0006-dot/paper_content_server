@@ -33,3 +33,5 @@ Official_7in3e_HAT_Test/
 .codex-trae/
 # ESP32 config with real WiFi credentials
 NewsPhoto_esp32wf/config.h
+# Test temporary data directories
+paper_content_server/test_data_tmp_*/
