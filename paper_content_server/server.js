@@ -16,7 +16,7 @@ const FRAME_WIDTH = 800;
 const FRAME_HEIGHT = 480;
 const FRAME_HEADER_BYTES = 10;
 const FRAME_PAYLOAD_BYTES = Math.ceil((FRAME_WIDTH * FRAME_HEIGHT) / 2);
-const FRAME_TOTAL_BYTES = FRAME_HEADER_BYTES + FRAME_PAYLOAD_BYTES;
+const { resolveDisplayMode } = require('./lib/schedule');
 const PHOTO_FOOTER_HEIGHT = 56;
 const NEWS_HEADER_HEIGHT = 38;
 const NEWS_FOOTER_HEIGHT = 18;
@@ -1703,15 +1703,7 @@ function selectPhotoSnapshot(now, imageIndex = runtime.imageIndex || []) {
   return { mode: resolved.mode, slotIndex, slotKey: resolved.slotKey, nextSwitchAt };
 }
 
-function resolveDisplayMode(wallTime, timeZone = TIMEZONE) {
-  const dateKey = `${wallTime.year}-${String(wallTime.month).padStart(2, '0')}-${String(wallTime.day).padStart(2, '0')}`;
-  const inWindow = wallTime.hour >= 10 && wallTime.hour < 19;
-  const mode = inWindow && wallTime.minute >= 30 ? 'news' : 'photo';
-  const slotKey = inWindow
-    ? `${dateKey}T${String(wallTime.hour).padStart(2, '0')}:${wallTime.minute >= 30 ? '30' : '00'}`
-    : `${dateKey}:offhours`;
-  return { mode, slotKey };
-}
+// resolveDisplayMode imported from lib/schedule.js
 
 function computeNextSwitchAt(now) {
   const t = getWallTime(now, TIMEZONE);

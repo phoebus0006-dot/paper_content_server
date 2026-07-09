@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-07-09T20:44:49.283Z",
+  "updatedAt": "2026-07-09T21:15:45.711Z",
   "shown": [
     {
       "url": "https://www.nytimes.com/live/2026/07/08/world/nato-summit-turkey-trump-ukraine",
@@ -4145,6 +4145,246 @@
       "category": "movies",
       "slotKey": "2026-07-09T10:30",
       "shownAt": "2026-07-09T20:44:49.283Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/platner-maine-democrats-replacement-candidate.html",
+      "titleHash": "8aee52c9df44985d073805da465f63eb136373db",
+      "title": "Graham Platner’s Exit Sets Off Scramble for New Democratic Senate Candidate in Maine",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/upshot/platner-senate-replacements-history.html",
+      "titleHash": "a072d8e5c1bc0154e31ee808a3ba4767fc88a6e8",
+      "title": "Maine Democrats Hope to Replace Platner as Senate Nominee. Has That Ever Worked?",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/world/middleeast/palestinian-authority-elections-abbas.html",
+      "titleHash": "42beeb06b69959f0cce05a54dc2b63c498a1db48",
+      "title": "Palestinian Authority Sets Date for First Major Elections in 20 Years",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/09/en-direct-guerre-en-ukraine-des-accords-sur-les-aspects-techniques-sont-encore-necessaires-pour-la-production-des-missiles-patriot-dit-volodymyr-zelensky_6720832_3210.html",
+      "titleHash": "d83939ac71f092473908d9c7576441ff993ebaf9",
+      "title": "EN DIRECT, guerre en Ukraine : des accords sur les « aspects techniques » sont encore nécessaires pour la production de…",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://theinitium.com/20260709-whatsnew-germany-chinese-telegram-drug-rape-group-sentence-zh-hans/",
+      "titleHash": "177a1ee9ad628a9edad11cb77bc03e57e572f69a",
+      "title": "德国华人跨国迷奸案：邵姓医学生判囚5年，法院为何认定为「新型群体犯罪」？｜Whatsnew",
+      "category": "international",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://www.france24.com/en/tv-shows/world-cup-debrief/20260709-world-cup-2026-france-and-morocco-prepare-for-quarter-final-clash",
+      "titleHash": "b7f87dce96d73397a478c0b0c23536ec059861f4",
+      "title": "World Cup 2026: France and Morocco prepare for quarter-final clash",
+      "category": "international",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://www.ithome.com/0/974/724.htm",
+      "titleHash": "de46accba5e479ba001a494953b94d1fe50b2e43",
+      "title": "又要到周五啦：京东 20:00 发放 60 元叠加神券，蹲点赛博抢鸡蛋",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://www.ithome.com/0/974/722.htm",
+      "titleHash": "a84703e299464c555d3093459f72c69b768d7b95",
+      "title": "索尼黑卡 RX10V 相机完整规格曝光：368 万点 EVF、2010 万像素 1 英寸传感器、无裁切 4K 60p 视频...",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/04/movies/readers-choose-films-that-capture-america.html",
+      "titleHash": "ff0e4f23691da2f4f6a2967fbaafd0f331c027f0",
+      "title": "Readers Pick the Definitive Films That Capture America",
+      "category": "movies",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/04/movies/catherine-lagaaia-moana-live-action.html",
+      "titleHash": "e8d136ab15b167e282ce4fdfb28a240d3ee5ac8d",
+      "title": "Catherine Laga’aia, ‘Moana’ Star, on the Funniest Podcast Episode Ever",
+      "category": "movies",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:15:38.698Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/platner-maine-democrats-replacement-candidate.html",
+      "titleHash": "8aee52c9df44985d073805da465f63eb136373db",
+      "title": "Graham Platner’s Exit Sets Off Scramble for New Democratic Senate Candidate in Maine",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/upshot/platner-senate-replacements-history.html",
+      "titleHash": "a072d8e5c1bc0154e31ee808a3ba4767fc88a6e8",
+      "title": "Maine Democrats Hope to Replace Platner as Senate Nominee. Has That Ever Worked?",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/world/middleeast/palestinian-authority-elections-abbas.html",
+      "titleHash": "42beeb06b69959f0cce05a54dc2b63c498a1db48",
+      "title": "Palestinian Authority Sets Date for First Major Elections in 20 Years",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/09/en-direct-guerre-en-ukraine-des-accords-sur-les-aspects-techniques-sont-encore-necessaires-pour-la-production-des-missiles-patriot-dit-volodymyr-zelensky_6720832_3210.html",
+      "titleHash": "d83939ac71f092473908d9c7576441ff993ebaf9",
+      "title": "EN DIRECT, guerre en Ukraine : des accords sur les « aspects techniques » sont encore nécessaires pour la production de…",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://www.france24.com/en/tv-shows/french-connections/20260709-la-vie-en-paws-inside-france-s-love-affair-with-pets",
+      "titleHash": "0df9998a0e382af8cad3b3d901f0a94a53044a18",
+      "title": "La Vie en Paws: Inside France's love affair with pets",
+      "category": "international",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/idees/article/2026/07/09/obsession-imperiale-et-fuite-en-avant-jamais-vladimir-poutine-n-a-semble-aussi-prisonnier-de-ses-fantasmes_6722080_3232.html",
+      "titleHash": "d55385b6988f24ca150afe3301998b674ff67351",
+      "title": "« Obsession impériale et fuite en avant : jamais Vladimir Poutine n’a semblé aussi prisonnier de ses fantasmes »",
+      "category": "international",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/article/2026/07/09/au-pakistan-les-ravages-du-blaspheme-en-ligne-les-accusations-sont-si-graves-que-nous-avons-ete-abandonnes-par-notre-propre-famille_6722081_3210.html",
+      "titleHash": "c52eff16f3a62000d6bbac0f0a5f65f076ed89b4",
+      "title": "Au Pakistan, les ravages des arnaques au blasphème en ligne : « Les accusations sont si graves que nous avons été aband…",
+      "category": "international",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://www.ithome.com/0/974/720.htm",
+      "titleHash": "9865aa22eff3aad156d90d18e0e5d144167b6962",
+      "title": "一汽悦意 08 车型 7 月 12 日上市：纯电与增程动力，预售价 10.49 万起",
+      "category": "technology",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://36kr.com/newsflashes/3888323223960322?f=rss",
+      "titleHash": "5ef7bc6d5776a6b4682fd63ed4d7941c127ca150",
+      "title": "伟隆股份：实控人拟减持公司不超1.49%股份",
+      "category": "technology",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://www.ithome.com/0/974/719.htm",
+      "titleHash": "adc5d97423c7dc544567ca1f233d9579d24fec4f",
+      "title": "“国产 GPU 四小龙”之一，证监会同意燧原科技科创板 IPO 注册申请",
+      "category": "technology",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:15:42.150Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/platner-maine-democrats-replacement-candidate.html",
+      "titleHash": "8aee52c9df44985d073805da465f63eb136373db",
+      "title": "Graham Platner’s Exit Sets Off Scramble for New Democratic Senate Candidate in Maine",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/upshot/platner-senate-replacements-history.html",
+      "titleHash": "a072d8e5c1bc0154e31ee808a3ba4767fc88a6e8",
+      "title": "Maine Democrats Hope to Replace Platner as Senate Nominee. Has That Ever Worked?",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/world/middleeast/palestinian-authority-elections-abbas.html",
+      "titleHash": "42beeb06b69959f0cce05a54dc2b63c498a1db48",
+      "title": "Palestinian Authority Sets Date for First Major Elections in 20 Years",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/09/en-direct-guerre-en-ukraine-des-accords-sur-les-aspects-techniques-sont-encore-necessaires-pour-la-production-des-missiles-patriot-dit-volodymyr-zelensky_6720832_3210.html",
+      "titleHash": "d83939ac71f092473908d9c7576441ff993ebaf9",
+      "title": "EN DIRECT, guerre en Ukraine : des accords sur les « aspects techniques » sont encore nécessaires pour la production de…",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/health/20260709/touch-starved-skin-hunger/",
+      "titleHash": "8a052c96c73fbf65669d23956f02c39d14f516fe",
+      "title": "身体接触有益健康，现代人如何缓解“触碰饥渴”？",
+      "category": "international",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/health/20260709/omega-3s-supplements-benefits-brain/",
+      "titleHash": "37ecee23b104644122dc25e8c2b63b8127e32dfa",
+      "title": "欧米伽-3补充剂真的对大脑有益吗？",
+      "category": "international",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/world/20260709/nato-trump-europe/",
+      "titleHash": "c2e010d5cbcd333777012dc047693c143fea2ffb",
+      "title": "北约峰会：特朗普在对盟友出言不逊后又展示团结",
+      "category": "international",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://36kr.com/newsflashes/3888322362341891?f=rss",
+      "titleHash": "f3f8855e0b3696317b3e335b252502e29c0f7014",
+      "title": "今飞凯达：拟募资不超2.95亿元用于年产60万件锻造铝合金汽车轮毂生产线智能制造项目等",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://www.ithome.com/0/974/718.htm",
+      "titleHash": "b08b0f010f5db9a2da701dda9ad5cff353194ccf",
+      "title": "英伟达 Rubin Ultra 机柜预估售价 2100 万美元，单柜 HBM4e 成本超 150 万美元",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://36kr.com/newsflashes/3888311962024710?f=rss",
+      "titleHash": "f36420d35e90068d729a72a479b20ff1764a9722",
+      "title": "美团联合医生学者发布“司南口腔榜”",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:15:45.711Z"
     }
   ]
 }

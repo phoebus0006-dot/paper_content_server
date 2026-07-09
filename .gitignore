@@ -31,3 +31,5 @@ ESP32-7in3E6_UNO_Pin_Test/
 ESP32-7in3E6_official/
 Official_7in3e_HAT_Test/
 .codex-trae/
+# ESP32 config with real WiFi credentials
+NewsPhoto_esp32wf/config.h

@@ -160,6 +160,15 @@ bool fetchFrameAndDisplay(const StateInfo &state) {
     return false;
   }
 
+  // Verify X-Frame-Id matches state.frameId to ensure consistency
+  String serverFrameId = http.header("X-Frame-Id");
+  if (serverFrameId.length() > 0 && serverFrameId != state.frameId) {
+    Serial.printf("frame X-Frame-Id mismatch: got=%s expected=%s\n",
+                  serverFrameId.c_str(), state.frameId.c_str());
+    http.end();
+    return false;
+  }
+
   int contentLength = http.getSize();
   Serial.printf("frame download start, contentLength=%d\n", contentLength);
   if (contentLength > 0 && contentLength != 192010) {
