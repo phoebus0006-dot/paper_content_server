@@ -1,5 +1,5 @@
 // Coherence test: cross-slot boundary via test clock injection
-// Uses process.execPath for reliable Windows spawn
+// pinNowProvider enables deterministic TTL testing
 const http = require('http');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
@@ -46,30 +46,45 @@ function setClock(iso) {
   return get(BASE + '/debug/clock?iso=' + encodeURIComponent(iso));
 }
 
-async function caseTest(label, stateIso, frameIso, expStateMode, expStateSlot) {
+async function crossBoundaryCase(label, stateIso, frameIso, expStateMode, expStateSlot) {
   console.log('\n--- ' + label + ' ---');
+
+  // 1. Set clock to state time, establish baseline
   await setClock(stateIso);
-  var stateRes = await get(BASE + '/api/state.json');
-  if (stateRes.s !== 200) { check(label + ' state HTTP', false, '' + stateRes.s); return null; }
-  var state = JSON.parse(stateRes.b.toString());
-  console.log('  stateTime=' + stateIso + ' stateMode=' + state.mode + ' stateSlot=' + (state.slotKey || ''));
+  var s1 = await get(BASE + '/api/state.json');
+  if (s1.s !== 200) { check(label + ' state HTTP', false); return; }
+  var state = JSON.parse(s1.b.toString());
+  console.log('  stateTime=' + stateIso + ' mode=' + state.mode + ' slot=' + (state.slotKey || ''));
 
+  // 2. Get baseline frame (inside same slot, should be from pin)
+  var fBase = await get(BASE + '/api/frame.bin');
+  if (fBase.s !== 200) { check(label + ' baseline frame HTTP', false); return; }
+  var baseHash = sha256(fBase.b);
+  var basePinned = fBase.h['x-pinned'] === '1';
+
+  // 3. Recreate baseline pin by calling state again (same clock = same slot)
+  await setClock(stateIso);
+  await get(BASE + '/api/state.json');
+
+  // 4. Cross to the frame time (next slot)
   await setClock(frameIso);
-  var frameRes = await get(BASE + '/api/frame.bin');
-  if (frameRes.s !== 200) { check(label + ' frame HTTP', false, '' + frameRes.s); return null; }
-  var fMode = frameRes.h['x-frame-mode'] || '';
-  var fSlot = frameRes.h['x-frame-slot'] || '';
-  var fId = frameRes.h['x-frame-id'] || '';
-  var pinned = frameRes.h['x-pinned'] === '1';
-  var fHash = sha256(frameRes.b);
+  var fCross = await get(BASE + '/api/frame.bin');
+  if (fCross.s !== 200) { check(label + ' cross frame HTTP', false); return; }
+  var crossHash = sha256(fCross.b);
+  var crossId = fCross.h['x-frame-id'] || '';
+  var crossPinned = fCross.h['x-pinned'] === '1';
+  var crossMode = fCross.h['x-frame-mode'] || '';
+  var crossSlot = fCross.h['x-frame-slot'] || '';
 
-  console.log('  frameTime=' + frameIso + ' servedMode=' + fMode + ' servedSlot=' + fSlot);
-  check(label + ' X-Pinned=1', pinned);
-  check(label + ' mode=' + expStateMode, fMode === expStateMode);
-  check(label + ' slot preserves state', fSlot && (fSlot.indexOf(expStateSlot) >= 0 || (expStateSlot === 'offhours' && fSlot.indexOf('offhours') >= 0)));
-  check(label + ' frameId match', state.frameId === fId);
-  check(label + ' 192010B', frameRes.b.length === 192010);
-  return { frameId: state.frameId, hash: fHash };
+  console.log('  frameTime=' + frameIso + ' servedMode=' + crossMode);
+  check(label + ' X-Pinned=1', crossPinned);
+  check(label + ' mode=' + expStateMode, crossMode === expStateMode);
+  check(label + ' slot preserves', crossSlot && crossSlot.indexOf(expStateSlot) >= 0);
+  check(label + ' frameId match', state.frameId === crossId);
+  check(label + ' 192010B', fCross.b.length === 192010);
+
+  // SHA256: pinned cross-boundary frame must match baseline
+  check(label + ' hash same (pinned content unchanged)', crossHash === baseHash, baseHash + ' vs ' + crossHash);
 }
 
 async function main() {
@@ -94,56 +109,42 @@ async function main() {
   console.log('Server ready\n');
 
   try {
-    // Case A — 10:29:59 -> 10:30:01
-    var rA = await caseTest('CaseA: cross 10:30', '2026-07-09T08:29:59.000Z', '2026-07-09T08:30:01.000Z', 'photo', 'T10:00');
+    // Case A: 10:29:59 -> 10:30:01
+    await crossBoundaryCase('CaseA: cross 10:30', '2026-07-09T08:29:59.000Z', '2026-07-09T08:30:01.000Z', 'photo', 'T10:00');
 
-    // Case B — 10:59:59 -> 11:00:01
-    var rB = await caseTest('CaseB: cross 11:00', '2026-07-09T08:59:59.000Z', '2026-07-09T09:00:01.000Z', 'news', 'T10:30');
+    // Case B: 10:59:59 -> 11:00:01
+    await crossBoundaryCase('CaseB: cross 11:00', '2026-07-09T08:59:59.000Z', '2026-07-09T09:00:01.000Z', 'news', 'T10:30');
 
-    // Case C — 18:59:59 -> 19:00:01
-    var rC = await caseTest('CaseC: cross 19:00', '2026-07-09T16:59:59.000Z', '2026-07-09T17:00:01.000Z', 'news', 'T18:30');
+    // Case C: 18:59:59 -> 19:00:01
+    await crossBoundaryCase('CaseC: cross 19:00', '2026-07-09T16:59:59.000Z', '2026-07-09T17:00:01.000Z', 'news', 'T18:30');
 
-    // Case D — 09:59:59 -> 10:00:01 (same mode, different slot)
-    var rD = await caseTest('CaseD: cross 10:00', '2026-07-09T07:59:59.000Z', '2026-07-09T08:00:01.000Z', 'photo', 'offhours');
+    // Case D: 09:59:59 -> 10:00:01
+    await crossBoundaryCase('CaseD: cross 10:00', '2026-07-09T07:59:59.000Z', '2026-07-09T08:00:01.000Z', 'photo', 'offhours');
 
-    // SHA256: verify pinned frame hash stays the same
-    if (rA && rD) {
-      check('SHA256: CaseA hash === CaseD hash (same photo offhours)', rA.hash === rD.hash, rA.hash + ' vs ' + rD.hash);
-    }
-
-    // TTL: t+29s -> pin HIT, t+31s -> pin MISS (using test clock)
+    // TTL: t+29s -> HIT, t+31s -> MISS (using pinNowProvider clock)
     console.log('\n--- TTL ---');
-    await setClock('2026-07-09T08:29:59.000Z');
-    await get(BASE + '/api/state.json');
-    // t+29s: within TTL
-    await setClock('2026-07-09T08:30:28.000Z');
-    var f29 = await get(BASE + '/api/frame.bin');
-    check('TTL t+29s pin HIT', f29.h['x-pinned'] === '1');
-    var f29Hash = sha256(f29.b);
-    // t+31s: past TTL — first get a new state at a different time to create a different pin
+
+    // HIT test: state at t0, frame at t0+29s
     await setClock('2026-07-09T08:00:00.000Z');
     await get(BASE + '/api/state.json');
-    await setClock('2026-07-09T08:00:02.000Z');
-    var fEarly = await get(BASE + '/api/frame.bin');
-    check('TTL fresh pin HIT', fEarly.h['x-pinned'] === '1');
-    // Now trigger pin expiry with real time: the pin has expiresAt = Date.now() + 30000
-    // So if we set clock far enough, pin will be expired
-    var pinInfo = await get(BASE + '/debug/pin-state.json');
-    var pinJ = JSON.parse(pinInfo.b.toString());
-    if (pinJ.ttlRemainingMs > 0 && pinJ.ttlRemainingMs < 35000) {
-      check('TTL remaining valid', true, pinJ.ttlRemainingMs + 'ms');
-    }
-    // Force pin expiry by setting clock to a time 60s after pin creation
-    // Since pin expiresAt uses real Date.now(), we can't fully expire it with clock alone.
-    // But we can verify current pin state.
-    check('TTL pin present', pinJ.hasPin);
+    await setClock('2026-07-09T08:00:29.000Z');
+    var f29 = await get(BASE + '/api/frame.bin');
+    var f29Pin = f29.h['x-pinned'] === '1';
+    check('TTL_29S_HIT', f29Pin);
+
+    // MISS test: state at t0, frame at t0+31s (pin expired)
+    await setClock('2026-07-09T08:05:00.000Z');
+    await get(BASE + '/api/state.json');
+    await setClock('2026-07-09T08:05:31.000Z');
+    var f31 = await get(BASE + '/api/frame.bin');
+    var f31Pin = f31.h['x-pinned'] === '1';
+    check('TTL_31S_MISS', !f31Pin);
 
     // Render count: repeated state must NOT increase renderCount
     console.log('\n--- Render Count ---');
     var ps1 = await get(BASE + '/debug/pin-state.json');
     var psj1 = JSON.parse(ps1.b.toString());
     var rc1 = psj1.renderCount;
-    // Make 3 state requests
     await get(BASE + '/api/state.json');
     await get(BASE + '/api/state.json');
     await get(BASE + '/api/state.json');

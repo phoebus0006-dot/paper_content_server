@@ -153,6 +153,9 @@ bool fetchFrameAndDisplay(const StateInfo &state) {
     return false;
   }
 
+  const char *responseHeaders[] = {"X-Frame-Id"};
+  http.collectHeaders(responseHeaders, 1);
+
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
     Serial.printf("frame HTTP %d\n", code);
@@ -161,9 +164,11 @@ bool fetchFrameAndDisplay(const StateInfo &state) {
   }
 
   // Verify X-Frame-Id matches state.frameId to ensure consistency
+  // Reject if header missing or mismatched — do not display, do not update lastFrameId
   String serverFrameId = http.header("X-Frame-Id");
-  if (serverFrameId.length() > 0 && serverFrameId != state.frameId) {
-    Serial.printf("frame X-Frame-Id mismatch: got=%s expected=%s\n",
+  if (serverFrameId.isEmpty() || serverFrameId != state.frameId) {
+    Serial.printf("frame X-Frame-Id reject: %s vs expected %s\n",
+                  serverFrameId.c_str(), state.frameId.c_str());
                   serverFrameId.c_str(), state.frameId.c_str());
     http.end();
     return false;

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-07-09T21:15:45.711Z",
+  "updatedAt": "2026-07-09T21:30:59.122Z",
   "shown": [
     {
       "url": "https://www.nytimes.com/live/2026/07/08/world/nato-summit-turkey-trump-ukraine",
@@ -4385,6 +4385,246 @@
       "category": "technology",
       "slotKey": "2026-07-09T10:00",
       "shownAt": "2026-07-09T21:15:45.711Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/platner-maine-democrats-replacement-candidate.html",
+      "titleHash": "8aee52c9df44985d073805da465f63eb136373db",
+      "title": "Graham Platner’s Exit Sets Off Scramble for New Democratic Senate Candidate in Maine",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/upshot/platner-senate-replacements-history.html",
+      "titleHash": "a072d8e5c1bc0154e31ee808a3ba4767fc88a6e8",
+      "title": "Maine Democrats Hope to Replace Platner as Senate Nominee. Has That Ever Worked?",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/world/middleeast/palestinian-authority-elections-abbas.html",
+      "titleHash": "42beeb06b69959f0cce05a54dc2b63c498a1db48",
+      "title": "Palestinian Authority Sets Date for First Major Elections in 20 Years",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/09/en-direct-guerre-en-ukraine-des-accords-sur-les-aspects-techniques-sont-encore-necessaires-pour-la-production-des-missiles-patriot-dit-volodymyr-zelensky_6720832_3210.html",
+      "titleHash": "d83939ac71f092473908d9c7576441ff993ebaf9",
+      "title": "EN DIRECT, guerre en Ukraine : des accords sur les « aspects techniques » sont encore nécessaires pour la production de…",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/usa/20260709/trump-iran-war/",
+      "titleHash": "e9100d334c31381a0eb5ca9f48ef748e291b26ae",
+      "title": "伊朗停火协议“终结”，特朗普面临破局难题",
+      "category": "international",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/opinion/20260708/norway-nordic-social-democracy/",
+      "titleHash": "9bd18f770c3f7d8c71c066a588df7b18e58ec403",
+      "title": "真正的美国梦在北欧？",
+      "category": "international",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/china/20260708/china-missile-test-submarine-pacific/",
+      "titleHash": "c4815289e0c1bf6dbaa4ac15daed8e37edd9505a",
+      "title": "中国为何向太平洋发射远程弹道导弹？",
+      "category": "international",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://www.ithome.com/0/974/717.htm",
+      "titleHash": "49f0400c60608aea9087bee799f8923b6c109394",
+      "title": "华为联合中国移动、京东云、百度等发起 OPEN NPO 项目，共建国内首个 NPO 光互连多源协议",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://www.ithome.com/0/974/716.htm",
+      "titleHash": "cd96ce6c56b27c09f51b78f586b5dc9951b73c9b",
+      "title": "小米澎程 SkyNomad 新车主打“可变大空间”，雷军透露预热图展示的场景只是其中一部分",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://36kr.com/newsflashes/3888309184723721?f=rss",
+      "titleHash": "92a6db428207980efd9f9512158a7b74a2382c92",
+      "title": "鼎龙股份：预计上半年净利润同比增长64%-74%",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T21:30:53.544Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/platner-maine-democrats-replacement-candidate.html",
+      "titleHash": "8aee52c9df44985d073805da465f63eb136373db",
+      "title": "Graham Platner’s Exit Sets Off Scramble for New Democratic Senate Candidate in Maine",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/upshot/platner-senate-replacements-history.html",
+      "titleHash": "a072d8e5c1bc0154e31ee808a3ba4767fc88a6e8",
+      "title": "Maine Democrats Hope to Replace Platner as Senate Nominee. Has That Ever Worked?",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/world/middleeast/palestinian-authority-elections-abbas.html",
+      "titleHash": "42beeb06b69959f0cce05a54dc2b63c498a1db48",
+      "title": "Palestinian Authority Sets Date for First Major Elections in 20 Years",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/09/en-direct-guerre-en-ukraine-des-accords-sur-les-aspects-techniques-sont-encore-necessaires-pour-la-production-des-missiles-patriot-dit-volodymyr-zelensky_6720832_3210.html",
+      "titleHash": "d83939ac71f092473908d9c7576441ff993ebaf9",
+      "title": "EN DIRECT, guerre en Ukraine : des accords sur les « aspects techniques » sont encore nécessaires pour la production de…",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/world/20260708/us-strikes-iran-tanker-attacks/",
+      "titleHash": "81ebb0d5bc95c8887e22e2f22dff0fb9718097d9",
+      "title": "商船遇袭后，美国对伊朗发动空袭并撤销制裁豁免令",
+      "category": "international",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/business/20260707/china-europe-nuctech/",
+      "titleHash": "f8f4aa420e4de70c28b506435aae4913da3ded9f",
+      "title": "这家曾由胡锦涛之子领导的公司会引发中欧贸易战吗？",
+      "category": "international",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/china/20260707/china-nostalgia-dream-core/",
+      "titleHash": "1e7f8b3ea5da9a230778b8903249330d0fc00353",
+      "title": "“中式梦核”：中国Z时代为何怀恋2000年代？",
+      "category": "international",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://www.ithome.com/0/974/715.htm",
+      "titleHash": "a8109e8f6e4b9fbccff7d4ac7cdc913bec2f7481",
+      "title": "大疆农业：植保机 / 运载无人机在广西洪水灾害志愿救援期间出现故障或损坏，可免费维修",
+      "category": "technology",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://36kr.com/newsflashes/3888306591693314?f=rss",
+      "titleHash": "e46a207133d8507ebde841ed0c46c1982d877f7d",
+      "title": "燧原科技科创板IPO申请获证监会同意注册批复",
+      "category": "technology",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://36kr.com/newsflashes/3888303888873988?f=rss",
+      "titleHash": "f13f5a3b892454c31c48c36f34552b06afcd7e41",
+      "title": "紫金矿业：预计上半年净利润同比增长68%",
+      "category": "technology",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T21:30:56.208Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/platner-maine-democrats-replacement-candidate.html",
+      "titleHash": "8aee52c9df44985d073805da465f63eb136373db",
+      "title": "Graham Platner’s Exit Sets Off Scramble for New Democratic Senate Candidate in Maine",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/upshot/platner-senate-replacements-history.html",
+      "titleHash": "a072d8e5c1bc0154e31ee808a3ba4767fc88a6e8",
+      "title": "Maine Democrats Hope to Replace Platner as Senate Nominee. Has That Ever Worked?",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/world/middleeast/palestinian-authority-elections-abbas.html",
+      "titleHash": "42beeb06b69959f0cce05a54dc2b63c498a1db48",
+      "title": "Palestinian Authority Sets Date for First Major Elections in 20 Years",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/09/en-direct-guerre-en-ukraine-des-accords-sur-les-aspects-techniques-sont-encore-necessaires-pour-la-production-des-missiles-patriot-dit-volodymyr-zelensky_6720832_3210.html",
+      "titleHash": "d83939ac71f092473908d9c7576441ff993ebaf9",
+      "title": "EN DIRECT, guerre en Ukraine : des accords sur les « aspects techniques » sont encore nécessaires pour la production de…",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
+    },
+    {
+      "url": "https://theinitium.com/20260708-taiwan-morning-after-pill-controversy-zh-hans/",
+      "titleHash": "1a455d2418979bdd5567e11271690da92f572d0c",
+      "title": "事后避孕药之争：“相信专业”到底是甚么意思？",
+      "category": "international",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/health/20260708/traditions-stay-cool-heat-wave/",
+      "titleHash": "7b9ca195b32ad5be48f69521b7594891fafbc2fc",
+      "title": "酷热夏天如何避暑降温？试试穿长袍、洒冷水",
+      "category": "international",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
+    },
+    {
+      "url": "https://cn.nytimes.com/usa/20260707/balogun-red-card-fifa-belgium/",
+      "titleHash": "0897b0cd82ee4cdafaf14ab6f56b9e114427514f",
+      "title": "特朗普介入世界杯红牌，美欧关系阴云再现",
+      "category": "international",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
+    },
+    {
+      "url": "https://www.ithome.com/0/974/706.htm",
+      "titleHash": "595c1a0302ee6dd0baa956412fe05b5538294483",
+      "title": "智能体互联网关键系统技术验证工程启动，致力于打通跨平台、跨语义交互",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
+    },
+    {
+      "url": "https://36kr.com/p/3888289009678854?f=rss",
+      "titleHash": "a7541b06ec13e79f1c8a9524bb1827422e82a059",
+      "title": "2026年度「中国股权投资行业投资机构」系列名册正式发布",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/technology/personaltech/iphone-android-health-tracking.html",
+      "titleHash": "fd6d9aae414d42e37e181ce0496b031f4ec244d8",
+      "title": "How to Turn Your Phone Into a Personal Health Dashboard",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T21:30:59.122Z"
     }
   ]
 }

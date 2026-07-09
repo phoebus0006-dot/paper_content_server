@@ -179,6 +179,7 @@ const runtime = {
   pinnedSnapshots: new Map(),
   renderCount: 0,
   nowProvider: null,
+  pinNowProvider: null,
 };
 
 async function main() {
@@ -2160,7 +2161,8 @@ function ensureCachedFrame(photo, now) {
 function getPinnedSnapshot(client) {
   const entry = runtime.pinnedSnapshots.get(client);
   if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
+  const now = runtime.pinNowProvider ? runtime.pinNowProvider() : Date.now();
+  if (now > entry.expiresAt) {
     runtime.pinnedSnapshots.delete(client);
     return null;
   }
@@ -2168,13 +2170,14 @@ function getPinnedSnapshot(client) {
 }
 
 function setPinnedSnapshot(client, content) {
+  const now = runtime.pinNowProvider ? runtime.pinNowProvider() : Date.now();
   runtime.pinnedSnapshots.set(client, {
     frameId: content.snapshot.frameId,
     mode: content.snapshot.mode,
     slotKey: content.snapshot.slotKey || content.snapshot.frameId,
     frame: content.frame,
     snapshot: content.snapshot,
-    expiresAt: Date.now() + PIN_TTL_MS,
+    expiresAt: now + PIN_TTL_MS,
   });
 }
 
@@ -2482,7 +2485,7 @@ async function handleRequest(req, res) {
         frameId: pin ? pin.frameId : null,
         mode: pin ? pin.mode : null,
         slotKey: pin ? pin.slotKey : null,
-        ttlRemainingMs: pin ? pin.expiresAt - Date.now() : 0,
+        ttlRemainingMs: pin ? (pin.expiresAt - (runtime.pinNowProvider ? runtime.pinNowProvider() : Date.now())) : 0,
         totalPins: runtime.pinnedSnapshots.size,
         renderCount: runtime.renderCount,
         cachedFrames: runtime.cachedFrames.size,
@@ -2496,6 +2499,7 @@ async function handleRequest(req, res) {
       const iso = parsed.searchParams.get('iso');
       if (iso) {
         runtime.nowProvider = () => new Date(iso);
+        runtime.pinNowProvider = () => new Date(iso).getTime();
         const r = Buffer.from(JSON.stringify({ set: true, iso }));
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
         res.end(r);
@@ -2503,6 +2507,7 @@ async function handleRequest(req, res) {
       }
       if (parsed.searchParams.get('reset') === '1') {
         runtime.nowProvider = null;
+        runtime.pinNowProvider = null;
         const r = Buffer.from(JSON.stringify({ set: false }));
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
         res.end(r);
