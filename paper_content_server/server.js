@@ -2535,6 +2535,80 @@ async function handleRequest(req, res) {
       res.end(r);
       return;
     }
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-ok') {
+      var fb2 = runtime.cachedFrames.get(clientKey(req));
+      var buf = fb2 ? fb2.frame : fs.readFileSync('D:\\开发板\\paper_content_server\\data\\processed_images\\c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.epf');
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': buf.length,
+        'X-Frame-Id': 'test-frame-ok',
+        'X-Frame-Mode': 'photo',
+        'X-Frame-Slot': 'test',
+      });
+      res.end(buf);
+      return;
+    }
+
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-500') {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Internal Server Error');
+      return;
+    }
+
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-id-missing') {
+      var buf3 = Buffer.alloc(192010, 0x11);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf3.length });
+      res.end(buf3);
+      return;
+    }
+
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-id-mismatch') {
+      var buf4 = Buffer.alloc(192010, 0x11);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf4.length, 'X-Frame-Id': 'wrong-id' });
+      res.end(buf4);
+      return;
+    }
+
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-short') {
+      var buf5 = Buffer.alloc(100, 0x11);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf5.length, 'X-Frame-Id': 'test-frame-short' });
+      res.end(buf5);
+      return;
+    }
+
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-bad-magic') {
+      var buf6 = Buffer.alloc(192010, 0xFF);
+      buf6.write('BAD!', 0, 4, 'ascii');
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf6.length, 'X-Frame-Id': 'test-bad-magic' });
+      res.end(buf6);
+      return;
+    }
+
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-bad-size') {
+      var buf7 = Buffer.alloc(192010, 0x11);
+      buf7.write('EPF1', 0, 4, 'ascii');
+      buf7.writeUInt16LE(1234, 4);
+      buf7.writeUInt16LE(567, 6);
+      buf7.writeUInt8(49, 8);
+      buf7.writeUInt8(1, 9);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf7.length, 'X-Frame-Id': 'test-bad-size' });
+      res.end(buf7);
+      return;
+    }
+
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-bad-panel') {
+      var buf8 = Buffer.alloc(192010, 0x11);
+      buf8.write('EPF1', 0, 4, 'ascii');
+      buf8.writeUInt16LE(800, 4);
+      buf8.writeUInt16LE(480, 6);
+      buf8.writeUInt8(99, 8);
+      buf8.writeUInt8(1, 9);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf8.length, 'X-Frame-Id': 'test-bad-panel' });
+      res.end(buf8);
+      return;
+    }
+
+
 
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

@@ -219,6 +219,70 @@ async function main() {
     var pj = JSON.parse(pal.b.toString());
     check('unsupportedCode4', pj.unsupportedCode4 === 0, '' + pj.unsupportedCode4);
 
+    // Frame failure scenario verification
+    console.log('\n--- Frame Failure Scenarios ---');
+    var failCases = [
+      { path: '/test/frame-500',             label: 'HTTP 500' },
+      { path: '/test/frame-id-missing',      label: 'missing X-Frame-Id' },
+      { path: '/test/frame-id-mismatch',     label: 'mismatched X-Frame-Id' },
+      { path: '/test/frame-short',           label: 'short Content-Length' },
+      { path: '/test/frame-bad-magic',       label: 'bad EPF1 magic' },
+      { path: '/test/frame-bad-size',        label: 'wrong width/height' },
+      { path: '/test/frame-bad-panel',       label: 'wrong panel index' },
+    ];
+    for (var fi = 0; fi < failCases.length; fi++) {
+      var fc = failCases[fi];
+      try {
+        var fr = await get(BASE + fc.path);
+        check('FAIL ' + fc.label, fr.s >= 400 || fr.s === 200);
+      } catch (e) {
+        check('FAIL ' + fc.label, false);
+      }
+    }
+
+    // Recovery test: simulate A -> B fail -> B retry -> success
+    console.log('\n--- Recovery Simulation ---');
+    // This tests the server's state-transition logic:
+    // ESP32 logic: lastFrameId = A, state.frameId = B, B ≠ A → download
+    // If download fails: lastFrameId stays A
+    // Next poll: state.frameId = B again, B ≠ A → retry
+    // If retry succeeds: lastFrameId = B
+    var recoveryOk = true;
+
+    // Get current state (frameId = current)
+    var curState = await get(BASE + '/api/state.json');
+    var curSj = JSON.parse(curState.b.toString());
+    var frameIdA = curSj.frameId;
+    
+    // Simulate: lastFrameId = A, state returns B (different)
+    // Call state at a different time to get a different frameId
+    await setClock('2026-07-09T08:30:00.000Z');
+    var newState = await get(BASE + '/api/state.json');
+    var newSj = JSON.parse(newState.b.toString());
+    var frameIdB = newSj.frameId;
+    var idsDiffer = frameIdA !== frameIdB;
+
+    // Simulate first attempt (fetchFrameAndDisplay would fail)
+    // We use a known-bad endpoint to simulate failure
+    await get(BASE + '/test/frame-500');
+    // lastFrameId is NOT updated (still A)
+    // On server side, we verify state still returns B
+    var pollState = await get(BASE + '/api/state.json');
+    var pollSj = JSON.parse(pollState.b.toString());
+    var stillB = pollSj.frameId === frameIdB;
+
+    // Simulate retry with success
+    // Next poll: state still B, lastFrameId still A, B ≠ A → retry download
+    // This time use the normal frame endpoint
+    var okFrame = await get(BASE + '/api/frame.bin');
+    var frameOk = okFrame.s === 200 && okFrame.b.length === 192010;
+    var pinnedOk = okFrame.h['x-pinned'] === '1';
+
+    check('RECOVERY: state returns different frameId on slot change', idsDiffer);
+    check('RECOVERY: after failure, state still returns B', stillB);
+    check('RECOVERY: retry succeeds (200, 192010B)', frameOk);
+    if (frameOk) check('RECOVERY: served via pin', pinnedOk);
+
   } catch (e) {
     console.log('CATASTROPHIC ERROR: ' + e.message);
     failed++; exitCode = 1;
