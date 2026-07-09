@@ -169,7 +169,6 @@ bool fetchFrameAndDisplay(const StateInfo &state) {
   if (serverFrameId.isEmpty() || serverFrameId != state.frameId) {
     Serial.printf("frame X-Frame-Id reject: %s vs expected %s\n",
                   serverFrameId.c_str(), state.frameId.c_str());
-                  serverFrameId.c_str(), state.frameId.c_str());
     http.end();
     return false;
   }

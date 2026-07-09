@@ -10,6 +10,7 @@ var PORT = 8798;
 var BASE = 'http://127.0.0.1:' + PORT;
 var SRV = path.join(__dirname, '..', 'server.js');
 var CWD = path.dirname(SRV);
+var TMPDIR = path.join(__dirname, '..', 'test_data_tmp_' + Date.now());
 
 function sha256(buf) { return crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16); }
 
@@ -92,20 +93,34 @@ async function main() {
   console.log('Starting server on port ' + PORT + '...');
 
   var server = spawn(process.execPath, [SRV], {
-    env: Object.assign({}, process.env, { PORT: String(PORT), TZ: 'Europe/Paris', TRANSLATION_PROVIDER: 'none', PHOTO_QUANT_MODE: 'clean', ENABLE_DEBUG_ROUTES: 'true' }),
+    env: Object.assign({}, process.env, { PORT: String(PORT), TZ: 'Europe/Paris', TRANSLATION_PROVIDER: 'none', PHOTO_QUANT_MODE: 'clean', ENABLE_DEBUG_ROUTES: 'true', DATA_DIR: TMPDIR }),
     cwd: CWD,
     stdio: ['ignore', 'pipe', 'pipe']
   });
   server.stderr.on('data', function(d) { process.stdout.write('[SRV] ' + d.toString().slice(0, 200) + '\n'); });
 
+  // Create temp data directory with minimal fixture
+  try { require('fs').mkdirSync(TMPDIR, { recursive: true }); } catch (e) {}
+  // Copy minimal required data files so server doesn't fail on startup
+  try {
+    var f = require('fs');
+    var srcDir = path.join(CWD, 'data');
+    ['image_index.json', 'raw_index.json', 'library_state.json', 'news_cache.json', 'news_rotation_state.json'].forEach(function(file) {
+      var src = path.join(srcDir, file);
+      if (f.existsSync(src)) f.copyFileSync(src, path.join(TMPDIR, file));
+    });
+  } catch (e) { console.log('  (fixture copy: ' + e.message + ')'); }
+
   var timer = setTimeout(function() {
     console.log('FAIL: server did not start within 35s');
-    server.kill(); process.exit(1);
+    server.kill();
+    try { require('fs').rmdirSync(TMPDIR, { recursive: true }); } catch (e) {}
+    process.exit(1);
   }, 35000);
 
   var started = await waitForServer(30000);
   clearTimeout(timer);
-  if (!started) { console.log('FAIL: could not connect'); server.kill(); process.exit(1); }
+  if (!started) { console.log('FAIL: could not connect'); server.kill(); try { require('fs').rmdirSync(TMPDIR, { recursive: true }); } catch (e) {} process.exit(1); }
   console.log('Server ready\n');
 
   try {
@@ -167,6 +182,7 @@ async function main() {
   }
 
   server.kill();
+  try { require('fs').rmdirSync(TMPDIR, { recursive: true }); } catch (e) {}
   console.log('\n=== Summary ===');
   console.log(passed + ' passed, ' + failed + ' failed out of ' + (passed + failed) + ' tests');
   process.exit(exitCode);
