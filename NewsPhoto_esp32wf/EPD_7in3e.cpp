@@ -323,7 +323,8 @@ bool EPD_7IN3E_Sleep(void)
     EPD_7IN3E_SendCommand(0X02); // DEEP_SLEEP
     EPD_7IN3E_SendData(0x00);
     if (!EPD_7IN3E_ReadBusyH(EPD_7IN3E_POWER_BUSY_TIMEOUT_MS)) {
-        Debug("e-Paper sleep busy timeout, forcing sleep\n");
+        Debug("e-Paper sleep busy timeout\r\n");
+        return false;
     }
 
     EPD_7IN3E_SendCommand(0x07); // DEEP_SLEEP
