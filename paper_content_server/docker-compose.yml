@@ -1,0 +1,18 @@
+services:
+  paper-frame-server:
+    build: .
+    container_name: paper-frame-server
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - ./images:/app/images
+      - ./data:/app/data
+      - ./config:/app/config:ro
+      - ./config.json:/app/config.json
+      - ./.env:/app/.env
+      - ./server.js:/app/server.js:ro
+      - ./package.json:/app/package.json:ro
+      - ./feeds.json:/app/feeds.json:ro
+      - ./scripts:/app/scripts:ro
+    restart: unless-stopped

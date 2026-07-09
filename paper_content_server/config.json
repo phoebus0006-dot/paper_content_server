@@ -1,0 +1,12 @@
+{
+  "port": 8787,
+  "panelIndex": 49,
+  "imageRoot": "images",
+  "dataDir": "data",
+  "feedsFile": "feeds.json",
+  "newsCacheFile": "data/news_cache.json",
+  "libraryStateFile": "data/library_state.json",
+  "translationProvider": "none",
+  "dithering": "1",
+  "timezone": "Europe/Paris"
+}

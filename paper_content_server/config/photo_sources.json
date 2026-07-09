@@ -1,0 +1,83 @@
+{
+  "sources": [
+    {
+      "type": "wikimedia_commons",
+      "enabled": true,
+      "queries": [
+        { "q": "cinematic lighting film still", "theme": "cinematic" },
+        { "q": "storyboard film composition", "theme": "storyboard" },
+        { "q": "wide shot landscape photography", "theme": "wide_shot" },
+        { "q": "portrait photography studio lighting", "theme": "portrait" },
+        { "q": "night scene city lights photography", "theme": "night" },
+        { "q": "backlight silhouette photography", "theme": "backlight" },
+        { "q": "vivid color photography composition", "theme": "color" },
+        { "q": "motion blur photography action", "theme": "motion" }
+      ],
+      "limitPerQuery": 2,
+      "minWidth": 800,
+      "minHeight": 480
+    },
+    {
+      "type": "internet_archive",
+      "enabled": true,
+      "queries": [
+        { "q": "cinematic lighting", "theme": "cinematic" },
+        { "q": "storyboard", "theme": "storyboard" },
+        { "q": "landscape photograph", "theme": "wide_shot" },
+        { "q": "portrait photograph", "theme": "portrait" },
+        { "q": "night photograph", "theme": "night" }
+      ],
+      "limitPerQuery": 3
+    },
+    {
+      "type": "europeana",
+      "enabled": false,
+      "apiKey": "",
+      "queries": [
+        { "q": "photography cinematic", "theme": "cinematic" },
+        { "q": "photography portrait", "theme": "portrait" },
+        { "q": "photography night", "theme": "night" }
+      ],
+      "limitPerQuery": 3
+    },
+    {
+      "type": "rss_images",
+      "enabled": false,
+      "feeds": [
+        { "url": "https://example.com/feed.xml", "theme": "cinematic" }
+      ]
+    },
+    {
+      "type": "url_list",
+      "enabled": true,
+      "urls": [
+        { "url": "https://picsum.photos/seed/mountain1/1200/800", "theme": "wide_shot", "title": "Mountain landscape 1", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/oceanview/1200/800", "theme": "wide_shot", "title": "Ocean view", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/urban1/1200/800", "theme": "cinematic", "title": "Urban cinematic 1", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/portrait1/800/1200", "theme": "portrait", "title": "Portrait 1", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/nightcity/1200/800", "theme": "night", "title": "Night cityscape", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/forest1/1200/800", "theme": "wide_shot", "title": "Forest path", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/architecture/1200/800", "theme": "cinematic", "title": "Architecture detail", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/sunset1/1200/800", "theme": "backlight", "title": "Sunset horizon", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/street1/1200/800", "theme": "cinematic", "title": "Street photography", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/colorful1/1200/800", "theme": "color", "title": "Colorful market", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/river1/1200/800", "theme": "wide_shot", "title": "River landscape", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/abstract1/1200/800", "theme": "color", "title": "Abstract colors", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/cityscape/1200/800", "theme": "cinematic", "title": "City skyline", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/dessert1/1200/800", "theme": "wide_shot", "title": "Desert dunes", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/flower1/800/1200", "theme": "color", "title": "Flower macro", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/travel1/1200/800", "theme": "cinematic", "title": "Travel destination", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/motion1/1200/800", "theme": "motion", "title": "Motion blur", "source": "Picsum" },
+        { "url": "https://picsum.photos/seed/landscape1/1200/800", "theme": "wide_shot", "title": "Rolling hills", "source": "Picsum" }
+      ]
+    },
+    {
+      "type": "local_import",
+      "enabled": true,
+      "importDir": "data/import_images"
+    }
+  ],
+  "minImageWidth": 800,
+  "minImageHeight": 480,
+  "requestTimeoutMs": 20000
+}

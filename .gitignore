@@ -1,0 +1,11 @@
+**/node_modules/
+**/.env
+**/data/
+**/images/
+**/*.bin
+**/*.log
+**/backup*/
+**/*.bak*
+**/__pycache__/
+**/.DS_Store
+
