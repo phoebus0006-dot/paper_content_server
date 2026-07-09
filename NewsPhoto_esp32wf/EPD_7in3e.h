@@ -62,7 +62,7 @@ void EPD_7IN3E_Show7Block(void);
 void EPD_7IN3E_Show(void);
 bool EPD_7IN3E_Display(UBYTE *Image);
 void EPD_7IN3E_DisplayPart(const UBYTE *Image, UWORD xstart, UWORD ystart, UWORD image_width, UWORD image_heigh);
-void EPD_7IN3E_Sleep(void);
+bool EPD_7IN3E_Sleep(void);
 bool EPD_7IN3E_WaitBusyH(unsigned long timeoutMs);
 
 #endif

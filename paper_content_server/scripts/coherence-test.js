@@ -301,9 +301,10 @@ async function main() {
     var b = poll1Sj.frameId;
     var poll1Frame = await get(BASE + '/test/frame-500');
     var poll1Result = simulateFetchFrame(poll1Frame.s, poll1Frame.h, poll1Frame.b, b);
+    var beforeFailureId = lastFrameId;
     check('POLL1: B != A', b !== lastFrameId, 'B=' + b.slice(0,16) + ' A=' + lastFrameId);
     check('POLL1: rejected', !poll1Result.accepted, 'reason=' + poll1Result.rejectReason);
-    check('POLL1: lastFrameId unchanged', lastFrameId, lastFrameId);
+    check('POLL1: lastFrameId unchanged (still A)', lastFrameId === beforeFailureId && lastFrameId === 'A', beforeFailureId + ' -> ' + lastFrameId);
     console.log('  -> A=' + lastFrameId + ' B=' + b.slice(0,16) + ' FAILED last=' + lastFrameId);
 
     var poll2State = await get(BASE + '/api/state.json');

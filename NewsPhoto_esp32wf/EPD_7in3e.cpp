@@ -318,7 +318,7 @@ void EPD_7IN3E_DisplayPart(const UBYTE *Image, UWORD xstart, UWORD ystart, UWORD
 function :  Enter sleep mode
 parameter:
 ******************************************************************************/
-void EPD_7IN3E_Sleep(void)
+bool EPD_7IN3E_Sleep(void)
 {
     EPD_7IN3E_SendCommand(0X02); // DEEP_SLEEP
     EPD_7IN3E_SendData(0x00);
@@ -328,6 +328,7 @@ void EPD_7IN3E_Sleep(void)
 
     EPD_7IN3E_SendCommand(0x07); // DEEP_SLEEP
     EPD_7IN3E_SendData(0XA5);
+    return true;
 }
 
 bool EPD_7IN3E_WaitBusyH(unsigned long timeoutMs)

@@ -138,7 +138,10 @@ bool displayFrameBuffer(const uint8_t *payload, size_t payloadLen) {
     return false;
   }
   DEV_Delay_ms(500);
-  EPD_7IN3E_Sleep();
+  if (!EPD_7IN3E_Sleep()) {
+    Serial.println("display: EPD sleep failed");
+    return false;
+  }
   Serial.printf("displayFrameBuffer done, payload=%u, epd slept\n", (unsigned)payloadLen);
   return true;
 }
