@@ -12,7 +12,8 @@
     "rss:test": "node scripts/rss-selftest.js",
     "frame:test": "node scripts/frame-selftest.js",
     "schedule:test": "node scripts/schedule-test.js",
-    "coherence:test": "node scripts/coherence-test.js"
+    "coherence:test": "node scripts/coherence-test.js",
+    "restart:test": "node scripts/restart-test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
