@@ -118,24 +118,6 @@
       "weight": 9
     },
     {
-      "id": "rfi-international",
-      "source": "RFI 中文",
-      "country": "France",
-      "category": "international",
-      "language": "zh",
-      "url": "https://www.rfi.fr/cn/%E5%9B%BD%E9%99%85/rss/",
-      "weight": 9
-    },
-    {
-      "id": "rfi-china",
-      "source": "RFI 中文",
-      "country": "France",
-      "category": "politics",
-      "language": "zh",
-      "url": "https://www.rfi.fr/cn/%E4%B8%AD%E5%9B%BD/rss/",
-      "weight": 9
-    },
-    {
       "id": "ithome-news",
       "source": "IT之家",
       "country": "China",
@@ -161,6 +143,15 @@
       "language": "zh",
       "url": "https://theinitium.com/zh-hans/feed/",
       "weight": 8
+    },
+    {
+      "id": "cn-nyt",
+      "source": "NYT中文",
+      "country": "China",
+      "category": "international",
+      "language": "zh",
+      "url": "https://cn.nytimes.com/rss/",
+      "weight": 10
     }
   ]
 }

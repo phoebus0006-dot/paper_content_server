@@ -21,7 +21,7 @@ const PHOTO_FOOTER_HEIGHT = 56;
 const NEWS_HEADER_HEIGHT = 38;
 const NEWS_FOOTER_HEIGHT = 18;
 const NEWS_MAX_ITEMS = 6;
-const NEWS_MIN_ITEMS = 5;
+const NEWS_MIN_ITEMS = 10;
 const NEWS_REFRESH_MINUTES = 15;
 const NEWS_SHOWN_RECALL_HOURS = 24;
 const NEWS_SHOWN_FALLBACK_HOURS = 6;
@@ -135,9 +135,14 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const OPENAI_BASE_URL = String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
 const DEEPL_API_KEY = process.env.DEEPL_API_KEY || '';
 const DEEPL_API_URL = process.env.DEEPL_API_URL || 'https://api-free.deepl.com/v2/translate';
-const DITHERING_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.DITHERING ?? APP_CONFIG.dithering ?? '').toLowerCase());
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_BASE = String(process.env.GEMINI_API_BASE || '').replace(/\/+$/, '') || (OPENAI_BASE_URL && TRANSLATION_PROVIDER === 'gemini' ? OPENAI_BASE_URL : '');
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const PHOTO_QUANT_MODE = String(process.env.PHOTO_QUANT_MODE || 'clean').toLowerCase();
+const DITHERING_ENABLED = PHOTO_QUANT_MODE === 'fs' ? ['1', 'true', 'yes', 'on'].includes(String(process.env.DITHERING ?? APP_CONFIG.dithering ?? '').toLowerCase()) : false;
 const PORT = Number(process.env.PORT || APP_CONFIG.port) > 0 ? Number(process.env.PORT || APP_CONFIG.port) : options.port;
 const TIMEZONE = String(process.env.TZ || APP_CONFIG.timezone || DEFAULT_TIMEZONE || 'UTC');
+const ENABLE_DEBUG_ROUTES = String(process.env.ENABLE_DEBUG_ROUTES || '').toLowerCase() === 'true';
 
 const DATA_DIR = resolveConfiguredPath(APP_CONFIG.dataDir || 'data');
 const IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.imageRoot || 'images');
@@ -171,6 +176,9 @@ const runtime = {
   cachedSnapshots: new Map(),
   refreshPromise: null,
   lastNewsRefreshAt: 0,
+  pinnedSnapshots: new Map(),
+  renderCount: 0,
+  nowProvider: null,
 };
 
 async function main() {
@@ -351,6 +359,20 @@ function truncateByWidth(text, maxColumns) {
       if (result.length > 1) result = result.slice(0, -1) + '…';
       return result;
     }
+    result += char;
+    width += charWidth;
+  }
+  return result;
+}
+
+function fitTextWidth(text, maxColumns) {
+  const source = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!source) return '';
+  let result = '';
+  let width = 0;
+  for (const char of source) {
+    const charWidth = /[\u4e00-\u9fa5\u3040-\u30ff\u3400-\u4dbf]/.test(char) ? 2 : 1;
+    if (width + charWidth > maxColumns) return result;
     result += char;
     width += charWidth;
   }
@@ -561,7 +583,7 @@ function parseFeedXml(xmlText, feed) {
   for (const item of items) {
     const title = extractTag(item, 'title');
     const summary = extractTag(item, 'description') || extractTag(item, 'summary') || extractTag(item, 'content') || extractTag(item, 'content:encoded') || extractTag(item, 'media:description') || extractTag(item, 'media:title');
-    const content = extractTag(item, 'content:encoded') || extractTag(item, 'media:description') || summary;
+    const content = extractTag(item, 'content:encoded') || extractTag(item, 'media:description') || extractTag(item, 'content') || summary;
     const link = canonicalUrl(extractLink(item));
     const publishedAt = parseDate(extractTag(item, 'pubDate') || extractTag(item, 'published') || extractTag(item, 'updated'));
     const category = classifyCategory(feed.category, title, `${summary} ${content}`);
@@ -574,6 +596,7 @@ function parseFeedXml(xmlText, feed) {
       url: link,
       title: normalizeText(title),
       summary: normalizeText(stripHtml(summary || content)),
+      rawContent: normalizeText(stripHtml(content !== summary ? content : '')),
       publishedAt: publishedAt.toISOString(),
       category,
       weight: Number(feed.weight) || 1,
@@ -599,6 +622,7 @@ function parseJsonFeed(jsonText, feed) {
   return candidates.map((item) => {
     const title = normalizeText(item.title || item.headline || item.name || '');
     const summary = normalizeText(stripHtml(item.description || item.summary || item.content || item.excerpt || ''));
+    const contentText = normalizeText(stripHtml(item.content || item.content_html || item.summary || item.description || ''));
     const url = canonicalUrl(item.url || item.link || item.canonicalUrl || '');
     const publishedAt = parseDate(item.publishedAt || item.datePublished || item.pubDate || item.date || item.updated || new Date());
     const category = classifyCategory(feed.category, title, summary);
@@ -611,6 +635,7 @@ function parseJsonFeed(jsonText, feed) {
       url,
       title,
       summary,
+      rawContent: contentText !== summary ? contentText : '',
       publishedAt: publishedAt.toISOString(),
       category,
       weight: Number(feed.weight) || 1,
@@ -850,6 +875,195 @@ async function recordShownItems(items, slotKey) {
   });
 }
 
+const BLOCKLIST_WORDS = /porn|nude|nudity|naked|sex|sexy|erotic|adult|bikini|lingerie|nsfw|xxx|model|glamour|swimsuit|裸|色情|成人|性感|比基尼|内衣|写真|私房/gi;
+
+function rewriteNewsTitle(article) {
+  let title = String(article.zhTitle || article.title || '');
+  if (!title.trim()) return '新闻';
+
+  title = title.replace(/[「『【】」』]/g, ' ').trim();
+  title = title.replace(/^[-–—|•\s]+|[-–—|•\s]+$/g, '').trim();
+  title = title.replace(/^(Live|LIVE|Breaking|BREAKING|Update|UPDATES)\s*[:\|–—-]\s*/g, '');
+  title = title.replace(/\s*[-–—|]\s*(Live|LIVE|Breaking|BREAKING|Update|UPDATES|Opinion|Commentary|Analysis|The New York Times|Le Monde|NPR|France 24|WSJ|BBC)(\s|$)/gi, '');
+  title = title.replace(/^(消息称|传|报道称|据悉|据透露)\s*/, '').trim();
+  title = title.replace(/^受[\u4e00-\u9fff，,、\s]+[，,]\s*/g, '');
+  title = title.replace(/^在[\u4e00-\u9fff，,、\s]+[，,]\s*/g, '');
+  title = title.replace(/^据[\u4e00-\u9fff]+[报道称示]\s*/g, '');
+
+  title = title.replace(/[|｜]\s*(What|Opinion|Commentary|Analysis|News|Breaking|Live|Update|Review|The New York Times|Le Monde|NPR|France 24|WSJ|BBC|Reuters|AP|AFP)[^|｜\u4e00-\u9fff]*$/gi, '');
+  title = title.replace(/\s*[（(]\s*(更新中|图|视频|音频|完整版|现场)\s*[）)]/g, '');
+  title = title.replace(/\s*\[(圖|图|视频|音频|完整版|更新)\]\s*/g, '');
+  title = title.replace(/\s{2,}/g, ' ').trim();
+
+  if (!/[\u4e00-\u9fff]/.test(title)) {
+    if (title.length > 40) {
+      const parts = title.split(/[-–—:;,]/);
+      if (parts[0].trim().length > 10) title = parts[0].trim();
+      if (title.length > 35) title = title.split(/\s+/).slice(0, 6).join(' ');
+    }
+    if (title.length > 55) title = title.slice(0, 55);
+    return title || '新闻';
+  }
+
+  const tChars = [...title];
+  if (tChars.length <= 22) return title;
+
+  if (tChars.length <= 24) {
+    const trailMatch = title.match(/[A-Za-z][a-z]{0,3}$/);
+    if (trailMatch && trailMatch.index > 0) {
+      const before = title.slice(0, trailMatch.index).trim();
+      if (before.length >= 8) return before;
+    }
+    return title;
+  }
+
+  const boundaryChars = ['。', '！', '？', '；', '：', '，', '|', '｜', '—', '–', '·'];
+  const chars = [...title];
+  const endLimit = Math.min(24, chars.length);
+  let bestCut = -1;
+  let bestScore = -1;
+
+  for (let pos = endLimit; pos >= 12; pos--) {
+    const ch = chars[pos];
+    const idx = boundaryChars.indexOf(ch);
+    if (idx >= 0) {
+      const score = idx < 3 ? 10 : idx < 5 ? 7 : 4;
+      if (score > bestScore) { bestScore = score; bestCut = pos; }
+    }
+  }
+
+  if (bestCut > 0) {
+    title = chars.slice(0, bestCut).join('').trim();
+    if (title.endsWith('，') || title.endsWith('：')) title = title.slice(0, -1).trim();
+    return title || '新闻';
+  }
+
+  const commaEnd = chars.slice(0, endLimit).lastIndexOf('，');
+  if (commaEnd > 12) return chars.slice(0, commaEnd).join('').trim();
+
+  const midCut = chars.slice(0, endLimit).join('');
+  const lastDigitMatch = midCut.match(/\d+$/);
+  if (lastDigitMatch && lastDigitMatch.index > 12) {
+    title = midCut.slice(0, lastDigitMatch.index).trim();
+    if (title) return title;
+  }
+
+  const badEndings = /(的|为|在|向|与|和|及|将|以|从|对|把|被|让|给|由|于|关于|成为|进行|宣布|宣布将|认定|推出|属于|位于|进入|使用|要求|开始)$/;
+  const danglingInvestment = /(计划|拟|将|准备|继续|开始|推进|加大|扩大)投资$/;
+  let candidate = chars.slice(0, endLimit).join('').trim();
+  for (let shrink = 2; shrink < 8 && [...candidate].length > 12; shrink++) {
+    if (badEndings.test(candidate)) candidate = chars.slice(0, endLimit - shrink).join('').trim();
+    else break;
+  }
+
+  const subjectMissing = /^[\d.万元%美元欧元¥\s]+$/.test(candidate.replace(/[，,、\s]/g, '')) || /^[预]?(售|约|计)\s/.test(candidate);
+  const danglingCausative = /(让|使|令|帮助|助)[^，。！？，\s]{1,8}$/.test(candidate);
+  if ((subjectMissing || danglingCausative) && article.title && article.title !== candidate) {
+    candidate = String(article.title).trim();
+    if (candidate && [...candidate].length <= 24) return candidate;
+    const c = [...candidate];
+    const lim = Math.min(24, c.length);
+    for (let p = lim; p >= 12; p--) {
+      const ch = c[p];
+      if (['。', '！', '？', '；', '：', '，', '|', '｜'].indexOf(ch) >= 0) return c.slice(0, p).join('').trim();
+    }
+    const commaEnd = c.slice(0, lim).lastIndexOf('，');
+    if (commaEnd > 12) return c.slice(0, commaEnd).join('').trim();
+    const lastDigit = candidate.match(/\d+$/);
+    if (lastDigit && lastDigit.index > 12) {
+      const cleaned = candidate.slice(0, lastDigit.index).trim();
+      if (cleaned) return cleaned;
+    }
+    return c.slice(0, Math.min(lim, 22)).join('').trim() || '新闻';
+  }
+
+  return candidate || '新闻';
+}
+
+function rewriteNewsSummary(article) {
+  let raw = String(article.zhSummary || article.summary || '');
+  if (!raw.trim() && article.rawContent) raw = article.rawContent;
+  if (!raw.trim()) return '';
+
+  raw = raw.replace(/\s*\(?(?:Photo|Image|Picture|Credit|Source|AP|Reuters|AFP|Getty|EPA|Bloomberg)[^。)（]*?\)?\.?\s*/g, '');
+  raw = raw.replace(/\s*Continue reading\.\.\..*$/gi, '');
+  raw = raw.replace(/\s*Sign up for.*?email\s*$/gi, '');
+  raw = raw.replace(/\s*Read more\s*$/gi, '');
+  raw = raw.replace(/\s*This article was.*?\.\s*$/gi, '');
+  raw = raw.replace(/^.*?\d{1,2}\s*月\s*\d{1,2}\s*日\s*.*?(消息|报道|讯)[，。、]?\s*/g, '');
+  raw = raw.replace(/^\d{1,2}\s*月\s*\d{1,2}\s*日[，,]\s*/g, '');
+  raw = raw.replace(/^[\u4e00-\u9fff\w]+?(?:获悉|讯)[，,:]\s*/g, '');
+  raw = raw.replace(/^据[\u4e00-\u9fff]*?\d{1,2}月\d{1,2}日[报道称]+\s*/g, '');
+  raw = raw.replace(/本文约\d+字.*?$/gm, '');
+  raw = raw.replace(/建议阅读[^。]*。/g, '');
+  raw = raw.replace(/[（(]\s*作者[：:][^)）]+[)）]/g, '');
+  raw = raw.replace(/[（(]\s*编辑[：:][^)）]+[)）]/g, '');
+  raw = raw.replace(/图源[：:][^。]*。/g, '');
+  raw = raw.replace(/^[-–—|•\s]+/g, '').trim();
+
+  let s = raw;
+  const totalRawLen = [...raw].length;
+
+  if (totalRawLen < 45 && article.rawContent && [...article.rawContent].length > totalRawLen) {
+    let rc = String(article.rawContent).trim();
+    rc = rc.replace(/^.*?\d{1,2}\s*月\s*\d{1,2}\s*日\s*.*?(消息|报道|讯)[，。、]?\s*/g, '');
+    rc = rc.replace(/^\d{1,2}\s*月\s*\d{1,2}\s*日[，,]\s*/g, '');
+    rc = rc.replace(/^[\u4e00-\u9fff\w]+?(?:获悉|讯)[，,:]\s*/g, '');
+    rc = rc.replace(/^[-–—|•\s]+/g, '').trim();
+    if ([...rc].length > totalRawLen + 5) s = rc;
+  }
+
+  const chars = [...s];
+  if (chars.length <= 70) return s;
+
+  const sentenceEnds = ['。', '！', '？', '；'];
+  const sentences = [];
+  let currentStart = 0;
+  for (let i = 0; i < chars.length; i++) {
+    if (sentenceEnds.indexOf(chars[i]) >= 0) {
+      sentences.push(chars.slice(currentStart, i + 1).join(''));
+      currentStart = i + 1;
+    }
+  }
+  if (currentStart < chars.length) sentences.push(chars.slice(currentStart).join(''));
+
+  let result = '';
+  for (const sent of sentences) {
+    const nextLen = [...result + sent].length;
+    if (nextLen <= 70) { result += sent; }
+    else if ([...result].length >= 45) break;
+    else {
+      const needed = 45 - [...result].length;
+      const charsNeeded = Math.min(needed + 5, [...sent].length);
+      const clauseMatch = sent.slice(0, Math.max(charsNeeded, 10));
+      const lastClause = Math.max(clauseMatch.lastIndexOf('，'), clauseMatch.lastIndexOf('、'));
+      if (lastClause > 3 && [...result + clauseMatch.slice(0, lastClause)].length <= 70) {
+        result += clauseMatch.slice(0, lastClause) + '。';
+      } else {
+        result += sent.slice(0, Math.min(charsNeeded, [...sent].length));
+        if (!result.endsWith('。') && !result.endsWith('！') && !result.endsWith('？')) result += '。';
+      }
+      break;
+    }
+  }
+
+  if ([...result].length < 45 && sentences.length > 0) {
+    if (sentences[0] && [...sentences[0]].length > 75) {
+      const first = [...sentences[0]];
+      const cut = first.slice(0, 70).join('');
+      const lastP = Math.max(cut.lastIndexOf('。'), cut.lastIndexOf('！'), cut.lastIndexOf('？'), cut.lastIndexOf('；'), cut.lastIndexOf('，'));
+      if (lastP > 15) result = first.slice(0, lastP + 1).join('');
+      else result = first.slice(0, 65).join('') + '。';
+    } else {
+      result = sentences.slice(0, Math.min(2, sentences.length)).join('');
+      if ([...result].length > 75) result = sentences[0];
+    }
+  }
+
+  result = result.replace(/\s{2,}/g, ' ').trim();
+  return result || s.replace(/\s{2,}/g, ' ').trim();
+}
+
 function translationCacheKey(article) {
   return sha1([TRANSLATION_PROVIDER, article.language, article.source, article.url || article.title, article.title, article.summary].join('|'));
 }
@@ -880,7 +1094,17 @@ async function translateArticle(article) {
   }
 
   if (TRANSLATION_PROVIDER === 'openai' && !OPENAI_API_KEY) {
-    console.log('translation provider openai is enabled but OPENAI_API_KEY is missing; falling back to original text');
+    return {
+      ...article,
+      originalTitle: article.title,
+      originalSummary: article.summary,
+      zhTitle: article.title,
+      zhSummary: article.summary,
+      translationStatus: 'missing-key',
+    };
+  }
+
+  if (TRANSLATION_PROVIDER === 'gemini' && !GEMINI_API_KEY && !OPENAI_API_KEY) {
     return {
       ...article,
       originalTitle: article.title,
@@ -892,7 +1116,6 @@ async function translateArticle(article) {
   }
 
   if (TRANSLATION_PROVIDER === 'deepl' && !DEEPL_API_KEY) {
-    console.log('translation provider deepl is enabled but DEEPL_API_KEY is missing; falling back to original text');
     return {
       ...article,
       originalTitle: article.title,
@@ -1001,6 +1224,44 @@ async function translateWithProvider(article) {
     };
   }
 
+  if (TRANSLATION_PROVIDER === 'gemini') {
+    const apiKey = GEMINI_API_KEY || OPENAI_API_KEY;
+    const baseUrl = GEMINI_API_BASE || OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com';
+    const model = GEMINI_MODEL;
+    if (!apiKey) throw new Error('GEMINI_API_KEY missing');
+    const isOpenAICompat = baseUrl.includes('/v1');
+    let url, headers, body;
+    if (isOpenAICompat) {
+      url = `${baseUrl}/chat/completions`;
+      headers = { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' };
+      body = JSON.stringify({
+        model, temperature: 0,
+        messages: [
+          { role: 'system', content: '将英文/法文新闻改写成简体中文。标题一行短中文(12-18字)，摘要45-75字。只返回JSON：{"title":"...","summary":"..."}' },
+          { role: 'user', content: JSON.stringify({ title: article.title, summary: article.summary, source: article.source }) },
+        ],
+      });
+    } else {
+      url = `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      headers = { 'content-type': 'application/json' };
+      body = JSON.stringify({
+        contents: [{ parts: [{ text: `将英文/法文新闻改写成简体中文。标题：一行短中文(12-18字)，保留核心信息。摘要：45-75字中文，回答：发生了什么、谁相关、影响。\n\n原文标题：${article.title}\n原文摘要：${article.summary}\n来源：${article.source}\n\n只返回JSON：{"title":"...","summary":"..."}` }] }],
+        generationConfig: { temperature: 0 },
+      });
+    }
+    const response = await fetch(url, { method: 'POST', headers, body });
+    if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
+    const data = await response.json();
+    let content = '';
+    if (isOpenAICompat) content = data?.choices?.[0]?.message?.content || '';
+    else content = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
+    const parsed = parseJsonObject(content) || {};
+    return {
+      zhTitle: normalizeText(parsed.title || parsed.zhTitle || article.title),
+      zhSummary: normalizeText(parsed.summary || parsed.zhSummary || article.summary),
+    };
+  }
+
   throw new Error(`Unsupported TRANSLATION_PROVIDER=${TRANSLATION_PROVIDER}`);
 }
 
@@ -1019,6 +1280,44 @@ function parseJsonObject(text) {
   }
 }
 
+function evaluateNewsItemQuality(item) {
+  const title = item.zhTitle || '';
+  const summary = item.zhSummary || '';
+  const tLen = [...title].length;
+  const sLen = [...summary].length;
+  const reasons = { title: [], summary: [] };
+  const danglingInvestment = /(计划|拟|将|准备|继续|开始|推进|加大|扩大)投资$/;
+
+  if (!title.trim()) { reasons.title.push('EMPTY_TITLE'); }
+  if (tLen > 24) reasons.title.push('TOO_LONG(' + tLen + ')');
+
+  const badEndings = /(的|为|在|向|与|和|及|将|以|从|对|把|被|让|给|由|于|关于|成为|进行|宣布|宣布将|认定|推出|属于|位于|进入|使用|要求|开始)$/;
+  if (badEndings.test(title)) reasons.title.push('BAD_END');
+  if (danglingInvestment.test(title)) reasons.title.push('DANGLING_INVESTMENT');
+  if (/[|｜]\s*(What|Opinion|Update|Live)/i.test(title)) reasons.title.push('RSS_TAIL');
+  if (/\d+$/.test(title)) reasons.title.push('DIGIT_END');
+  if (/(让|使|令|帮助|助)[^，。！？，\s]{1,8}$/.test(title)) reasons.title.push('DANGLING_CAUSATIVE');
+  if (/^[\d.万元%$€¥\s]+$/.test(title.replace(/[，,、\s]/g, '')) || /^[预]?(售|约|计)\s/.test(title)) reasons.title.push('NO_SUBJECT');
+
+  const quotedParts = (title.match(/["「『""』」][^"「『""』」]+["「『""』」]/g) || []);
+  const quotedLen = quotedParts.reduce((s, p) => s + [...p].length, 0);
+  if (tLen > 0 && quotedLen / tLen > 0.45 && !title.match(/[公司集团全球国际政府美国中国日本欧盟]/)) reasons.title.push('LOW_INFO_QUOTE');
+
+  if (!summary.trim()) reasons.summary.push('EMPTY_SUMMARY');
+  if (sLen < 45) reasons.summary.push('SHORT_SUMMARY(' + sLen + ')');
+  if (sLen > 75) reasons.summary.push('LONG_SUMMARY(' + sLen + ')');
+  if (/(Read more|Continue reading)/i.test(summary)) reasons.summary.push('HAS_READMORE');
+  if (/<[^>]+>/.test(summary)) reasons.summary.push('HAS_HTML');
+
+  const titleComplete = reasons.title.length === 0;
+  const summaryComplete = reasons.summary.length === 0;
+  const summaryFallback = !summaryComplete && sLen > 0 && sLen < 45 && reasons.summary.length <= 1;
+
+  const score = titleComplete ? (summaryComplete ? 100 : summaryFallback ? 50 : 30) : 0;
+
+  return { titleComplete, summaryComplete, summaryFallback, titleReason: reasons.title.join(','), summaryReason: reasons.summary.join(','), score, titleLen: tLen, summaryLen: sLen };
+}
+
 async function buildNewsSnapshot(now) {
   const key = `news:${formatDateKey(now)}:${Math.floor(now.getTime() / (NEWS_REFRESH_MINUTES * 60 * 1000))}`;
   if (runtime.cachedSnapshots.has(key)) return runtime.cachedSnapshots.get(key);
@@ -1030,33 +1329,117 @@ async function buildNewsSnapshot(now) {
   const selected = selectNewsItems(rawItems, slotKey);
   await recordShownItems(selected, slotKey);
 
-  const translated = [];
-  for (const item of selected) {
-    translated.push(await translateArticle(item));
+  const stats = { rawCandidates: rawItems.length, deduped: 0, evaluated: 0, pass: 0, softPass: 0, rejectTitle: 0, rejectSummary: 0, final: 0, rejects: [] };
+  const processed = [];
+  const seenKeys = new Map();
+
+  function isDuplicate(entry) {
+    const key = (entry.zhTitle || entry.title || '').replace(/[\s]/g, '').toLowerCase().slice(0, 12);
+    if (seenKeys.has(key)) return true;
+    seenKeys.set(key, true);
+    return false;
   }
+
+  const mainPool = [];
+  for (const item of selected) {
+    const result = await translateArticle(item);
+    const lang = String(item.language || '').toLowerCase();
+    const isZh = !lang || lang.startsWith('zh');
+    const isTranslated = ['translated', 'cached'].includes(result.translationStatus);
+    if (isZh || isTranslated) {
+      result.zhTitle = rewriteNewsTitle(result);
+      result.zhSummary = rewriteNewsSummary(result);
+      mainPool.push(result);
+    }
+  }
+
+  if (mainPool.length < NEWS_MAX_ITEMS) {
+    for (const item of rawItems) {
+      const lang = String(item.language || '').toLowerCase();
+      if (!lang || !lang.startsWith('zh')) continue;
+      const key = (item.title || '').replace(/[\s]/g, '').toLowerCase().slice(0, 12);
+      if (seenKeys.has(key)) continue;
+      seenKeys.set(key, true);
+      const entry = { ...item, originalTitle: item.title, originalSummary: item.summary, zhTitle: item.title, zhSummary: item.summary, translationStatus: 'original' };
+      entry.zhTitle = rewriteNewsTitle(entry);
+      entry.zhSummary = rewriteNewsSummary(entry);
+      mainPool.push(entry);
+    }
+  }
+
+  stats.deduped = mainPool.length;
+
+  const passItems = [];
+  const softPassItems = [];
+
+  for (const item of mainPool) {
+    stats.evaluated++;
+    const quality = evaluateNewsItemQuality(item);
+    if (quality.titleComplete && quality.summaryComplete) {
+      passItems.push({ item, quality });
+      stats.pass++;
+    } else if (quality.titleComplete && quality.summaryFallback) {
+      softPassItems.push({ item, quality });
+      stats.softPass++;
+    } else {
+      if (!quality.titleComplete) stats.rejectTitle++;
+      if (!quality.summaryComplete) stats.rejectSummary++;
+      if (stats.rejects.length < 5) {
+        stats.rejects.push({ title: item.zhTitle || item.title || '', source: item.source || '', reason: quality.titleReason || quality.summaryReason || 'QUALITY_FAIL' });
+      }
+    }
+  }
+
+  const final = [];
+  const sourceCount = new Map();
+  function tryAdd(items) {
+    for (const { item } of items) {
+      if (final.length >= NEWS_MAX_ITEMS) break;
+      const src = item.source || '';
+      if ((sourceCount.get(src) || 0) >= 2) continue;
+      sourceCount.set(src, (sourceCount.get(src) || 0) + 1);
+      final.push(item);
+    }
+  }
+
+  tryAdd(passItems);
+  tryAdd(softPassItems);
+
+  if (final.length < NEWS_MAX_ITEMS) {
+    for (const item of mainPool) {
+      if (final.length >= NEWS_MAX_ITEMS) break;
+      const src = item.source || '';
+      if ((sourceCount.get(src) || 0) >= 2) continue;
+      sourceCount.set(src, (sourceCount.get(src) || 0) + 1);
+      final.push(item);
+    }
+  }
+
+  stats.final = final.length;
+  runtime._newsPipelineStats = stats;
 
   const translationNotice = TRANSLATION_PROVIDER === 'none'
     ? '翻译未启用'
-    : ((TRANSLATION_PROVIDER === 'openai' && !OPENAI_API_KEY) || (TRANSLATION_PROVIDER === 'deepl' && !DEEPL_API_KEY))
+    : ((TRANSLATION_PROVIDER === 'openai' && !OPENAI_API_KEY) || (TRANSLATION_PROVIDER === 'deepl' && !DEEPL_API_KEY) || (TRANSLATION_PROVIDER === 'gemini' && !GEMINI_API_KEY && !OPENAI_API_KEY))
       ? '翻译未配置'
       : '';
   const news = {
     translationProvider: TRANSLATION_PROVIDER,
     translationNotice,
     updatedAt: new Date().toISOString(),
-    items: translated.map((item) => ({
+    items: final.map((item) => ({
       originalTitle: item.originalTitle,
       originalSummary: item.originalSummary,
-      zhTitle: item.zhTitle,
-      zhSummary: item.zhSummary,
+      zhTitle: rewriteNewsTitle(item),
+      zhSummary: rewriteNewsSummary(item),
       sourceUrl: item.url,
       source: item.source,
       category: item.category,
       publishedAt: item.publishedAt,
       translationStatus: item.translationStatus,
     })),
-    frameId: `news:${sha1(translated.map((item) => [item.url, item.originalTitle, item.zhTitle].join('|')).join('||'))}`,
-    title: translated[0] ? `${translated[0].source} / ${translated[0].category}` : 'NEWS',
+    frameId: `news:${sha1(final.map((item) => [item.url, item.originalTitle, item.zhTitle].join('|')).join('||'))}`,
+    title: final[0] ? `${final[0].source} / ${final[0].category}` : 'NEWS',
     slotKey,
   };
 
@@ -1311,18 +1694,23 @@ function updateLibraryStateForPhoto(snapshot, imageIndex) {
 
 function selectPhotoSnapshot(now, imageIndex = runtime.imageIndex || []) {
   const t = getWallTime(now, TIMEZONE);
+  const resolved = resolveDisplayMode(t, TIMEZONE);
   const dateKey = `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
   const inDayWindow = t.hour >= 10 && t.hour < 19;
-  const mode = inDayWindow && t.minute >= 30 ? 'news' : 'photo';
   const slotIndex = inDayWindow ? ((t.hour - 10) * 2) + (t.minute >= 30 ? 1 : 0) : 0;
   const nextSwitchAt = computeNextSwitchAt(now);
 
-  if (mode === 'news') {
-    return { mode, slotIndex, slotKey: `${dateKey}T${String(t.hour).padStart(2, '0')}:30`, nextSwitchAt };
-  }
+  return { mode: resolved.mode, slotIndex, slotKey: resolved.slotKey, nextSwitchAt };
+}
 
-  const slotKey = inDayWindow ? `${dateKey}T${String(t.hour).padStart(2, '0')}:00` : `${dateKey}:offhours`;
-  return { mode, slotIndex, slotKey, nextSwitchAt };
+function resolveDisplayMode(wallTime, timeZone = TIMEZONE) {
+  const dateKey = `${wallTime.year}-${String(wallTime.month).padStart(2, '0')}-${String(wallTime.day).padStart(2, '0')}`;
+  const inWindow = wallTime.hour >= 10 && wallTime.hour < 19;
+  const mode = inWindow && wallTime.minute >= 30 ? 'news' : 'photo';
+  const slotKey = inWindow
+    ? `${dateKey}T${String(wallTime.hour).padStart(2, '0')}:${wallTime.minute >= 30 ? '30' : '00'}`
+    : `${dateKey}:offhours`;
+  return { mode, slotKey };
 }
 
 function computeNextSwitchAt(now) {
@@ -1393,7 +1781,6 @@ async function buildPhotoSnapshot(now) {
     imageTheme: hasImage ? selection.entry.theme : '',
     imagePath: hasImage ? selection.entry.processedPngPath : null,
     epfPath: hasImage ? selection.entry.epfPath : null,
-    frame: await renderPhotoFrame(selection, now),
   };
 }
 
@@ -1428,81 +1815,72 @@ function categoryStyle(category) {
 }
 
 function renderNewsSvg(news, now) {
-  const items = (news.items || []).slice(0, NEWS_MAX_ITEMS);
+  const items = (news.items || []).slice(0, 6);
   if (!items.length) {
     return createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT,
       `<rect width="100%" height="100%" fill="#ffffff"/>
        <text x="20" y="240" font-family="${escapeXml(FONT_STACK)}" font-size="24" fill="#000000">暂无新闻</text>`);
   }
 
-  const HEADER_H = NEWS_HEADER_HEIGHT;
-  const FOOTER_H = NEWS_FOOTER_HEIGHT;
-  const CONTENT_H = FRAME_HEIGHT - HEADER_H - FOOTER_H;
-  const itemHeight = Math.floor(CONTENT_H / items.length);
-  const summaryMaxLines = items.length >= 6 ? 2 : 3;
+  const HEADER_H = 36;
+  const FOOTER_H = 18;
+  const MARGIN = 18;
+  const COL_GAP = 16;
+  const ROW_GAP = 10;
+  const cardW = Math.floor((FRAME_WIDTH - MARGIN * 2 - COL_GAP) / 2);
+  const cardH = Math.floor((FRAME_HEIGHT - HEADER_H - FOOTER_H - ROW_GAP * 2 - 8) / 3);
+  const badgeFont = 10;
+  const titleFont = 19;
+  const summaryFont = 14;
 
   const boxes = [];
   boxes.push(`<rect x="0" y="0" width="${FRAME_WIDTH}" height="${FRAME_HEIGHT}" fill="#ffffff"/>`);
 
   // Header
   boxes.push(`<rect x="0" y="0" width="${FRAME_WIDTH}" height="${HEADER_H}" fill="#000000"/>`);
-  boxes.push(`<text x="12" y="26" font-family="${escapeXml(FONT_STACK)}" font-size="18" font-weight="700" fill="#ffffff">NEWS / 简报</text>`);
-  boxes.push(`<text x="400" y="26" text-anchor="middle" font-family="${escapeXml(FONT_STACK)}" font-size="14" fill="#ffffff">${escapeXml(formatDateTime(now))}</text>`);
-  const nextLabel = news.nextSwitchAt ? formatLocalTimeLabel(news.nextSwitchAt) : '';
-  if (nextLabel) {
-    boxes.push(`<text x="${FRAME_WIDTH - 12}" y="18" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="11" fill="#ffffff">下次切换</text>`);
-    boxes.push(`<text x="${FRAME_WIDTH - 12}" y="32" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="11" fill="#ffffff">${escapeXml(nextLabel)}</text>`);
-  }
+  boxes.push(`<text x="14" y="25" font-family="${escapeXml(FONT_STACK)}" font-size="16" font-weight="700" fill="#ffffff">简报 NEWS</text>`);
+  boxes.push(`<text x="${FRAME_WIDTH - 14}" y="25" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="12" fill="#ffffff">${escapeXml(formatDateTime(now))}</text>`);
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    const y0 = HEADER_H + i * itemHeight;
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x0 = MARGIN + col * (cardW + COL_GAP);
+    const y0 = HEADER_H + 4 + row * (cardH + ROW_GAP);
 
-    // Badge
     const style = categoryStyle(item.category);
     const label = CATEGORY_LABELS[String(item.category || '').toLowerCase()] || item.category || '综合';
-    const badgeW = Math.min(52, 16 + label.length * 11);
+    const badgeW = 7 + label.length * 8;
     const badgeH = 14;
-    boxes.push(`<rect x="12" y="${y0 + 4}" width="${badgeW}" height="${badgeH}" fill="${style.bg}" rx="2"/>`);
-    boxes.push(`<text x="${12 + badgeW / 2}" y="${y0 + 4 + 11}" text-anchor="middle" font-family="${escapeXml(FONT_STACK)}" font-size="9" font-weight="700" fill="${style.text}">${escapeXml(label)}</text>`);
 
-    // Source
-    const srcX = 12 + badgeW + 6;
-    boxes.push(`<text x="${srcX}" y="${y0 + 4 + 11}" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#000000">${escapeXml(truncateText(item.source, 14))}</text>`);
+    // Card background
+    boxes.push(`<rect x="${x0 - 2}" y="${y0}" width="${cardW}" height="${cardH}" fill="#f6f6f6" rx="4"/>`);
 
-    // Translation status
-    // Translation status badge (keep it small)
-    if (item.translationStatus === 'disabled' || item.translationStatus === 'missing-key') {
-      boxes.push(`<text x="${FRAME_WIDTH - 12}" y="${y0 + 4 + 11}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="8" fill="#cc0000">未译</text>`);
-    } else if (item.translationStatus === 'failed') {
-      boxes.push(`<text x="${FRAME_WIDTH - 12}" y="${y0 + 4 + 11}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="8" fill="#cc0000">翻译失败</text>`);
-    }
-
-    // Title — strictly one line, force truncate at 32 cols with …
-    const titleText = truncateByWidth(item.zhTitle, 32);
-    const titleY = y0 + 4 + badgeH + 5 + 12;
-    boxes.push(`<text x="12" y="${titleY}" font-family="${escapeXml(FONT_STACK)}" font-size="12" font-weight="700" fill="#000000">${escapeXml(titleText)}</text>`);
-
-    // Summary — strictly max 2-3 lines (start 14px below title baseline)
-    const sumBase = titleY + 14;
-    const sumLines = wrapText(item.zhSummary, 48).slice(0, summaryMaxLines);
-    for (let li = 0; li < sumLines.length; li++) {
-      boxes.push(`<text x="12" y="${sumBase + li * 13}" font-family="${escapeXml(FONT_STACK)}" font-size="10" fill="#000000">${escapeXml(sumLines[li])}</text>`);
-    }
-
-    // Time
+    // Row 1: badge + source + time
+    boxes.push(`<rect x="${x0 + 2}" y="${y0 + 3}" width="${badgeW}" height="${badgeH}" fill="${style.bg}" rx="2"/>`);
+    boxes.push(`<text x="${x0 + 2 + badgeW / 2}" y="${y0 + 3 + 11}" text-anchor="middle" font-family="${escapeXml(FONT_STACK)}" font-size="${badgeFont}" font-weight="700" fill="${style.text}">${escapeXml(label)}</text>`);
+    boxes.push(`<text x="${x0 + 2 + badgeW + 5}" y="${y0 + 3 + 11}" font-family="${escapeXml(FONT_STACK)}" font-size="10" fill="#888888">${escapeXml(truncateText(item.source, 8))}</text>`);
     const timeText = formatDateTime(item.publishedAt).slice(11, 16);
-    boxes.push(`<text x="${FRAME_WIDTH - 12}" y="${y0 + itemHeight - 4}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="8" fill="#666666">${escapeXml(timeText)}</text>`);
+    boxes.push(`<text x="${x0 + cardW - 6}" y="${y0 + 3 + 11}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#aaaaaa">${escapeXml(timeText)}</text>`);
+
+    // Row 2: title — rewritten one-line, no ellipsis
+    const titleMax = Math.floor((cardW - 12) / (titleFont * 0.55));
+    const titleText = fitTextWidth(item.zhTitle, titleMax);
+    boxes.push(`<text x="${x0 + 4}" y="${y0 + 3 + badgeH + 5 + titleFont}" font-family="${escapeXml(FONT_STACK)}" font-size="${titleFont}" font-weight="700" fill="#111111">${escapeXml(titleText)}</text>`);
+
+    // Row 3-4: summary — 2 lines max
+    const sumMax = Math.floor((cardW - 12) / (summaryFont * 0.56));
+    const sumLines = wrapText(item.zhSummary, sumMax).slice(0, 2);
+    for (let li = 0; li < sumLines.length; li++) {
+      boxes.push(`<text x="${x0 + 4}" y="${y0 + 3 + badgeH + 5 + titleFont + 5 + (li + 1) * (summaryFont + 2)}" font-family="${escapeXml(FONT_STACK)}" font-size="${summaryFont}" fill="#444444">${escapeXml(sumLines[li])}</text>`);
+    }
   }
 
   // Footer
   boxes.push(`<rect x="0" y="${FRAME_HEIGHT - FOOTER_H}" width="${FRAME_WIDTH}" height="${FOOTER_H}" fill="#000000"/>`);
-  const sources = [...new Set(items.map((item) => item.source).filter(Boolean))].slice(0, 4).join(' · ');
-  const updateText = `更新 ${formatDateTime(now).slice(11, 16)}`;
-  const footerLeft = sources ? `${sources} · ${updateText}` : updateText;
-  const footerRight = news.translationNotice || (TRANSLATION_PROVIDER === 'none' ? '翻译未启用' : '已启用翻译');
-  boxes.push(`<text x="12" y="${FRAME_HEIGHT - 5}" font-family="${escapeXml(FONT_STACK)}" font-size="10" fill="#ffffff">${escapeXml(footerLeft)}</text>`);
-  boxes.push(`<text x="${FRAME_WIDTH - 12}" y="${FRAME_HEIGHT - 5}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="10" fill="#ffffff">${escapeXml(footerRight)}</text>`);
+  const ftMsg = news.translationNotice || (TRANSLATION_PROVIDER === 'none' || !TRANSLATION_PROVIDER ? '翻译未启用' : '');
+  boxes.push(`<text x="10" y="${FRAME_HEIGHT - 4}" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#ffffff">${escapeXml(now.toTimeString().slice(0,5))}</text>`);
+  if (ftMsg) boxes.push(`<text x="${FRAME_WIDTH - 10}" y="${FRAME_HEIGHT - 4}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#ffffff">${escapeXml(ftMsg)}</text>`);
 
   return createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT, boxes.join(''));
 }
@@ -1512,11 +1890,20 @@ async function renderPhotoFrame(selection, now) {
     return renderPlaceholderFrame('NO IMAGE', now);
   }
 
-  const { data, info } = await sharp(selection.entry.processedPngPath)
-    .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
-    .flatten({ background: '#ffffff' })
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  const { data, info } = await (PHOTO_QUANT_MODE === 'clean'
+    ? sharp(selection.entry.processedPngPath)
+        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill', kernel: 'lanczos3' })
+        .flatten({ background: '#ffffff' })
+        .modulate({ brightness: 1.03, saturation: 1.15 })
+        .blur(0.5)
+        .raw()
+        .toBuffer({ resolveWithObject: true })
+    : sharp(selection.entry.processedPngPath)
+        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
+        .flatten({ background: '#ffffff' })
+        .raw()
+        .toBuffer({ resolveWithObject: true }));
+
   return imageToFrameBuffer(data, info.width, info.height, info.channels);
 }
 
@@ -1706,7 +2093,13 @@ async function getContentForNow(now) {
   const photo = await buildPhotoSnapshot(now);
   const cacheKey = photo.frameId;
   if (!runtime.cachedFrames.has(cacheKey)) {
-    const frame = buildFrameBuffer(photo.frame);
+    const selection = { entry: null, theme: photo.title || null, kind: photo.kind || 'shot' };
+    if (photo.imagePath && fs.existsSync(photo.imagePath)) {
+      selection.entry = { processedPngPath: photo.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT };
+    }
+    const rawFrame = await renderPhotoFrame(selection, now);
+    const frame = buildFrameBuffer(rawFrame);
+    runtime.renderCount++;
     runtime.cachedFrames.set(cacheKey, { frame, payload: photo, snapshot: photo });
   }
   return {
@@ -1751,12 +2144,54 @@ async function refreshAhead() {
   }
 }
 
+const PIN_TTL_MS = 30000;
+
+function nowForRequest(req) {
+  if (runtime.nowProvider) return runtime.nowProvider();
+  return new Date();
+}
+
+function wallTimeForRequest(req) {
+  return getWallTime(nowForRequest(req), TIMEZONE);
+}
+
+function clientKey(req) {
+  return req.socket.remoteAddress || 'unknown';
+}
+
+function ensureCachedFrame(photo, now) {
+  const k = photo.frameId;
+  if (runtime.cachedFrames.has(k)) return runtime.cachedFrames.get(k).frame;
+  return null;
+}
+
+function getPinnedSnapshot(client) {
+  const entry = runtime.pinnedSnapshots.get(client);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    runtime.pinnedSnapshots.delete(client);
+    return null;
+  }
+  return entry;
+}
+
+function setPinnedSnapshot(client, content) {
+  runtime.pinnedSnapshots.set(client, {
+    frameId: content.snapshot.frameId,
+    mode: content.snapshot.mode,
+    slotKey: content.snapshot.slotKey || content.snapshot.frameId,
+    frame: content.frame,
+    snapshot: content.snapshot,
+    expiresAt: Date.now() + PIN_TTL_MS,
+  });
+}
+
 async function handleRequest(req, res) {
   const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const panelIndex = PANEL_SIZES[Number(parsed.searchParams.get('panel'))]
     ? Number(parsed.searchParams.get('panel'))
     : options.panel;
-  const now = new Date();
+  const now = runtime.nowProvider ? runtime.nowProvider() : new Date();
 
   try {
     if (parsed.pathname === '/') {
@@ -1783,6 +2218,8 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/state.json') {
       const content = await getContentForNow(now);
+      const client = clientKey(req);
+      setPinnedSnapshot(client, content);
       const body = Buffer.from(JSON.stringify({
         ...content.snapshot,
         panelIndex,
@@ -1794,6 +2231,21 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/frame.bin') {
+      const client = clientKey(req);
+      const pinned = getPinnedSnapshot(client);
+      if (pinned) {
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': pinned.frame.length,
+          'X-Frame-Id': pinned.frameId,
+          'X-Frame-Hex-Preview': hexPreview(pinned.frame),
+          'X-Pinned': '1',
+          'X-Frame-Mode': pinned.mode,
+          'X-Frame-Slot': pinned.slotKey,
+        });
+        res.end(pinned.frame);
+        return;
+      }
       const content = await getContentForNow(now);
       const frame = content.frame;
       res.writeHead(200, {
@@ -1801,6 +2253,8 @@ async function handleRequest(req, res) {
         'Content-Length': frame.length,
         'X-Frame-Id': content.snapshot.frameId,
         'X-Frame-Hex-Preview': hexPreview(frame),
+        'X-Frame-Mode': content.snapshot.mode,
+        'X-Frame-Slot': content.snapshot.slotKey || content.snapshot.frameId,
       });
       res.end(frame);
       return;
@@ -1935,8 +2389,142 @@ async function handleRequest(req, res) {
       return;
     }
 
+    if (parsed.pathname === '/api/review.json') {
+      const content = await getContentForNow(now);
+      const s = content.snapshot;
+      const review = { timestamp: now.toISOString(), timezone: TIMEZONE, mode: s.mode, frameId: s.frameId, panelIndex, totalImages: (runtime.imageIndex || []).length, imageStatus: s.imageStatus || null, imageTheme: s.imageTheme || null, title: s.title || null, nextSwitchAt: s.nextSwitchAt, nextSwitchLocal: s.nextSwitchLocal, width: FRAME_WIDTH, height: FRAME_HEIGHT, frameSize: content.frame.length };
+      const body = Buffer.from(JSON.stringify(review, null, 2));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      res.end(body);
+      return;
+    }
+
+    if (parsed.pathname === '/debug/news-review-6.png' || parsed.pathname === '/debug/news.png') {
+      const news = await buildNewsSnapshot(now);
+      const svg = renderNewsSvg({ ...news, nextSwitchAt: computeNextSwitchAt(now) }, now);
+      const png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).png().toBuffer();
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
+      res.end(png);
+      return;
+    }
+
+    if (parsed.pathname === '/debug/photo-review.png' || parsed.pathname === '/debug/photo.png') {
+      const photo = await buildPhotoSnapshot(now);
+      let png;
+      if (photo.imagePath && fs.existsSync(photo.imagePath)) {
+        png = await sharp(photo.imagePath).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).png().toBuffer();
+      } else {
+        const svg = createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT, `<rect width="100%" height="100%" fill="#ffffff"/><text x="40" y="240" font-family="${escapeXml(FONT_STACK)}" font-size="36" font-weight="700" fill="#000000">NO IMAGE</text><text x="40" y="300" font-family="${escapeXml(FONT_STACK)}" font-size="18" fill="#000000">${escapeXml(formatDateTime(now))}</text>`);
+        png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).png().toBuffer();
+      }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length, 'X-Frame-Id': photo.frameId });
+      res.end(png);
+      return;
+    }
+
+    if (parsed.pathname === '/debug/photo-before-after.png') {
+      const photo = await buildPhotoSnapshot(now);
+      let png;
+      if (photo.imagePath && fs.existsSync(photo.imagePath)) {
+        const rawData = await sharp(photo.imagePath).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).raw().toBuffer();
+        const afterRaw = Buffer.alloc(FRAME_WIDTH * FRAME_HEIGHT * 4);
+        for (let i = 0; i < FRAME_WIDTH * FRAME_HEIGHT; i++) {
+          const bi = Math.floor(i / 2);
+          const fb = runtime.cachedFrames.get(photo.frameId); const fbuf = fb ? fb.frame.slice(10) : Buffer.alloc(192000, 0x11); const byteVal = i % 2 === 0 ? (fbuf[bi] >> 4) & 0x0F : fbuf[bi] & 0x0F;
+          const c = PALETTE.find(p => p.code === byteVal) || PALETTE[0];
+          const o = i * 4;
+          afterRaw[o] = c.rgb[0]; afterRaw[o+1] = c.rgb[1]; afterRaw[o+2] = c.rgb[2]; afterRaw[o+3] = 255;
+        }
+        png = await sharp({ create: { width: FRAME_WIDTH * 2, height: FRAME_HEIGHT, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } })
+          .composite([
+            { input: rawData, raw: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3 }, left: 0, top: 0 },
+            { input: afterRaw, raw: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 4 }, left: FRAME_WIDTH, top: 0 },
+          ])
+          .png().toBuffer();
+      } else {
+        png = await sharp({ create: { width: FRAME_WIDTH * 2, height: FRAME_HEIGHT, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } })
+          .composite([
+            { input: { create: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3, background: { r: 255, g: 255, b: 255 } } }, left: 0, top: 0 },
+            { input: { create: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3, background: { r: 255, g: 255, b: 255 } } }, left: FRAME_WIDTH, top: 0 },
+          ])
+          .png().toBuffer();
+      }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
+      res.end(png);
+      return;
+    }
+
+        if (parsed.pathname === '/debug/photo-palette.json') {
+      const photo = await buildPhotoSnapshot(now);
+      const cacheKey = photo.frameId;
+      if (!runtime.cachedFrames.has(cacheKey)) {
+        const sel = { entry: null, theme: photo.title || null, kind: photo.kind || 'shot' };
+        if (photo.imagePath && fs.existsSync(photo.imagePath)) { sel.entry = { processedPngPath: photo.imagePath, width: 800, height: 480 }; }
+        const rawFrame = await renderPhotoFrame(sel, now);
+        const frame = buildFrameBuffer(rawFrame);
+        runtime.renderCount++;
+        runtime.cachedFrames.set(cacheKey, { frame, payload: photo, snapshot: photo });
+      }
+      const payload = runtime.cachedFrames.get(cacheKey).frame.slice(10);
+      const counts = {};
+      for (let i = 0; i < payload.length; i++) {
+        counts[String((payload[i] >> 4) & 0x0F)] = (counts[String((payload[i] >> 4) & 0x0F)] || 0) + 1;
+        counts[String(payload[i] & 0x0F)] = (counts[String(payload[i] & 0x0F)] || 0) + 1;
+      }
+      const palette = PALETTE.map(c => ({ code: c.code, name: c.name, pixelCount: counts[String(c.code)] || 0 }));
+      palette.push({ code: 4, name: 'orange(unsupported)', pixelCount: counts['4'] || 0 });
+      palette.push({ code: 7, name: 'reserved', pixelCount: counts['7'] || 0 });
+      const body = Buffer.from(JSON.stringify({ timestamp: now.toISOString(), frameId: photo.frameId, imageName: photo.imageName, width: FRAME_WIDTH, height: FRAME_HEIGHT, totalPixels: FRAME_WIDTH * FRAME_HEIGHT, unsupportedCode4: counts['4'] || 0, palette }, null, 2));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      res.end(body);
+      return;
+    }
+
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/pin-state.json') {
+      const client = clientKey(req);
+      const pin = runtime.pinnedSnapshots.get(client) || null;
+      const body = Buffer.from(JSON.stringify({
+        timestamp: now.toISOString(),
+        client,
+        hasPin: pin !== null,
+        frameId: pin ? pin.frameId : null,
+        mode: pin ? pin.mode : null,
+        slotKey: pin ? pin.slotKey : null,
+        ttlRemainingMs: pin ? pin.expiresAt - Date.now() : 0,
+        totalPins: runtime.pinnedSnapshots.size,
+        renderCount: runtime.renderCount,
+        cachedFrames: runtime.cachedFrames.size,
+      }, null, 2));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      res.end(body);
+      return;
+    }
+
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/clock') {
+      const iso = parsed.searchParams.get('iso');
+      if (iso) {
+        runtime.nowProvider = () => new Date(iso);
+        const r = Buffer.from(JSON.stringify({ set: true, iso }));
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+        res.end(r);
+        return;
+      }
+      if (parsed.searchParams.get('reset') === '1') {
+        runtime.nowProvider = null;
+        const r = Buffer.from(JSON.stringify({ set: false }));
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+        res.end(r);
+        return;
+      }
+      const r = Buffer.from(JSON.stringify({ nowProviderActive: runtime.nowProvider !== null, serverTime: new Date().toISOString() }));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+      res.end(r);
+      return;
+    }
+
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Not found');
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+res.end('Not found');
   } catch (error) {
     const body = Buffer.from(JSON.stringify({ error: error.message }, null, 2));
     console.log(`request failed ${parsed.pathname}: ${error.stack || error.message}`);
@@ -2002,4 +2590,6 @@ module.exports = {
   computeNextSwitchAt,
   selectPhotoSnapshot,
   imageToFrameBuffer,
-};
+};
+
+

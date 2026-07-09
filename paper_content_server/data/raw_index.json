@@ -1,0 +1,21 @@
+[
+  {
+    "id": "c7a7d3bc2f605fb97c4f6996287b3b4e212f8038",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/f/fc/Hyatt_Regency_Embarcadero_Atrium%2C_San_Francisco%2C_US.jpg",
+    "title": "Hyatt Regency Embarcadero Atrium, San Francisco, US",
+    "sourceType": "wikimedia_commons",
+    "source": "Wikimedia Commons",
+    "theme": "cinematic",
+    "hash": "617671620d07b48dcadb6590b555259b898d534a",
+    "rawPath": "data/raw_images/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.jpeg",
+    "width": 800,
+    "height": 480,
+    "format": "jpeg",
+    "downloadedAt": "2026-07-08T12:58:58.282Z",
+    "status": "downloaded",
+    "metadata": {
+      "pageId": 169788509,
+      "description": "Hyatt Regency Atrium San Francisco interior architecture"
+    }
+  }
+]

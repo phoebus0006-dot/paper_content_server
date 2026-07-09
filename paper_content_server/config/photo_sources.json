@@ -1,75 +1,36 @@
 {
   "sources": [
     {
+      "type": "nasa",
+      "enabled": true,
+      "queries": [
+        { "url": "https://images-assets.nasa.gov/image/iss070e023460/iss070e023460~orig.jpg", "theme": "wide_shot", "title": "ISS Earth View", "source": "NASA" },
+        { "url": "https://images-assets.nasa.gov/image/PIA26250/PIA26250~orig.jpg", "theme": "wide_shot", "title": "Hubble Deep Field", "source": "NASA" },
+        { "url": "https://images-assets.nasa.gov/image/GSFC_20171208_Archive_e000292/GSFC_20171208_Archive_e000292~orig.jpg", "theme": "night", "title": "Northern Lights from Space", "source": "NASA" },
+        { "url": "https://images-assets.nasa.gov/image/PIA24550/PIA24550~orig.jpg", "theme": "wide_shot", "title": "Mars Panorama", "source": "NASA" },
+        { "url": "https://images-assets.nasa.gov/image/GSFC_20171208_Archive_e000263/GSFC_20171208_Archive_e000263~orig.jpg", "theme": "wide_shot", "title": "Sunrise from ISS", "source": "NASA" },
+        { "url": "https://images-assets.nasa.gov/image/NHQ-2023-022-ISS/nhq202302200156~orig.jpg", "theme": "wide_shot", "title": "Earth from ISS", "source": "NASA" },
+        { "url": "https://images-assets.nasa.gov/image/GSFC_20171208_Archive_e000211/GSFC_20171208_Archive_e000211~orig.jpg", "theme": "wide_shot", "title": "Ocean and Clouds", "source": "NASA" },
+        { "url": "https://images-assets.nasa.gov/image/PIA25363/PIA25363~orig.jpg", "theme": "wide_shot", "title": "Jupiter from James Webb", "source": "NASA" },
+        { "url": "https://images-assets.nasa.gov/image/PIA08653/PIA08653~orig.jpg", "theme": "night", "title": "Earth at Night", "source": "NASA" }
+      ]
+    },
+    {
       "type": "wikimedia_commons",
       "enabled": true,
       "queries": [
-        { "q": "cinematic lighting film still", "theme": "cinematic" },
-        { "q": "storyboard film composition", "theme": "storyboard" },
-        { "q": "wide shot landscape photography", "theme": "wide_shot" },
-        { "q": "portrait photography studio lighting", "theme": "portrait" },
-        { "q": "night scene city lights photography", "theme": "night" },
-        { "q": "backlight silhouette photography", "theme": "backlight" },
-        { "q": "vivid color photography composition", "theme": "color" },
-        { "q": "motion blur photography action", "theme": "motion" }
+        { "q": "landscape photography national park", "theme": "wide_shot" },
+        { "q": "architecture photography building exterior", "theme": "cinematic" },
+        { "q": "nature landscape mountain valley", "theme": "wide_shot" },
+        { "q": "historic building architecture monument", "theme": "cinematic" },
+        { "q": "museum interior gallery exhibition", "theme": "cinematic" },
+        { "q": "space astronomy telescope nebula", "theme": "night" },
+        { "q": "botanical garden flower plant nature", "theme": "color" },
+        { "q": "city architecture urban skyline", "theme": "cinematic" }
       ],
-      "limitPerQuery": 2,
+      "limitPerQuery": 1,
       "minWidth": 800,
       "minHeight": 480
-    },
-    {
-      "type": "internet_archive",
-      "enabled": true,
-      "queries": [
-        { "q": "cinematic lighting", "theme": "cinematic" },
-        { "q": "storyboard", "theme": "storyboard" },
-        { "q": "landscape photograph", "theme": "wide_shot" },
-        { "q": "portrait photograph", "theme": "portrait" },
-        { "q": "night photograph", "theme": "night" }
-      ],
-      "limitPerQuery": 3
-    },
-    {
-      "type": "europeana",
-      "enabled": false,
-      "apiKey": "",
-      "queries": [
-        { "q": "photography cinematic", "theme": "cinematic" },
-        { "q": "photography portrait", "theme": "portrait" },
-        { "q": "photography night", "theme": "night" }
-      ],
-      "limitPerQuery": 3
-    },
-    {
-      "type": "rss_images",
-      "enabled": false,
-      "feeds": [
-        { "url": "https://example.com/feed.xml", "theme": "cinematic" }
-      ]
-    },
-    {
-      "type": "url_list",
-      "enabled": true,
-      "urls": [
-        { "url": "https://picsum.photos/seed/mountain1/1200/800", "theme": "wide_shot", "title": "Mountain landscape 1", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/oceanview/1200/800", "theme": "wide_shot", "title": "Ocean view", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/urban1/1200/800", "theme": "cinematic", "title": "Urban cinematic 1", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/portrait1/800/1200", "theme": "portrait", "title": "Portrait 1", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/nightcity/1200/800", "theme": "night", "title": "Night cityscape", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/forest1/1200/800", "theme": "wide_shot", "title": "Forest path", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/architecture/1200/800", "theme": "cinematic", "title": "Architecture detail", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/sunset1/1200/800", "theme": "backlight", "title": "Sunset horizon", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/street1/1200/800", "theme": "cinematic", "title": "Street photography", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/colorful1/1200/800", "theme": "color", "title": "Colorful market", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/river1/1200/800", "theme": "wide_shot", "title": "River landscape", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/abstract1/1200/800", "theme": "color", "title": "Abstract colors", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/cityscape/1200/800", "theme": "cinematic", "title": "City skyline", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/dessert1/1200/800", "theme": "wide_shot", "title": "Desert dunes", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/flower1/800/1200", "theme": "color", "title": "Flower macro", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/travel1/1200/800", "theme": "cinematic", "title": "Travel destination", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/motion1/1200/800", "theme": "motion", "title": "Motion blur", "source": "Picsum" },
-        { "url": "https://picsum.photos/seed/landscape1/1200/800", "theme": "wide_shot", "title": "Rolling hills", "source": "Picsum" }
-      ]
     },
     {
       "type": "local_import",
@@ -79,5 +40,7 @@
   ],
   "minImageWidth": 800,
   "minImageHeight": 480,
-  "requestTimeoutMs": 20000
+  "requestTimeoutMs": 20000,
+  "safeDomains": ["images-assets.nasa.gov", "nasa.gov", "wikimedia.org", "wikipedia.org", "upload.wikimedia.org", "api.nasa.gov"],
+  "blocklistWords": ["porn", "nude", "nudity", "naked", "sex", "sexy", "erotic", "adult", "bikini", "lingerie", "nsfw", "xxx", "model", "glamour", "swimsuit", "裸", "色情", "成人", "性感", "比基尼", "内衣", "写真", "私房"]
 }

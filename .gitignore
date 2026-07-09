@@ -1,6 +1,11 @@
 **/node_modules/
 **/.env
-**/data/
+**/.env.*
+**/data/raw_images/
+**/data/processed_images/
+**/data/import_images/
+**/data/quarantine_*/
+**/data/quarantine_*
 **/images/
 **/*.bin
 **/*.log
@@ -8,4 +13,21 @@
 **/*.bak*
 **/__pycache__/
 **/.DS_Store
-
+**/test-*.png
+**/test-*.svg
+testout.txt
+testerr.txt
+srv_final.err
+srv_*.log
+srv_c.log
+codex-*
+git_orig.txt
+# ESP32 hardware config has real WiFi credentials
+E-Paper_ESP32_Driver_Board_Code/
+E-Paper_code/
+ESP32-7in3E6.7z
+ESP32-7in3E6_S3_DuPont/
+ESP32-7in3E6_UNO_Pin_Test/
+ESP32-7in3E6_official/
+Official_7in3e_HAT_Test/
+.codex-trae/
