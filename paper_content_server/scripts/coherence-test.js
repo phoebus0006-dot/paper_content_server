@@ -115,8 +115,23 @@ async function main() {
 
   console.log('Starting server on port ' + PORT + '...');
 
+  var srvEnv = Object.assign({}, process.env, {
+    PORT: String(PORT),
+    TZ: 'Europe/Paris',
+    TRANSLATION_PROVIDER: 'none',
+    PHOTO_QUANT_MODE: 'clean',
+    ENABLE_DEBUG_ROUTES: 'true',
+    DATA_DIR: TMPDIR,
+    NEWS_CACHE_FILE: path.join(TMPDIR, 'news_cache.json'),
+    LIBRARY_STATE_FILE: path.join(TMPDIR, 'library_state.json'),
+    NEWS_ROTATION_FILE: path.join(TMPDIR, 'news_rotation_state.json'),
+    IMAGE_INDEX_FILE: path.join(TMPDIR, 'image_index.json'),
+    FEEDS_FILE: path.join(CWD, 'feeds.json'),
+    CONFIG_FILE: path.join(CWD, 'config.json')
+  });
+
   var server = spawn(process.execPath, [SRV], {
-    env: Object.assign({}, process.env, { PORT: String(PORT), TZ: 'Europe/Paris', TRANSLATION_PROVIDER: 'none', PHOTO_QUANT_MODE: 'clean', ENABLE_DEBUG_ROUTES: 'true', DATA_DIR: TMPDIR }),
+    env: srvEnv,
     cwd: CWD,
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -132,6 +147,24 @@ async function main() {
   clearTimeout(timer);
   if (!started) { console.log('FAIL: could not connect'); server.kill(); try { require('fs').rmdirSync(TMPDIR, { recursive: true }); } catch (e) {} process.exit(1); }
   console.log('Server ready\n');
+
+  // Verify resolved data paths are inside TMPDIR
+  console.log('--- Config Paths ---');
+  try {
+    var cfg = await get(BASE + '/debug/config');
+    var cj = JSON.parse(cfg.b.toString());
+    var pathsOk = true;
+    ['DATA_DIR', 'NEWS_CACHE_FILE', 'LIBRARY_STATE_FILE', 'NEWS_ROTATION_FILE', 'IMAGE_INDEX_FILE'].forEach(function(k) {
+      var v = cj[k] || '';
+      var inTmp = v.indexOf(TMPDIR) === 0;
+      if (!inTmp) pathsOk = false;
+      console.log('  ' + k + '=' + v + ' inTMPDIR=' + inTmp);
+    });
+    check('CONFIG: all resolved paths in TMPDIR', pathsOk);
+  } catch (e) {
+    console.log('  (config check skipped: ' + e.message + ')');
+    check('CONFIG: path check', false);
+  }
 
   try {
     // Case A: 10:29:59 -> 10:30:01

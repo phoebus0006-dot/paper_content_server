@@ -2495,6 +2495,22 @@ async function handleRequest(req, res) {
       res.end(body);
       return;
     }
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/config') {
+      const r = Buffer.from(JSON.stringify({
+        DATA_DIR: DATA_DIR,
+        NEWS_CACHE_FILE: NEWS_CACHE_FILE,
+        LIBRARY_STATE_FILE: LIBRARY_STATE_FILE,
+        NEWS_ROTATION_FILE: NEWS_ROTATION_FILE,
+        IMAGE_INDEX_FILE: IMAGE_INDEX_FILE,
+        FEEDS_FILE: FEEDS_FILE,
+        CONFIG_FILE: process.env.CONFIG_FILE || path.join(ROOT_DIR, 'config.json'),
+      }, null, 2));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+      res.end(r);
+      return;
+    }
+
+
 
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/clock') {
       const iso = parsed.searchParams.get('iso');
@@ -2588,6 +2604,7 @@ module.exports = {
   computeNextSwitchAt,
   selectPhotoSnapshot,
   imageToFrameBuffer,
-};
+};
+
 
 
