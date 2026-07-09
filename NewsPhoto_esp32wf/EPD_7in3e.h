@@ -49,7 +49,11 @@ Color Index
 #define EPD_7IN3E_BLUE    0x5   /// 101
 #define EPD_7IN3E_GREEN   0x6   /// 110
 
-#define EPD_7IN3E_BUSY_TIMEOUT_MS 5000
+// Stage-specific BUSY wait timeouts (milliseconds)
+// Reference: Waveshare 7.3inch e-Paper HAT(E) full refresh ~25s
+#define EPD_7IN3E_INIT_BUSY_TIMEOUT_MS    5000    // reset + power-on
+#define EPD_7IN3E_POWER_BUSY_TIMEOUT_MS   5000    // power on/off sequences
+#define EPD_7IN3E_REFRESH_BUSY_TIMEOUT_MS 40000   // display refresh (~25s + safety margin)
 
 bool EPD_7IN3E_Init(void);
 void EPD_7IN3E_Init_Fast(void);

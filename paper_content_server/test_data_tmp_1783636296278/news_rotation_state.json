@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-09T22:31:49.433Z",
+  "shown": [
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/10/en-direct-guerre-au-moyen-orient-nouvel-entretien-entre-donald-trump-et-benyamin-netanyahou-l-armee-israelienne-a-declare-que-la-campagne-contre-l-iran-n-etait-pas-terminee_6721826_3210.html",
+      "titleHash": "259cec7dd4a4b04e127eb0fd352e9e56bc0ab2f5",
+      "title": "EN DIRECT, guerre au Moyen-Orient : nouvel entretien entre Donald Trump et Benyamin Nétanyahou ; l’armée israélienne a …",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/trump-arch-height-approval.html",
+      "titleHash": "944459dfb1d80c486e99161cf314705e51669b76",
+      "title": "Can Trump’s Arch Be So Tall? A Panel Led by His Allies Tentatively Says Yes.",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/article/2026/07/09/attentats-a-damas-lors-de-la-visite-d-emmanuel-macron-les-autorites-syriennes-affirment-avoir-arrete-les-responsables_6722143_3210.html",
+      "titleHash": "91361a8e1bc968bfd0fc5c1e794c243f9a4e42c5",
+      "title": "Attentats à Damas lors de la visite d’Emmanuel Macron : les autorités syriennes affirment avoir arrêté les responsables",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/08/us/politics/graham-platner-campaign-implosion-maine.html",
+      "titleHash": "1901756240117df2c5260b979658010af5610cfb",
+      "title": "Inside the Implosion of Graham Platner’s Maine Senate Campaign: ‘A Slow-Rolling Disaster’",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/platner-maine-democrats-replacement-candidate.html",
+      "titleHash": "8aee52c9df44985d073805da465f63eb136373db",
+      "title": "Graham Platner’s Exit Sets Off Scramble for New Democratic Senate Candidate in Maine",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/upshot/platner-senate-replacements-history.html",
+      "titleHash": "a072d8e5c1bc0154e31ee808a3ba4767fc88a6e8",
+      "title": "Maine Democrats Hope to Replace Platner as Senate Nominee. Has That Ever Worked?",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.npr.org/2026/07/09/nx-s1-5822534/airline-consolidation-now-rules-the-skies-has-it-been-good-for-passengers",
+      "titleHash": "64837b088655a582117e8bae3dbc1af243555f21",
+      "title": "Airline consolidation now rules the skies. Has it been good for passengers?",
+      "category": "economy",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/societe/article/2026/07/09/la-pauvrete-reste-au-plus-haut-les-inegalites-atteignent-un-nouveau-record_6722140_3224.html",
+      "titleHash": "d4c2070dfe2f17a6a4138ef22bbc66f5e632f6ef",
+      "title": "La pauvreté reste au plus haut, les inégalités atteignent un nouveau record",
+      "category": "economy",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.france24.com/en/un-deeply-concerned-by-ongoing-drone-attack-in-sudan",
+      "titleHash": "8aff63330e542ab3967c7307817277ddf38a376c",
+      "title": "UN 'deeply concerned' by ongoing drone attack in Sudan",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/culture/article/2026/07/09/avec-la-parabole-du-seum-rebecca-chaillon-malaxe-ses-combats-au-theatre_6722137_3246.html",
+      "titleHash": "ff59987687da609aca284897d184e025f004bbc2",
+      "title": "Avec « La Parabole du seum », Rébecca Chaillon malaxe ses combats au théâtre",
+      "category": "culture",
+      "slotKey": "2026-07-09T10:30",
+      "shownAt": "2026-07-09T22:31:44.086Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/10/en-direct-guerre-au-moyen-orient-nouvel-entretien-entre-donald-trump-et-benyamin-netanyahou-l-armee-israelienne-a-declare-que-la-campagne-contre-l-iran-n-etait-pas-terminee_6721826_3210.html",
+      "titleHash": "259cec7dd4a4b04e127eb0fd352e9e56bc0ab2f5",
+      "title": "EN DIRECT, guerre au Moyen-Orient : nouvel entretien entre Donald Trump et Benyamin Nétanyahou ; l’armée israélienne a …",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/trump-arch-height-approval.html",
+      "titleHash": "944459dfb1d80c486e99161cf314705e51669b76",
+      "title": "Can Trump’s Arch Be So Tall? A Panel Led by His Allies Tentatively Says Yes.",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/article/2026/07/09/attentats-a-damas-lors-de-la-visite-d-emmanuel-macron-les-autorites-syriennes-affirment-avoir-arrete-les-responsables_6722143_3210.html",
+      "titleHash": "91361a8e1bc968bfd0fc5c1e794c243f9a4e42c5",
+      "title": "Attentats à Damas lors de la visite d’Emmanuel Macron : les autorités syriennes affirment avoir arrêté les responsables",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/08/us/politics/graham-platner-campaign-implosion-maine.html",
+      "titleHash": "1901756240117df2c5260b979658010af5610cfb",
+      "title": "Inside the Implosion of Graham Platner’s Maine Senate Campaign: ‘A Slow-Rolling Disaster’",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/world/middleeast/palestinian-authority-elections-abbas.html",
+      "titleHash": "42beeb06b69959f0cce05a54dc2b63c498a1db48",
+      "title": "Palestinian Authority Sets Date for First Major Elections in 20 Years",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/09/en-direct-guerre-en-ukraine-des-accords-sur-les-aspects-techniques-sont-encore-necessaires-pour-la-production-des-missiles-patriot-dit-volodymyr-zelensky_6720832_3210.html",
+      "titleHash": "d83939ac71f092473908d9c7576441ff993ebaf9",
+      "title": "EN DIRECT, guerre en Ukraine : des accords sur les « aspects techniques » sont encore nécessaires pour la production de…",
+      "category": "politics",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/travel/help-i-refueled-my-rental-car-but-enterprise-charged-me-anyway.html",
+      "titleHash": "c0b24bdf4d63be9b4dd82e0b55d5f1512904616a",
+      "title": "Help! I Refueled My Rental Car, but Enterprise Charged Me Anyway.",
+      "category": "economy",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/business/grocery-stores-lower-food-prices.html",
+      "titleHash": "efef1ddade24a78026c0fe8bae95d0217c5f5e0a",
+      "title": "Grocery Stores Lower Prices as Consumers Pare Spending",
+      "category": "economy",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/business/oil-shipping-stocks-gas-iran-hormuz.html",
+      "titleHash": "b5526627d22b6961d485b61f556fa7fcc4aabc5c",
+      "title": "Oil Prices Remain Elevated Amid Shipping Traffic Slowdown in Strait of Hormuz",
+      "category": "technology",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/culture/article/2026/07/09/aux-rencontres-de-la-photographie-d-arles-modele-animal-ou-deux-siecles-de-regards-sur-les-betes_6722129_3246.html",
+      "titleHash": "142ab3e69dbe4ccd5f61027fcce1e8681dcd7605",
+      "title": "Aux Rencontres de la photographie d’Arles, « Modèle animal » ou deux siècles de regards sur les bêtes",
+      "category": "culture",
+      "slotKey": "2026-07-09T18:30",
+      "shownAt": "2026-07-09T22:31:46.750Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/live/2026/07/10/en-direct-guerre-au-moyen-orient-nouvel-entretien-entre-donald-trump-et-benyamin-netanyahou-l-armee-israelienne-a-declare-que-la-campagne-contre-l-iran-n-etait-pas-terminee_6721826_3210.html",
+      "titleHash": "259cec7dd4a4b04e127eb0fd352e9e56bc0ab2f5",
+      "title": "EN DIRECT, guerre au Moyen-Orient : nouvel entretien entre Donald Trump et Benyamin Nétanyahou ; l’armée israélienne a …",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/us/politics/trump-arch-height-approval.html",
+      "titleHash": "944459dfb1d80c486e99161cf314705e51669b76",
+      "title": "Can Trump’s Arch Be So Tall? A Panel Led by His Allies Tentatively Says Yes.",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/international/article/2026/07/09/attentats-a-damas-lors-de-la-visite-d-emmanuel-macron-les-autorites-syriennes-affirment-avoir-arrete-les-responsables_6722143_3210.html",
+      "titleHash": "91361a8e1bc968bfd0fc5c1e794c243f9a4e42c5",
+      "title": "Attentats à Damas lors de la visite d’Emmanuel Macron : les autorités syriennes affirment avoir arrêté les responsables",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/08/us/politics/graham-platner-campaign-implosion-maine.html",
+      "titleHash": "1901756240117df2c5260b979658010af5610cfb",
+      "title": "Inside the Implosion of Graham Platner’s Maine Senate Campaign: ‘A Slow-Rolling Disaster’",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    },
+    {
+      "url": "https://www.nytimes.com/2026/07/09/technology/openai-sol-ai.html",
+      "titleHash": "827c335c433db6b1690e4fa9f291fa358148685b",
+      "title": "OpenAI Releases GPT-5.6 Sol, Its Most Powerful AI Model Yet",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    },
+    {
+      "url": "https://www.npr.org/2026/07/09/nx-s1-5886354/epa-heavy-duty-truck-emissions",
+      "titleHash": "e6f1f8770e45b591cadc57113f681a90f0d805a8",
+      "title": "EPA proposes weakening heavy-duty truck pollution rules",
+      "category": "politics",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/economie/article/2026/07/09/les-aides-a-l-agriculture-bio-siphonnees-par-bercy_6722126_3234.html",
+      "titleHash": "084f81a0b70904ec49e958e20d060ca8bcf67318",
+      "title": "Comment le gouvernement siphonne les aides à l’agriculture bio",
+      "category": "economy",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/economie/article/2026/07/09/on-est-traites-comme-des-bagages-dans-les-aeroports-parisiens-defaillances-en-serie-dans-la-prise-en-charge-des-personnes-a-mobilite-reduite_6722120_3234.html",
+      "titleHash": "eb82ea32b632ccd1f3a76f2aba8879d84276249a",
+      "title": "Dans les aéroports parisiens, des personnes à mobilité réduite « traitées comme des bagages » et des assistants de mobi…",
+      "category": "economy",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    },
+    {
+      "url": "https://www.france24.com/en/fifa-world-cup-fake-racism-videos-go-viral-as-players-fans-face-real-abuse",
+      "titleHash": "257b2d9b746b85026cd5dcdfa5793852bce55dbc",
+      "title": "FIFA World Cup: Fake racism videos go viral as players, fans face real abuse",
+      "category": "technology",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    },
+    {
+      "url": "https://www.lemonde.fr/culture/article/2026/07/09/ghost-in-the-shell-sur-prime-video-livre-une-version-fidele-au-manga-original-de-masamune-shirow_6722123_3246.html",
+      "titleHash": "b112392cd6448571c319523b5124d0c8e6dcac26",
+      "title": "« Ghost in the Shell », sur Prime Video, livre une version fidèle au manga original de Masamune Shirow",
+      "category": "culture",
+      "slotKey": "2026-07-09T10:00",
+      "shownAt": "2026-07-09T22:31:49.433Z"
+    }
+  ]
+}

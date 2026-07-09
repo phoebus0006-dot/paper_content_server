@@ -75,9 +75,8 @@ function :  Wait until the busy_pin goes LOW (with timeout)
 parameter:
     timeoutMs: maximum wait time in milliseconds (0 = use default)
 ******************************************************************************/
-static bool EPD_7IN3E_ReadBusyH(unsigned long timeoutMs = 0)
+static bool EPD_7IN3E_ReadBusyH(unsigned long timeoutMs)
 {
-    if (timeoutMs == 0) timeoutMs = EPD_7IN3E_BUSY_TIMEOUT_MS;
     Debug("e-Paper busy H\r\n");
     unsigned long start = millis();
     while (!DEV_Digital_Read(EPD_BUSY_PIN)) {      //LOW: busy, HIGH: idle
@@ -98,7 +97,7 @@ parameter:
 static bool EPD_7IN3E_TurnOnDisplay(void)
 {
     EPD_7IN3E_SendCommand(0x04); // POWER_ON
-    if (!EPD_7IN3E_ReadBusyH()) return false;
+    if (!EPD_7IN3E_ReadBusyH(EPD_7IN3E_POWER_BUSY_TIMEOUT_MS)) return false;
 
     //Second setting 
     EPD_7IN3E_SendCommand(0x06);
@@ -109,11 +108,11 @@ static bool EPD_7IN3E_TurnOnDisplay(void)
 
     EPD_7IN3E_SendCommand(0x12); // DISPLAY_REFRESH
     EPD_7IN3E_SendData(0x00);
-    if (!EPD_7IN3E_ReadBusyH()) return false;
+    if (!EPD_7IN3E_ReadBusyH(EPD_7IN3E_REFRESH_BUSY_TIMEOUT_MS)) return false;
 
     EPD_7IN3E_SendCommand(0x02); // POWER_OFF
     EPD_7IN3E_SendData(0X00);
-    if (!EPD_7IN3E_ReadBusyH()) return false;
+    if (!EPD_7IN3E_ReadBusyH(EPD_7IN3E_POWER_BUSY_TIMEOUT_MS)) return false;
 
     return true;
 }
@@ -125,7 +124,7 @@ parameter:
 bool EPD_7IN3E_Init(void)
 {
     EPD_7IN3E_Reset();
-    if (!EPD_7IN3E_ReadBusyH()) return false;
+    if (!EPD_7IN3E_ReadBusyH(EPD_7IN3E_INIT_BUSY_TIMEOUT_MS)) return false;
     DEV_Delay_ms(30);
 
     EPD_7IN3E_SendCommand(0xAA);    // CMDH
@@ -190,7 +189,7 @@ bool EPD_7IN3E_Init(void)
     EPD_7IN3E_SendData(0x2F);
 
     EPD_7IN3E_SendCommand(0x04);     //PWR on  
-    if (!EPD_7IN3E_ReadBusyH()) return false;
+    if (!EPD_7IN3E_ReadBusyH(EPD_7IN3E_INIT_BUSY_TIMEOUT_MS)) return false;
 
     return true;
 }
@@ -323,7 +322,9 @@ void EPD_7IN3E_Sleep(void)
 {
     EPD_7IN3E_SendCommand(0X02); // DEEP_SLEEP
     EPD_7IN3E_SendData(0x00);
-    EPD_7IN3E_ReadBusyH();
+    if (!EPD_7IN3E_ReadBusyH(EPD_7IN3E_POWER_BUSY_TIMEOUT_MS)) {
+        Debug("e-Paper sleep busy timeout, forcing sleep\n");
+    }
 
     EPD_7IN3E_SendCommand(0x07); // DEEP_SLEEP
     EPD_7IN3E_SendData(0XA5);

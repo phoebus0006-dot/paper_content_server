@@ -2535,9 +2535,26 @@ async function handleRequest(req, res) {
       res.end(r);
       return;
     }
+    
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-short-read') {
+      var buf = Buffer.alloc(192010, 0xAA);
+      buf.write('EPF1', 0, 4, 'ascii');
+      buf.writeUInt16LE(800, 4);
+      buf.writeUInt16LE(480, 6);
+      buf.writeUInt8(49, 8);
+      buf.writeUInt8(1, 9);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': 192010, 'X-Frame-Id': 'test-frame-validation' });
+      // Send only first 100000 bytes and close — simulates network truncation
+      var partial = buf.slice(0, 100000);
+      res.write(partial);
+      res.socket.end();
+      return;
+    }
+
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-ok') {
       var fb2 = runtime.cachedFrames.get(clientKey(req));
-      var buf = fb2 ? fb2.frame : fs.readFileSync('D:\\开发板\\paper_content_server\\data\\processed_images\\c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.epf');
+      var fbAny = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0] : null;
+      var buf = fbAny ? fbAny.frame : Buffer.alloc(192010, 0x11);
       res.writeHead(200, {
         'Content-Type': 'application/octet-stream',
         'Content-Length': buf.length,
@@ -2571,7 +2588,7 @@ async function handleRequest(req, res) {
 
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-short') {
       var buf5 = Buffer.alloc(100, 0x11);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf5.length, 'X-Frame-Id': 'test-frame-short' });
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf5.length, 'X-Frame-Id': 'test-frame-validation' });
       res.end(buf5);
       return;
     }
@@ -2579,7 +2596,7 @@ async function handleRequest(req, res) {
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-bad-magic') {
       var buf6 = Buffer.alloc(192010, 0xFF);
       buf6.write('BAD!', 0, 4, 'ascii');
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf6.length, 'X-Frame-Id': 'test-bad-magic' });
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf6.length, 'X-Frame-Id': 'test-frame-validation' });
       res.end(buf6);
       return;
     }
@@ -2591,7 +2608,7 @@ async function handleRequest(req, res) {
       buf7.writeUInt16LE(567, 6);
       buf7.writeUInt8(49, 8);
       buf7.writeUInt8(1, 9);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf7.length, 'X-Frame-Id': 'test-bad-size' });
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf7.length, 'X-Frame-Id': 'test-frame-validation' });
       res.end(buf7);
       return;
     }
@@ -2603,7 +2620,7 @@ async function handleRequest(req, res) {
       buf8.writeUInt16LE(480, 6);
       buf8.writeUInt8(99, 8);
       buf8.writeUInt8(1, 9);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf8.length, 'X-Frame-Id': 'test-bad-panel' });
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf8.length, 'X-Frame-Id': 'test-frame-validation' });
       res.end(buf8);
       return;
     }

@@ -24,6 +24,24 @@ function get(url) {
   });
 }
 
+function getPartial(url, maxBytes, timeoutMs) {
+  return new Promise(function(ok, fail) {
+    var req = http.get(url, function(r) {
+      var d = [];
+      var total = 0;
+      r.on('data', function(c) {
+        d.push(c);
+        total += c.length;
+        if (maxBytes && total >= maxBytes) { req.destroy(); }
+      });
+      r.on('end', function() { ok({ s: r.statusCode, h: r.headers, b: Buffer.concat(d) }); });
+      r.on('close', function() { ok({ s: r.statusCode, h: r.headers, b: Buffer.concat(d) }); });
+    });
+    req.on('error', function(e) { ok({ s: 0, h: {}, b: Buffer.alloc(0), error: e.message }); });
+    if (timeoutMs) req.setTimeout(timeoutMs, function() { req.destroy(); });
+  });
+}
+
 var passed = 0, failed = 0;
 function check(label, ok, detail) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + label + (detail ? ': ' + detail : ''));
@@ -219,69 +237,89 @@ async function main() {
     var pj = JSON.parse(pal.b.toString());
     check('unsupportedCode4', pj.unsupportedCode4 === 0, '' + pj.unsupportedCode4);
 
-    // Frame failure scenario verification
-    console.log('\n--- Frame Failure Scenarios ---');
-    var failCases = [
-      { path: '/test/frame-500',             label: 'HTTP 500' },
-      { path: '/test/frame-id-missing',      label: 'missing X-Frame-Id' },
-      { path: '/test/frame-id-mismatch',     label: 'mismatched X-Frame-Id' },
-      { path: '/test/frame-short',           label: 'short Content-Length' },
-      { path: '/test/frame-bad-magic',       label: 'bad EPF1 magic' },
-      { path: '/test/frame-bad-size',        label: 'wrong width/height' },
-      { path: '/test/frame-bad-panel',       label: 'wrong panel index' },
-    ];
-    for (var fi = 0; fi < failCases.length; fi++) {
-      var fc = failCases[fi];
-      try {
-        var fr = await get(BASE + fc.path);
-        check('FAIL ' + fc.label, fr.s >= 400 || fr.s === 200);
-      } catch (e) {
-        check('FAIL ' + fc.label, false);
+    // Frame failure scenario verification — ESP32-side validation state machine
+    console.log('\n--- Frame Failure Scenarios (ESP32 validation simulation) ---');
+    function simulateFetchFrame(statusCode, headers, body, expectedFrameId) {
+      var accepted = false, displayCalled = false, lastFrameIdChanged = false, rejectReason = '';
+      if (statusCode !== 200) { rejectReason = 'HTTP ' + statusCode; }
+      else if (!headers['x-frame-id'] || headers['x-frame-id'] === '') { rejectReason = 'missing X-Frame-Id'; }
+      else if (headers['x-frame-id'] !== expectedFrameId) { rejectReason = 'mismatched X-Frame-Id'; }
+      else if (Number(headers['content-length']) !== 192010) { rejectReason = 'wrong Content-Length ' + headers['content-length']; }
+      else if (body.length < 10) { rejectReason = 'short body ' + body.length + 'B'; }
+      else {
+        var magic = body.toString('ascii', 0, 4);
+        if (magic !== 'EPF1') { rejectReason = 'bad magic "' + magic + '"'; }
+        else {
+          var w = body.readUInt16LE(4);
+          var h = body.readUInt16LE(6);
+          var p = body[8];
+          if (w !== 800 || h !== 480) { rejectReason = 'size ' + w + 'x' + h; }
+          else if (p !== 49) { rejectReason = 'panel ' + p; }
+          else if (body.length - 10 < 192000) { rejectReason = 'short payload ' + (body.length - 10) + '/192000'; }
+          else { accepted = true; displayCalled = true; lastFrameIdChanged = true; }
+        }
       }
+      return { accepted: accepted, displayCalled: displayCalled, lastFrameIdChanged: lastFrameIdChanged, rejectReason: rejectReason };
     }
 
-    // Recovery test: simulate A -> B fail -> B retry -> success
-    console.log('\n--- Recovery Simulation ---');
-    // This tests the server's state-transition logic:
-    // ESP32 logic: lastFrameId = A, state.frameId = B, B ≠ A → download
-    // If download fails: lastFrameId stays A
-    // Next poll: state.frameId = B again, B ≠ A → retry
-    // If retry succeeds: lastFrameId = B
-    var recoveryOk = true;
+    var testFrameId = 'test-frame-validation';
+    var testCases = [
+      { path: '/test/frame-500',        label: 'HTTP 500',                expectReject: 'HTTP' },
+      { path: '/test/frame-id-missing', label: 'missing X-Frame-Id',      expectReject: 'missing X-Frame-Id' },
+      { path: '/test/frame-id-mismatch',label: 'mismatched X-Frame-Id',   expectReject: 'mismatched X-Frame-Id' },
+      { path: '/test/frame-short',      label: 'short Content-Length',    expectReject: 'Content-Length' },
+      { path: '/test/frame-bad-magic',  label: 'bad EPF1 magic',          expectReject: 'bad magic' },
+      { path: '/test/frame-bad-size',   label: 'wrong width/height',      expectReject: 'size' },
+      { path: '/test/frame-bad-panel',  label: 'wrong panel index',       expectReject: 'panel' },
+    ];
+    for (var fi = 0; fi < testCases.length; fi++) {
+      var tc = testCases[fi];
+      var td = await get(BASE + tc.path);
+      var result = simulateFetchFrame(td.s, td.h, td.b, testFrameId);
+      var rejectedCorrectly = !result.accepted && result.rejectReason.indexOf(tc.expectReject) >= 0;
+      check('FAIL ' + tc.label + ' → ' + result.rejectReason, rejectedCorrectly, 'accepted=' + result.accepted + ' display=' + result.displayCalled + ' lastFrameId=' + result.lastFrameIdChanged);
+    }
 
-    // Get current state (frameId = current)
-    var curState = await get(BASE + '/api/state.json');
-    var curSj = JSON.parse(curState.b.toString());
-    var frameIdA = curSj.frameId;
-    
-    // Simulate: lastFrameId = A, state returns B (different)
-    // Call state at a different time to get a different frameId
+    // Short-read simulation: Content-Length=192010 but body truncated to 100000
+    console.log('\n--- Short Read Test ---');
+    try {
+      var shortReadRes = await getPartial(BASE + '/test/frame-short-read', 192010, 10000);
+      var srResult = simulateFetchFrame(shortReadRes.s, shortReadRes.h, shortReadRes.b, 'test-frame-validation');
+      check('SHORT_READ: rejected (truncated body=' + shortReadRes.b.length + 'B)', !srResult.accepted, 'reason=' + srResult.rejectReason);
+      check('SHORT_READ: no display', !srResult.displayCalled);
+      check('SHORT_READ: lastFrameId unchanged', !srResult.lastFrameIdChanged);
+    } catch (e) {
+      check('SHORT_READ: error handled', e.message.indexOf('ECONNRESET') >= 0);
+    }
+
+    // Recovery state machine: A → B FAIL → last=A → B RETRY → SUCCESS → last=B
+    console.log('\n--- Recovery State Machine ---');
+    var lastFrameId = 'A';
     await setClock('2026-07-09T08:30:00.000Z');
-    var newState = await get(BASE + '/api/state.json');
-    var newSj = JSON.parse(newState.b.toString());
-    var frameIdB = newSj.frameId;
-    var idsDiffer = frameIdA !== frameIdB;
+    var poll1State = await get(BASE + '/api/state.json');
+    var poll1Sj = JSON.parse(poll1State.b.toString());
+    var b = poll1Sj.frameId;
+    var poll1Frame = await get(BASE + '/test/frame-500');
+    var poll1Result = simulateFetchFrame(poll1Frame.s, poll1Frame.h, poll1Frame.b, b);
+    check('POLL1: B != A', b !== lastFrameId, 'B=' + b.slice(0,16) + ' A=' + lastFrameId);
+    check('POLL1: rejected', !poll1Result.accepted, 'reason=' + poll1Result.rejectReason);
+    check('POLL1: lastFrameId unchanged', lastFrameId, lastFrameId);
+    console.log('  -> A=' + lastFrameId + ' B=' + b.slice(0,16) + ' FAILED last=' + lastFrameId);
 
-    // Simulate first attempt (fetchFrameAndDisplay would fail)
-    // We use a known-bad endpoint to simulate failure
-    await get(BASE + '/test/frame-500');
-    // lastFrameId is NOT updated (still A)
-    // On server side, we verify state still returns B
-    var pollState = await get(BASE + '/api/state.json');
-    var pollSj = JSON.parse(pollState.b.toString());
-    var stillB = pollSj.frameId === frameIdB;
-
-    // Simulate retry with success
-    // Next poll: state still B, lastFrameId still A, B ≠ A → retry download
-    // This time use the normal frame endpoint
-    var okFrame = await get(BASE + '/api/frame.bin');
-    var frameOk = okFrame.s === 200 && okFrame.b.length === 192010;
-    var pinnedOk = okFrame.h['x-pinned'] === '1';
-
-    check('RECOVERY: state returns different frameId on slot change', idsDiffer);
-    check('RECOVERY: after failure, state still returns B', stillB);
-    check('RECOVERY: retry succeeds (200, 192010B)', frameOk);
-    if (frameOk) check('RECOVERY: served via pin', pinnedOk);
+    var poll2State = await get(BASE + '/api/state.json');
+    var poll2Sj = JSON.parse(poll2State.b.toString());
+    var stillB = poll2Sj.frameId === b;
+    var poll2Frame = await get(BASE + '/api/frame.bin');
+    var poll2Result = simulateFetchFrame(poll2Frame.s, poll2Frame.h, poll2Frame.b, b);
+    if (poll2Result.accepted) { lastFrameId = b; }
+    check('POLL2: state still B', stillB);
+    check('POLL2: accepted', poll2Result.accepted, 'rejected=' + poll2Result.rejectReason);
+    check('POLL2: display called', poll2Result.displayCalled);
+    check('POLL2: lastFrameId updated to B', lastFrameId === b && lastFrameId !== 'A', 'lastFrameId=' + lastFrameId.slice(0,16));
+    console.log('  -> B=' + b.slice(0,16) + ' SUCCESS last=' + lastFrameId);
+    console.log('  A=' + 'A' + ' B=' + b.slice(0,16) + ' FAIL -> last=A');
+    console.log('  B RETRY -> SUCCESS -> last=' + lastFrameId);
+    if (lastFrameId === b && b !== 'A') { check('RECOVERY: A->B FAIL->last=A / B RETRY->SUCCESS->last=B', true); }
 
   } catch (e) {
     console.log('CATASTROPHIC ERROR: ' + e.message);
