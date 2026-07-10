@@ -1,7 +1,8 @@
 # Global Refactor Baseline
 
 **Date**: 2026-07-10
-**AUDITED_SHA**: a6cb25b27f7aeaf232c2c6bce21729fc5d5a7db3
+**AUDITED_CODE_SHA**: d2133a985beb8b6951f8aa2505e86cf9a36f4b37
+**DOCUMENT_COMMIT_SHA**: SELF
 **BRANCH**: master
 
 ## Repository Metrics
@@ -19,6 +20,12 @@
 | CONTRACT_COUNT | 11 |
 | DOC_FILES | 36 |
 | DOCUMENT_DRIFT_COUNT | 5 |
+
+## Baseline Acceptance Bugs
+
+| Bug | Status | Fix |
+|-----|--------|-----|
+| NightImageStability | RESOLVED (slotKey anchored to night start date in lib/schedule.js) | R0.1 |
 
 ## Invariants (Must Never Change)
 - EPF1: header=10, payload=192000, total=192010, magic="EPF1"
