@@ -143,6 +143,7 @@ const DITHERING_ENABLED = PHOTO_QUANT_MODE === 'fs' ? ['1', 'true', 'yes', 'on']
 const PORT = Number(process.env.PORT || APP_CONFIG.port) > 0 ? Number(process.env.PORT || APP_CONFIG.port) : options.port;
 const TIMEZONE = String(process.env.TZ || APP_CONFIG.timezone || DEFAULT_TIMEZONE || 'UTC');
 const ENABLE_DEBUG_ROUTES = String(process.env.ENABLE_DEBUG_ROUTES || '').toLowerCase() === 'true';
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 
 const DATA_DIR = resolveConfiguredPath(APP_CONFIG.dataDir || 'data');
 const IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.imageRoot || 'images');
@@ -176,6 +177,7 @@ const runtime = {
   cachedSnapshots: new Map(),
   refreshPromise: null,
   lastNewsRefreshAt: 0,
+  serverStartTime: Date.now(),
   pinnedSnapshots: new Map(),
   renderCount: 0,
   nowProvider: null,
@@ -2182,6 +2184,42 @@ function setPinnedSnapshot(client, content) {
   });
 }
 
+
+
+function readBody(req, limit) {
+  return new Promise(function(ok, fail) {
+    var chunks = [];
+    var total = 0;
+    req.on('data', function(c) { total += c.length; if (limit && total > limit) { req.destroy(); fail(new Error('too large')); return; } chunks.push(c); });
+    req.on('end', function() { ok(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', fail);
+  });
+}
+
+function respondJson(res, data) {
+  var b = Buffer.from(JSON.stringify(data, null, 2));
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': b.length });
+  res.end(b);
+}
+function failJson(res, code, msg) {
+  var b = Buffer.from(JSON.stringify({ error: msg }));
+  res.writeHead(code, { 'Content-Type': 'application/json' });
+  res.end(b);
+}
+function adminAuth(req) {
+  if (!ADMIN_TOKEN) return false;
+  var auth = req.headers['authorization'] || '';
+  return auth === 'Bearer ' + ADMIN_TOKEN;
+}
+function serveAdminFile(name) {
+  var fp = path.join(ROOT_DIR, 'public', 'admin', name);
+  if (fs.existsSync(fp)) return fs.readFileSync(fp);
+  return null;
+}
+function readPubHistory(dd) {
+  try { var f = path.join(dd, 'publish_history.json'); if (!fs.existsSync(f)) return []; return JSON.parse(fs.readFileSync(f, 'utf8')); } catch(e) { return []; }
+}
+
 async function handleRequest(req, res) {
   const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const panelIndex = PANEL_SIZES[Number(parsed.searchParams.get('panel'))]
@@ -2635,8 +2673,107 @@ async function handleRequest(req, res) {
       res.end(r);
       return;
     }
+
+    
+    // ── Admin routes ──
+    if (parsed.pathname === '/admin' || parsed.pathname === '/admin/') {
+      var h = serveAdminFile('index.html');
+      if (h) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(h); return; }
+      res.writeHead(500); res.end('Admin file missing'); return;
+    }
+    if (parsed.pathname === '/admin/admin.css') {
+      var c = serveAdminFile('admin.css');
+      if (c) { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' }); res.end(c); return; }
+    }
+    if (parsed.pathname === '/admin/admin.js') {
+      var j = serveAdminFile('admin.js');
+      if (j) { res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' }); res.end(j); return; }
+    }
+
+    if (parsed.pathname === '/api/admin/dashboard') {
+      if (!ADMIN_TOKEN) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
+      var authHdr = req.headers['authorization'] || '';
+      if (!authHdr) { failJson(res, 401, 'authorization header missing'); return; }
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
+      respondJson(res, { status: 'ok', timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/news') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var sel = [];
+      try {
+        var nw = now;
+        var kn = 'news:' + nw.getFullYear() + '-' + String(nw.getMonth()+1).padStart(2,'0') + '-' + String(nw.getDate()).padStart(2,'0') + ':' + Math.floor(nw.getTime() / 900000);
+        var ch = runtime.cachedSnapshots.get(kn);
+        if (ch && ch.items) sel = ch.items.map(function(it) { return { source: it.source, category: it.category, title: it.zhTitle, summary: it.zhSummary, url: it.sourceUrl, titleLen: (it.zhTitle||'').length, summaryLen: (it.zhSummary||'').length }; });
+      } catch(e) {}
+      respondJson(res, { selected: sel, candidates: [] });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/news/draft' && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      fs.writeFileSync(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify(JSON.parse(await readBody(req)), null, 2));
+      respondJson(res, { status: 'ok' });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/publish/news' && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var fid = 'manual-news:' + Date.now().toString(36);
+      fs.writeFileSync(path.join(DATA_DIR, 'admin_override.json'), JSON.stringify({ mode: 'manual-news', createdAt: new Date().toISOString(), expiresAt: null }, null, 2));
+      var hst = readPubHistory(DATA_DIR);
+      hst.unshift({ id: Date.now().toString(36), type: 'news', frameId: fid, publishedAt: new Date().toISOString(), status: 'active' });
+      if (hst.length > 100) hst.length = 100;
+      fs.writeFileSync(path.join(DATA_DIR, 'publish_history.json'), JSON.stringify(hst, null, 2));
+      respondJson(res, { frameId: fid });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/publish/photo' && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var fid2 = 'manual-photo:' + Date.now().toString(36);
+      fs.writeFileSync(path.join(DATA_DIR, 'admin_override.json'), JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null }, null, 2));
+      var hst2 = readPubHistory(DATA_DIR);
+      hst2.unshift({ id: Date.now().toString(36), type: 'photo', frameId: fid2, publishedAt: new Date().toISOString(), status: 'active' });
+      if (hst2.length > 100) hst2.length = 100;
+      fs.writeFileSync(path.join(DATA_DIR, 'publish_history.json'), JSON.stringify(hst2, null, 2));
+      respondJson(res, { frameId: fid2 });
+      return;
+    }
+
+
+    if (parsed.pathname === '/api/admin/rollback' && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var rbId = Date.now().toString(36);
+      respondJson(res, { status: 'ok', frameId: 'rollback:' + rbId });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/publish-history') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      respondJson(res, { history: readPubHistory(DATA_DIR) });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/photos') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var idx = [];
+      try { idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, createdAt: e.createdAt }; }) });
+      return;
+    }
+
+
+    if (parsed.pathname === '/api/health.json') {
+      var uptime = Math.floor((Date.now() - runtime.serverStartTime) / 1000);
+      respondJson(res, { status: 'ok', uptimeSeconds: uptime, timezone: TIMEZONE, frameCacheEntries: runtime.cachedFrames.size, frameRenderCount: runtime.renderCount });
+      return;
+    }
+
 res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
 res.end('Not found');
   } catch (error) {
     const body = Buffer.from(JSON.stringify({ error: error.message }, null, 2));
