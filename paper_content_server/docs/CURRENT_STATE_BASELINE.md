@@ -31,25 +31,25 @@
 
 | Capability | Status | Evidence Commit | Test Evidence | NAS Evidence | ESP32 Evidence |
 |---|---|---|---|---|---|
-| Schedule | UNKNOWN | | | | |
-| State/frame coherence | UNKNOWN | | | | |
-| ESP32 frame validation | UNKNOWN | | | | |
-| News live fetch | UNKNOWN | | | | |
-| News translation fidelity | UNKNOWN | | | | |
-| News final dedupe | UNKNOWN | | | | |
-| News layout | UNKNOWN | | | | |
-| Last-good | UNKNOWN | | | | |
-| Learning Library auto-fetch | UNKNOWN | | | | |
-| Learning relevance gate | UNKNOWN | | | | |
-| Custom Library | UNKNOWN | | | | |
-| Strict NSFW deletion | UNKNOWN | | | | |
-| Analysis Card | UNKNOWN | | | | |
-| Comparison Pair | UNKNOWN | | | | |
-| Sequence 2×2 | UNKNOWN | | | | |
-| ONE_SHOT_OVERRIDE | UNKNOWN | | | | |
-| FOCUS_LOCK | UNKNOWN | | | | |
-| MQTT immediate refresh | UNKNOWN | | | | |
-| Admin production-path publication | UNKNOWN | | | | |
+| Schedule | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| State/frame coherence | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| ESP32 frame validation | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| News live fetch | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| News translation fidelity | PARTIAL | | | | |
+| News final dedupe | PARTIAL | | | | |
+| News layout | PARTIAL | | | | |
+| Last-good | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| Learning Library auto-fetch | NOT_IMPLEMENTED | | | | |
+| Learning relevance gate | NOT_IMPLEMENTED | | | | |
+| Custom Library | NOT_IMPLEMENTED | | | | |
+| Strict NSFW deletion | PARTIAL | | | | |
+| Analysis Card | NOT_IMPLEMENTED | | | | |
+| Comparison Pair | NOT_IMPLEMENTED | | | | |
+| Sequence 2×2 | NOT_IMPLEMENTED | | | | |
+| ONE_SHOT_OVERRIDE | PARTIAL | | | | |
+| FOCUS_LOCK | NOT_IMPLEMENTED | | | | |
+| MQTT immediate refresh | NOT_IMPLEMENTED | | | | |
+| Admin production-path publication | PARTIAL | | | | |
 
 ## 4. 更新规则
 
@@ -66,3 +66,26 @@
 “全部完成”
 
 而没有逐项证据。
+## 5. Evidence Summary
+
+| Capability | Evidence Commit | Test Evidence | NAS Evidence | ESP32 Evidence |
+|---|---|---|---|---|
+| Schedule | server.js L1968 + lib/schedule.js | schedule-test 18/18 | NOT VERIFIED | NOT TESTED |
+| State/frame coherence | server.js L2535-2598 | coherence-test 53/53 | NOT VERIFIED | NOT TESTED |
+| ESP32 frame validation | firmware + test routes | restart-test + frame tests | NOT VERIFIED | NOT TESTED |
+| News live fetch | server.js L691-735 | rotation-test Phase A/B/C | NOT VERIFIED | NOT TESTED |
+| News translation fidelity | server.js L1115-1185 | translation-quality-test 31/31 (helper path) | NOT VERIFIED | NOT TESTED |
+| News final dedupe | server.js L1462-1483 | news-render-readability-test | NOT VERIFIED | NOT TESTED |
+| News layout | server.js L2106-2115 (layoutNewsCard) | news-render-readability-test 17/17 | NOT VERIFIED | NOT TESTED |
+| Last-good | server.js L1542 | rotation-test Phase B/C | NOT VERIFIED | N/A |
+| Learning Library auto-fetch | — | — | NOT VERIFIED | N/A |
+| Learning relevance gate | — | — | NOT VERIFIED | N/A |
+| Custom Library | — | — | NOT VERIFIED | N/A |
+| Strict NSFW deletion | server.js L890 (blocklist) | — | NOT VERIFIED | N/A |
+| Analysis Card | — | — | NOT VERIFIED | N/A |
+| Comparison Pair | — | — | NOT VERIFIED | N/A |
+| Sequence 2×2 | — | — | NOT VERIFIED | N/A |
+| ONE_SHOT_OVERRIDE | server.js L3048/L3066 | admin-test | NOT VERIFIED | NOT TESTED |
+| FOCUS_LOCK | — | — | NOT VERIFIED | NOT TESTED |
+| MQTT immediate refresh | — | — | NOT VERIFIED | NOT TESTED |
+| Admin production-path pub | server.js L3047-3070 | admin-test | NOT VERIFIED | NOT TESTED |

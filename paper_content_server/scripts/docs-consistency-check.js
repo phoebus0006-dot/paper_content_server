@@ -87,6 +87,16 @@ if (impl) {
   check(impl.indexOf('| source adapters |') >= 0, 'CURRENT_IMPLEMENTATION_MAP has learning map data');
   check(impl.indexOf('| upload endpoint |') >= 0, 'CURRENT_IMPLEMENTATION_MAP has custom map data');
   check(impl.indexOf('| schedule-test.js |') >= 0, 'CURRENT_IMPLEMENTATION_MAP has test map data');
+  var expectedTests = ['schedule-test', 'frame-selftest', 'coherence-test', 'restart-test', 'admin-test',
+    'photo-safety-test', 'storyboard-source-test', 'rotation-test', 'translation-quality-test',
+    'news-render-readability-test', 'docs-consistency-check'];
+  expectedTests.forEach(function(t) {{
+    check(impl.indexOf('| ' + t + '.js |') >= 0, 'Test map has ' + t + '.js');
+  }});
+  // Check mismatch markers
+  check(impl.indexOf('FULL_TRANSLATION_PIPELINE_COVERED=NO') >= 0, 'Test map: FULL_TRANSLATION_PIPELINE_COVERED=NO marker present');
+  check(impl.indexOf('NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH') >= 0, 'Test map: NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH marker present');
+  check(impl.indexOf('DUAL_LIBRARY_COVERAGE=NO') >= 0, 'Test map: DUAL_LIBRARY_COVERAGE=NO marker present');
   check(impl.indexOf('GAP-001') >= 0, 'CURRENT_IMPLEMENTATION_MAP has known gaps');
   check(impl.indexOf('DATA_DIR resolution') >= 0, 'CURRENT_IMPLEMENTATION_MAP has data/deployment');
 
@@ -104,7 +114,7 @@ if (impl) {
 // 7. TRACEABILITY_MATRIX: single canonical matrix, no duplicates
 var trace = readFile('TRACEABILITY_MATRIX.md');
 if (trace) {
-  var headers = trace.match(/^| Requirement /gm) || [];
+  var headers = trace.match(/^\| Requirement /gm) || [];
   check(headers.length === 1, 'TRACEABILITY: exactly 1 table header (found ' + headers.length + ')');
 
   // Extract requirement names
@@ -142,7 +152,9 @@ if (ki) {
 
 // 10. Data and Deployment fields not all empty
 if (impl) {
-  check(impl.indexOf('DATA_DIR resolution=') >= 0 && impl.indexOf('UNKNOWN') < impl.indexOf('DATA_DIR'), 'Data/Deployment: fields not all empty');
+  var deployFields = ['DATA_DIR resolution', 'NAS target path', 'Docker mode', 'Container name'];
+  var deployOk = deployFields.every(function(f) {{ return impl.indexOf(f + '=') >= 0 || impl.indexOf('| ' + f) >= 0; }});
+  check(deployOk, 'Data/Deployment: all 4 key fields present (' + deployFields.filter(function(f) {{ return impl.indexOf(f + '=') < 0 && impl.indexOf('| ' + f) < 0; }}).join(', ') + ' missing)');
 }
 
 console.log('\n=== exitCode=' + exitCode + ' ===');

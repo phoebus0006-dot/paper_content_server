@@ -6,12 +6,19 @@
 ## 1. Repository Baseline
 
 branch=master
-HEAD=b49d262ff7c5d712c35075c9855f15025d3187c6
-origin/master=b49d262ff7c5d712c35075c9855f15025d3187c6
+AUDITED_CODE_BASE_SHA=b49d262ff7c5d712c35075c9855f15025d3187c6
+origin/master at audit time=b49d262ff7c5d712c35075c9855f15025d3187c6
 server entrypoint=paper_content_server/server.js
 firmware entrypoint=NewsPhoto_esp32wf/NewsPhoto_esp32wf.ino
 node major=v24.14.1
 package manager=npm 10.x
+
+### Audit Scope
+
+AUDITED_CODE_BASE_SHA=b49d262ff7c5d712c35075c9855f15025d3187c6
+AUDIT_SCOPE=paper_content_server/server.js, firmware, test scripts
+Since audit base, only docs/ and docs-consistency-check.js have changed.
+Business code diff since audit base: NONE (verified by git diff --name-only)
 
 ## 2. Server Entrypoint
 
@@ -113,7 +120,7 @@ TARGET_NOT_IMPLEMENTED: /api/admin/publish/one-shot, /api/admin/focus-lock, /api
 | fidelity verifier | isTextSemanticallyComplete | server.js L907 | PARTIAL | format only (Chinese chars, punctuation, hanging ends). NOT semantic fidelity. |
 | Chinese editor | rewriteNewsTitle+rewriteNewsSummary | server.js L950/L1024 | IMPLEMENTED | entity normalization, hanging-end removal |
 | layout | layoutNewsCard | server.js L2106 | IMPLEMENTED | shared by production+tests |
-| final dedupe | seenUrls+seenTitles | server.js L1462 | IMPLEMENTED | canonical URL + original title + zh title |
+| final dedupe | seenUrls+seenTitles | server.js L1462 | PARTIAL | URL+title dedupe exists, but article identity/event-level dedup not fully proven. History: same event occupied two slots. |
 | quality gate | evaluateNewsItemQuality + isTextSemanticallyComplete | server.js L1327/L907 | PARTIAL | format+basic completeness. No true semantic gate. |
 | selector | tryAdd+selectNewsItems | server.js L1453/L765 | IMPLEMENTED | source quota max 2, category round-robin |
 | last-good | runtime.lastGoodNews | server.js L1542 | IMPLEMENTED | saved on 6 valid, used as fallback |
@@ -187,11 +194,11 @@ TARGET_NOT_IMPLEMENTED: /api/admin/publish/one-shot, /api/admin/focus-lock, /api
 | coherence-test.js | full server HTTP | server process | No | No | timeout=FAIL | 0 | state/frame/pinning/TTL |
 | restart-test.js | full server HTTP | server process | No | No | timeout=FAIL | 0 | fresh/restart/corrupt/isolation |
 | admin-test.js | full server HTTP | server process | No | No | error=FAIL | 0 | auth/draft/publish/photo/override |
-| photo-safety-test.js | selectStudyPhoto, isStudySelectable, isImageApproved | none | No | No | N/A | 0 | mixed pool 1000 iterations |
+| photo-safety-test.js | selectStudyPhoto, isStudySelectable, isImageApproved | none | No | No | N/A | 0 | LEGACY_POOL_MODEL_COVERAGE=YES (study_frames/decorative_photos). DUAL_LIBRARY_COVERAGE=NO. SOURCE_ISOLATION_COVERAGE=NO. STRICT_DELETE_PIPELINE_COVERAGE=NO |
 | storyboard-source-test.js | lib modules | Wikimedia HTTP | No | No | N/A | 0 | metadata parsing, sequence sort |
 | rotation-test.js | full server HTTP | feed HTTP mock | No | No | timeout=FAIL | 0 | photo unit/HTTP rotation/last-good A/B/C |
-| translation-quality-test.js | isTextSemanticallyComplete, normalizeEntities, rewriteTitle, rewriteSummary, evaluateQuality, PROTECTED_ENTITIES | none | No | No | N/A | 0 | 31 production function tests |
-| news-render-readability-test.js | full server HTTP + layoutNewsCard | server process | No | No | timeout=FAIL | 0 | 11 tests, shared layoutNewsCard |
+| translation-quality-test.js | isTextSemanticallyComplete, normalizeEntities, rewriteTitle, rewriteSummary, evaluateQuality, PROTECTED_ENTITIES | none | No | No | N/A | 0 | TEST_LEVEL=HELPER_FUNCTION_PATH FULL_TRANSLATION_PIPELINE_COVERED=NO FIDELITY_SEMANTIC_VALIDATION_COVERED=NO |
+| news-render-readability-test.js | full server HTTP + layoutNewsCard | server process | No | No | timeout=FAIL | 0 | LEGACY_REQUIREMENT_MISMATCH=YES (test enforces exactly 3 summary lines, Acceptance allows 2-3). NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH=YES |
 | rss-selftest.js | standalone | none | No | No | N/A | 0 | self-contained |
 | docs-consistency-check.js | fs only | none | No | No | N/A | 0 | 25 docs, 6 ADRs, patterns |
 
@@ -221,6 +228,29 @@ GAP-009 Analysis Card Renderer — NOT_IMPLEMENTED.
 GAP-010 Comparison Pair Renderer — NOT_IMPLEMENTED.
 GAP-011 Sequence 2x2 Renderer — NOT_IMPLEMENTED.
 GAP-012 Production-Path Admin Publication — PARTIAL. Admin writes override.json directly; no snapshot service. FrameId as Date.now().toString(36).
+
+
+### GAP-013: Final Dedupe Completeness
+- **Requirement**: 6 independent news (canonical URL unique, article identity unique, final title unique, duplicate count=0)
+- **Current Implementation**: URL/title dedupe exists but article identity/event-level duplicate prevention not fully proven
+- **Status**: PARTIAL
+- **Risk**: Same event may occupy multiple slots (historically confirmed)
+- **Evidence**: History shows same NYT article occupied two slots. Current dedup checks URL + normalized title but not event identity.
+- **Planned Phase**: Phase 6 — News Pipeline
+
+### GAP-014: News Layout Test Requirement Mismatch
+- **Requirement**: Acceptance requires summaryLines=2 or 3
+- **Current Implementation**: news-render-readability-test enforces summaryLines === 3
+- **Status**: TEST_REQUIREMENT_MISMATCH
+- **Risk**: Test may fail when summary naturally fits 2 lines. Test not aligned with current Acceptance.
+- **Planned Phase**: Phase 6 — News Pipeline
+
+### GAP-015: Photo Safety Test — Dual Library Coverage
+- **Requirement**: Dual-library architecture with Learning Library + Custom Library source isolation
+- **Current Implementation**: photo-safety-test.js covers old study_frames/decorative_photos model only
+- **Status**: NOT_COVERED
+- **Risk**: No automated test validates dual-library source isolation
+- **Planned Phase**: Phase 7 — Learning Library + Phase 8 — Custom Library
 
 ## 13. Update Rule
 
