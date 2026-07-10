@@ -15,7 +15,9 @@
     "coherence:test": "node scripts/coherence-test.js",
     "restart:test": "node scripts/restart-test.js",
     "soak:test": "node scripts/soak-test.js",
-    "admin:test": "node scripts/admin-test.js"
+    "admin:test": "node scripts/admin-test.js",
+    "photo:audit": "node scripts/photo-audit.js",
+    "photo:safety-test": "node scripts/photo-safety-test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
