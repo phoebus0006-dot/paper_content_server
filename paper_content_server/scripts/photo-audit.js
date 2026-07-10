@@ -1,18 +1,24 @@
 #!/usr/bin/env node
-// photo:audit — comprehensive photo inventory audit
+// photo:audit — comprehensive photo inventory audit (config-aware runtime paths)
 
 var path = require('path');
 var fs = require('fs');
 
 var ROOT = path.join(__dirname, '..');
-var DATA_DIR = path.join(ROOT, 'data');
 
 function loadJson(fp, fallback) {
-  try {
-    var raw = fs.readFileSync(fp, 'utf8');
-    return JSON.parse(raw);
-  } catch(e) { return fallback; }
+  try { var raw = fs.readFileSync(fp, 'utf8'); return JSON.parse(raw); } catch(e) { return fallback; }
 }
+
+// Resolve runtime DATA_DIR and IMAGE_INDEX_FILE from env → config.json → fallback
+var appConfig = loadJson(path.join(ROOT, 'config.json'), {});
+var DATA_DIR = process.env.DATA_DIR
+  ? (path.isAbsolute(process.env.DATA_DIR) ? process.env.DATA_DIR : path.join(ROOT, process.env.DATA_DIR))
+  : (appConfig.dataDir ? (path.isAbsolute(appConfig.dataDir) ? appConfig.dataDir : path.join(ROOT, appConfig.dataDir)) : path.join(ROOT, 'data'));
+var IMAGE_INDEX_FILE = process.env.IMAGE_INDEX_FILE
+  ? (path.isAbsolute(process.env.IMAGE_INDEX_FILE) ? process.env.IMAGE_INDEX_FILE : path.join(ROOT, process.env.IMAGE_INDEX_FILE))
+  : path.join(DATA_DIR, 'image_index.json');
+var RAW_INDEX_FILE = path.join(DATA_DIR, 'raw_index.json');
 
 function scanDir(dir) {
   try {
@@ -21,25 +27,31 @@ function scanDir(dir) {
 }
 
 console.log('========== PHOTO AUDIT ==========');
+console.log('Runtime paths:');
+console.log('  DATA_DIR:', DATA_DIR);
+console.log('  IMAGE_INDEX_FILE:', IMAGE_INDEX_FILE);
+console.log('  RAW_INDEX_FILE:', RAW_INDEX_FILE);
 console.log('Scanning:', DATA_DIR);
 console.log();
 
 // 1. image_index
-var imageIndex = loadJson(path.join(DATA_DIR, 'image_index.json'), []);
+var imageIndex = loadJson(IMAGE_INDEX_FILE, []);
 if (!Array.isArray(imageIndex)) imageIndex = [];
-console.log('--- PRODUCTION INDEX (image_index.json) ---');
+console.log('--- PRODUCTION INDEX (' + path.basename(IMAGE_INDEX_FILE) + ') ---');
 console.log('Total entries:', imageIndex.length);
-var approved = imageIndex.filter(function(e) { return e.safetyStatus === 'approved'; });
+var approvedStudy = imageIndex.filter(function(e) { return e.safetyStatus === 'approved' && e.poolType === 'study_frames'; });
+var approvedDeco = imageIndex.filter(function(e) { return e.safetyStatus === 'approved' && e.poolType === 'decorative_photos'; });
 var pending = imageIndex.filter(function(e) { return e.safetyStatus === 'pending' || !e.safetyStatus; });
 var rejected = imageIndex.filter(function(e) { return e.safetyStatus === 'rejected'; });
 var quarantined = imageIndex.filter(function(e) { return e.safetyStatus === 'quarantined'; });
-console.log('  approved:', approved.length);
+console.log('  approvedStudy:', approvedStudy.length);
+console.log('  approvedDecorative:', approvedDeco.length);
 console.log('  pending:', pending.length);
 console.log('  rejected:', rejected.length);
 console.log('  quarantined:', quarantined.length);
 for (var i = 0; i < imageIndex.length; i++) {
   var e = imageIndex[i];
-  console.log('  [' + (e.safetyStatus || 'MISSING') + '] ' + e.id.slice(0, 16) + '... ' + (e.title || '').slice(0, 40) + ' | src:' + (e.source || '?') + ' | shown:' + (e.shownCount || 0) + ' | last:' + (e.lastShownAt || 'never'));
+  console.log('  [' + (e.safetyStatus || 'MISSING') + '][' + (e.poolType || '?') + '] ' + e.id.slice(0, 16) + '... ' + (e.title || '').slice(0, 40) + ' | src:' + (e.source || '?') + ' | pool:' + (e.poolType || '?') + ' | shown:' + (e.shownCount || 0));
 }
 console.log();
 
@@ -108,16 +120,22 @@ quarantineDirs.forEach(function(qd) {
 });
 console.log();
 
-// 6. quarantine index file
-var quarantineIndex = loadJson(path.join(DATA_DIR, 'quarantine_raw_index_20260709_193040.json'), []);
-if (Array.isArray(quarantineIndex) && quarantineIndex.length) {
-  console.log('--- QUARANTINE INDEX (quarantine_raw_index) ---');
-  for (var qi = 0; qi < quarantineIndex.length; qi++) {
-    var q = quarantineIndex[qi];
-    console.log('  [' + q.id.slice(0, 16) + '...] ' + (q.title || '').slice(0, 60) + ' | src:' + (q.source || '?'));
+// 6. quarantine/rejected index files (dynamic discovery)
+var quarantineFiles = fs.readdirSync(DATA_DIR).filter(function(f) { return /^quarantine.*\.json$/.test(f); });
+console.log('--- QUARANTINE/PENDING INDEX FILES ---');
+console.log('Files:', quarantineFiles.length);
+quarantineFiles.forEach(function(qf) {
+  var qData = loadJson(path.join(DATA_DIR, qf), []);
+  if (Array.isArray(qData) && qData.length) {
+    console.log('  ' + qf + ': ' + qData.length + ' entries');
+    for (var qi = 0; qi < qData.length && qi < 3; qi++) {
+      var q = qData[qi];
+      console.log('    [' + (q.id || '?').slice(0, 16) + '...] ' + (q.title || '').slice(0, 50) + ' | src:' + (q.source || '?'));
+    }
+    if (qData.length > 3) console.log('    ... and ' + (qData.length - 3) + ' more');
   }
-  console.log();
-}
+});
+console.log();
 
 // 7. import_images
 var importImages = scanDir(path.join(DATA_DIR, 'import_images'));
@@ -168,8 +186,11 @@ console.log();
 
 // 10. Summary
 console.log('========== AUDIT SUMMARY ==========');
+console.log('Runtime DATA_DIR:', DATA_DIR);
+console.log('Runtime IMAGE_INDEX_FILE:', IMAGE_INDEX_FILE);
 console.log('image_index total:', imageIndex.length);
-console.log('  selectable (approved):', approved.length);
+console.log('  approvedStudy:', approvedStudy.length);
+console.log('  approvedDecorative:', approvedDeco.length);
 console.log('  pending:', pending.length);
 console.log('  rejected:', rejected.length);
 console.log('  quarantined:', quarantined.length);
