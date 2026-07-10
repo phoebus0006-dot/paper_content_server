@@ -2627,7 +2627,15 @@ async function handleRequest(req, res) {
 
 
 
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/test-instance') {
+      var insId = process.env.TEST_INSTANCE_ID || '';
+      var r = Buffer.from(JSON.stringify({ instanceId: insId, pid: process.pid }));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+      res.end(r);
+      return;
+    }
+res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
 res.end('Not found');
   } catch (error) {

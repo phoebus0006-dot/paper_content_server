@@ -35,3 +35,4 @@ Official_7in3e_HAT_Test/
 NewsPhoto_esp32wf/config.h
 # Test temporary data directories
 paper_content_server/test_data_tmp_*/
+paper_content_server/test_restart_*/
