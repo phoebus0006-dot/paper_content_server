@@ -1465,7 +1465,11 @@ async function loadImageIndex() {
 }
 
 function selectableImages() {
-  return (runtime.fullImageIndex || runtime.imageIndex || []).filter(isImageReady);
+  return (runtime.fullImageIndex || runtime.imageIndex || []).filter(function(e) { return isImageReady(e) && isImageApproved(e); });
+}
+
+function studySelectableImages() {
+  return (runtime.fullImageIndex || runtime.imageIndex || []).filter(isStudySelectable);
 }
 
 async function reloadImageIndexIfNeeded() {
@@ -1483,8 +1487,15 @@ function isImageReady(entry) {
   if (!entry || !entry.id || !entry.theme) return false;
   if (!entry.processedPngPath || !fs.existsSync(entry.processedPngPath)) return false;
   if (entry.width !== FRAME_WIDTH || entry.height !== FRAME_HEIGHT) return false;
-  if (entry.safetyStatus !== 'approved') return false;
   return true;
+}
+
+function isImageApproved(entry) {
+  return entry && entry.safetyStatus === 'approved';
+}
+
+function isStudySelectable(entry) {
+  return isImageReady(entry) && isImageApproved(entry) && entry.poolType === 'study_frames';
 }
 
 function getImageKind(entry) {
@@ -1748,9 +1759,24 @@ function computeNextSwitchAt(now) {
   return dateFromWallTime({ year, month, day, hour, minute, second: 0 }, TIMEZONE);
 }
 
+/**
+ * selectStudyPhoto — shared pure function used by production selector and tests.
+ * Calls updateLibraryStateForPhoto on the study-only selectable subset.
+ * Returns { theme, entry, state, kind } or { theme:'NO_STUDY_FRAMES', entry:null }.
+ */
+function selectStudyPhoto(now, imageIndex, libraryState) {
+  const snapshot = selectPhotoSnapshot(now, imageIndex);
+  const studyIndex = (imageIndex || []).filter(isStudySelectable);
+  const selection = updateLibraryStateForPhoto(snapshot, studyIndex);
+  if (!selection.entry) {
+    return { theme: 'NO_STUDY_FRAMES', entry: null, kind: 'shot', state: selection.state };
+  }
+  return selection;
+}
+
 async function buildPhotoSnapshot(now) {
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
-  const selection = updateLibraryStateForPhoto(snapshot, selectableImages());
+  const selection = updateLibraryStateForPhoto(snapshot, studySelectableImages());
   runtime.libraryState = selection.state;
   await writeJson(LIBRARY_STATE_FILE, runtime.libraryState).catch((error) => {
     console.log(`library state write failed: ${error.message}`);
@@ -2788,7 +2814,7 @@ async function handleRequest(req, res) {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var idx = [];
       try { idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
-      respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }) });
+      respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, poolType: e.poolType || '', safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }) });
       return;
     }
 
@@ -2865,6 +2891,10 @@ module.exports = {
   getWallTime,
   computeNextSwitchAt,
   selectPhotoSnapshot,
+  selectStudyPhoto,
+  isStudySelectable,
+  isImageApproved,
+  isImageReady,
   imageToFrameBuffer,
 };
 

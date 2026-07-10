@@ -269,6 +269,7 @@ async function processImage(rawEntry, imageIndex) {
     shownCount: 0,
     metadata: rawEntry.metadata || {},
     safetyStatus: rawEntry.safetyStatus || 'pending',
+    poolType: rawEntry.poolType || 'decorative_photos',
   };
   imageIndex.push(entry);
   return { status: 'processed', id: entry.id, path: processedPngPath };

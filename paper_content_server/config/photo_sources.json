@@ -1,9 +1,10 @@
 {
   "sources": [
     {
-      "type": "nasa",
+      "type": "url_list",
       "enabled": true,
-      "queries": [
+      "poolType": "decorative_photos",
+      "urls": [
         { "url": "https://images-assets.nasa.gov/image/iss070e023460/iss070e023460~orig.jpg", "theme": "wide_shot", "title": "ISS Earth View", "source": "NASA" },
         { "url": "https://images-assets.nasa.gov/image/PIA26250/PIA26250~orig.jpg", "theme": "wide_shot", "title": "Hubble Deep Field", "source": "NASA" },
         { "url": "https://images-assets.nasa.gov/image/GSFC_20171208_Archive_e000292/GSFC_20171208_Archive_e000292~orig.jpg", "theme": "night", "title": "Northern Lights from Space", "source": "NASA" },
@@ -16,25 +17,38 @@
       ]
     },
     {
-      "type": "wikimedia_commons",
+      "type": "wikimedia_category",
       "enabled": true,
-      "queries": [
-        { "q": "landscape photography national park", "theme": "wide_shot" },
-        { "q": "architecture photography building exterior", "theme": "cinematic" },
-        { "q": "nature landscape mountain valley", "theme": "wide_shot" },
-        { "q": "historic building architecture monument", "theme": "cinematic" },
-        { "q": "museum interior gallery exhibition", "theme": "cinematic" },
-        { "q": "space astronomy telescope nebula", "theme": "night" },
-        { "q": "botanical garden flower plant nature", "theme": "color" },
-        { "q": "city architecture urban skyline", "theme": "cinematic" }
+      "poolType": "study_frames",
+      "categories": [
+        { "category": "Storyboards", "kind": "storyboard", "theme": "dialogue" }
       ],
-      "limitPerQuery": 1,
+      "limitPerCategory": 3,
+      "minWidth": 800,
+      "minHeight": 480
+    },
+    {
+      "type": "wikimedia_commons",
+      "enabled": false,
+      "poolType": "study_frames",
+      "queries": [
+        { "q": "two shot dialogue film scene", "theme": "dialogue" },
+        { "q": "film establishing wide shot landscape", "theme": "wide_shot" },
+        { "q": "night scene film noir cinematography", "theme": "night" },
+        { "q": "backlight portrait film still", "theme": "backlight" },
+        { "q": "film ensemble cast group scene", "theme": "ensemble" },
+        { "q": "suspense thriller film still", "theme": "suspense" },
+        { "q": "action motion blur film still", "theme": "motion" },
+        { "q": "film still color contrast composition", "theme": "color" }
+      ],
+      "limitPerQuery": 2,
       "minWidth": 800,
       "minHeight": 480
     },
     {
       "type": "local_import",
       "enabled": true,
+      "poolType": "study_frames",
       "importDir": "data/import_images"
     }
   ],
