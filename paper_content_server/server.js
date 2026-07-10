@@ -1456,11 +1456,16 @@ async function loadImageIndex() {
     const data = await readJson(IMAGE_INDEX_FILE, []);
     const entries = Array.isArray(data) ? data : data.images || [];
     runtime.imageIndexLoadedAt = Date.now();
-    return entries.filter(isImageReady);
+    runtime.fullImageIndex = entries;
+    return entries;
   } catch (error) {
     console.log(`image index load failed: ${error.message}`);
     return [];
   }
+}
+
+function selectableImages() {
+  return (runtime.fullImageIndex || runtime.imageIndex || []).filter(isImageReady);
 }
 
 async function reloadImageIndexIfNeeded() {
@@ -1745,7 +1750,7 @@ function computeNextSwitchAt(now) {
 
 async function buildPhotoSnapshot(now) {
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
-  const selection = updateLibraryStateForPhoto(snapshot, runtime.imageIndex || []);
+  const selection = updateLibraryStateForPhoto(snapshot, selectableImages());
   runtime.libraryState = selection.state;
   await writeJson(LIBRARY_STATE_FILE, runtime.libraryState).catch((error) => {
     console.log(`library state write failed: ${error.message}`);
@@ -1754,7 +1759,8 @@ async function buildPhotoSnapshot(now) {
   if (selection.entry) {
     selection.entry.lastShownAt = new Date().toISOString();
     selection.entry.shownCount = (selection.entry.shownCount || 0) + 1;
-    await writeJson(IMAGE_INDEX_FILE, runtime.imageIndex).catch((error) => {
+    // Persist the full image index (not just the selectable subset) to preserve pending/rejected entries
+    await writeJson(IMAGE_INDEX_FILE, runtime.fullImageIndex || runtime.imageIndex || []).catch((error) => {
       console.log(`image index write failed: ${error.message}`);
     });
   }
