@@ -23,7 +23,8 @@
     "translation-quality:test": "node scripts/translation-quality-test.js",
     "docs:check": "node scripts/docs-consistency-check.js",
     "news-render-readability:test": "node scripts/news-render-readability-test.js",
-    "contracts:test": "node test/contracts/run-contracts.js"
+    "contracts:test": "node test/contracts/run-contracts.js",
+    "r1:test": "node test/r1/app-shell-test.js && node test/r1/config-parity-test.js && node test/r1/clock-test.js && node test/r1/logger-test.js && node test/r1/atomic-file-test.js && node test/r1/json-store-test.js && node test/r1/http-client-test.js && node test/r1/dependency-boundary-test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
