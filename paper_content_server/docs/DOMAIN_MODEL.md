@@ -80,16 +80,25 @@ FOCUS_LOCK          — Manual content locked, schedule paused
 ## LibraryAsset
 ```
 {
-  id: string,
-  type: 'film_still' | 'storyboard' | 'sequence_frame',
-  safetyStatus: 'pending' | 'approved' | 'rejected',
-  poolType: 'study_frames' | 'decorative_photos',
+  assetId: string,
+  libraryType: 'learning' | 'custom',
+  kind: 'film_still' | 'storyboard' | 'sequence_frame',
+  sourceType: string,
+  sourceName: string,
+  sourceUrl: string,
+  author: string,
+  license: string,
+  rightsStatus: string,
   theme: string,
-  kind: 'shot' | 'storyboard',
+  lessonTags: string[],
+  analysisNote: string,
   studySetId: string | null,
   pairRole: 'storyboard' | 'final_shot' | null,
   sequenceId: string | null,
   sequenceIndex: number | null,
+  safetyStatus: 'safe' | 'unsafe' | 'suspicious' | 'uncertain',
+  relevanceStatus: 'pass' | 'reject' | 'uncertain' | null,
+  contentHash: string,
   processedPngPath: string,
   epfPath: string
 }

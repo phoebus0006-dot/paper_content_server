@@ -28,8 +28,11 @@ Branch: `refactor/system-architecture`
 ### PHASE 6 — News Layout + Renderer
 - [ ] Extract shared layout, news renderer
 
-### PHASE 7 — Library + Safety + Selector
-- [ ] Image repository, safety scanner, study selector
+### PHASE 7 — Library (Dual) + Safety + Selector
+- [ ] Learning Library (source adapters, relevance gate, rotation)
+- [ ] Custom Library (upload, albums)
+- [ ] Safety scanner and tombstone store
+- [ ] Display source selection
 
 ### PHASE 8 — Publication + Admin
 - [ ] Publication service, admin routes

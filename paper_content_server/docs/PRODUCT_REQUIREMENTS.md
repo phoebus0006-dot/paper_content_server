@@ -68,15 +68,31 @@ Each byte encodes two pixels: high nibble = left pixel, low nibble = right pixel
 | ONE_SHOT_OVERRIDE | Manual content shown immediately, auto-revert at next HH:00 or HH:30 |
 | FOCUS_LOCK | Manual content locked until released, schedule paused |
 
-## 6. Image Library
+## 6. Image Library — Dual Architecture
 
-Custom user upload only. No automatic crawling from NASA, Wikimedia, or external sources.
+The system maintains two independent libraries:
 
-**Data types:** `film_still`, `storyboard`, `sequence_frame`
+### Learning Library (Auto)
+Targeted automatic acquisition of film study and storyboard learning materials.
+Sources include curated film stills, storyboard categories, and public domain film frames.
+All candidates pass strict safety, relevance, and quality gates before entering production.
 
-**Relations:** studySetId, pairRole (storyboard/final_shot), sequenceId + sequenceIndex
+### Custom Library (User Upload)
+User-managed uploads for personal study materials, photos, and reference images.
+Also subject to the same NSFW safety gate as the learning library.
 
-**Display modes:** Single frame, analysis card, storyboard vs final comparison, 2x2 sequence grid
+### Common Data Types
+`film_still`, `storyboard`, `sequence_frame`
+
+### Relations
+studySetId, pairRole (storyboard/final_shot), sequenceId + sequenceIndex
+
+### Display Modes
+Single frame, analysis card, storyboard vs final comparison, 2x2 sequence grid
+
+### Display Source Selection
+Users explicitly choose which library to display from when publishing.
+AUTO mode defaults to Learning Library during photo slots.
 
 ## 7. NSFW Policy — ZERO TOLERANCE
 

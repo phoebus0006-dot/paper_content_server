@@ -62,6 +62,17 @@
 - [ ] Fallback study frames when no approved images
 - [ ] At least 2 unique image IDs across 6 time slots
 
+## Image Library — Dual Architecture
+- [ ] LEARNING_LIBRARY_AUTO_FETCH: Sources produce real learning candidates
+- [ ] LEARNING_RELEVANCE: Landscape/architecture/NASA excluded as learning content
+- [ ] CUSTOM_LIBRARY_UPLOAD: User upload succeeds
+- [ ] SOURCE_SELECTION_LEARNING: Learning selected → only learning images shown
+- [ ] SOURCE_SELECTION_CUSTOM: Custom selected → only custom images shown
+- [ ] NSFW_STRICT_DELETE_BOTH: Both libraries enforce zero-tolerance deletion
+- [ ] LEARNING_ROTATION: Multiple time slots produce different learning images
+- [ ] COMPARISON_PAIR: Storyboard/final shot pair displays both sides
+- [ ] SEQUENCE_2x2: Sequence frames in correct order
+
 ## Admin Publication
 - [ ] Manual news: draft → render → publish → state/frame same frameId
 - [ ] Clear override: returns to schedule

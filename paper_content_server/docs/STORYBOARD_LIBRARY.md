@@ -29,5 +29,8 @@ Learning value over rigid ratios. The selector prioritizes:
 
 ## Source
 
-Custom user library only. No automatic external crawling.
-Users upload images via the admin interface or import tools.
+Images come from two sources:
+1. **Learning Library** — Targeted automatic acquisition of film study materials
+2. **Custom Library** — User-uploaded personal study materials
+
+Both libraries are independently managed and share the same safety gates.

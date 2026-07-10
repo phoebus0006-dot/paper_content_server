@@ -47,6 +47,25 @@ Server health and pipeline statistics.
 | /api/admin/publish-history | GET | Publication history |
 | /api/admin/rollback | POST | Rollback publication |
 | /api/admin/photos | GET | Photo library overview |
+| /api/admin/library | GET | List library assets (query: libraryType) |
+| /api/admin/publish/one-shot | POST | Publish one-shot with source selection |
+
+### One-Shot Publish Body
+```json
+{
+  "contentType": "photo",
+  "libraryType": "learning",
+  "assetId": "film-shot-001"
+}
+```
+
+### Focus Lock
+```json
+{
+  "libraryType": "learning",
+  "theme": "dialogue"
+}
+```
 
 ## MQTT
 

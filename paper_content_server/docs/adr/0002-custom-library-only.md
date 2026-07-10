@@ -1,6 +1,6 @@
 # ADR-0002: Custom Library Only — No Automatic External Crawling
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-0006  
 **Date:** 2026-07-10
 
 ## Context
@@ -8,6 +8,11 @@ The system needs images for study. Options: automatic crawl from Wikimedia/NASA/
 
 ## Decision
 Only custom user uploads enter the production library. No automatic external crawling.
+
+## Supersession
+This ADR is superseded by ADR-0006 (Dual Image Library Architecture).
+The system now maintains both a Learning Library (targeted auto-acquisition)
+and a Custom Library (user uploads), rather than custom-only.
 
 ## Consequences
 - Higher quality control.
