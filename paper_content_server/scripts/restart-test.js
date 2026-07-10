@@ -5,9 +5,10 @@ const path = require('path');
 const fs = require('fs');
 
 var exitCode = 0;
+var RUN_ID = Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex');
 var SRV = path.join(__dirname, '..', 'server.js');
 var CWD = path.dirname(SRV);
-var TMPDIR = path.join(CWD, 'test_restart_' + Date.now());
+var TMPDIR = path.join(CWD, 'test_restart_' + RUN_ID);
 
 function sha256(buf) { return crypto.createHash('sha256').update(buf).digest('hex'); }
 
@@ -24,23 +25,29 @@ function makeEnv(extra) {
   }, extra);
 }
 
-// ── Reliable child lifecycle ──
 function spawnSrv(envOverrides, instanceId) {
   var port = 8796 + Math.floor(Math.random() * 100);
   var env = makeEnv(Object.assign({ PORT: String(port), TEST_INSTANCE_ID: instanceId }, envOverrides));
   var child = spawn(process.execPath, [SRV], { env: env, cwd: CWD, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stderr.on('data', function(d) { process.stdout.write('[SRV-' + instanceId + '] ' + d.toString().slice(0, 200) + '\n'); });
-  return { child: child, port: port, base: 'http://127.0.0.1:' + port };
+  var exited = false;
+  child.on('exit', function() { exited = true; });
+  child.on('error', function() { exited = true; });
+  return { child: child, port: port, base: 'http://127.0.0.1:' + port, exited: function() { return exited; } };
 }
 
 function stopServer(server, label) {
   return new Promise(function(resolve) {
-    if (!server.child || server.child.killed) { resolve(); return; }
+    if (!server.child) { resolve(); return; }
+    if (server.child.exitCode !== null || server.child.signalCode !== null) {
+      resolve();
+      return;
+    }
     var forceTimer = setTimeout(function() {
       try { server.child.kill('SIGKILL'); } catch (e) {}
       console.log('  [' + label + '] force killed after timeout');
     }, 4000);
-    server.child.on('exit', function() {
+    server.child.once('exit', function() {
       clearTimeout(forceTimer);
       resolve();
     });
@@ -48,23 +55,23 @@ function stopServer(server, label) {
   });
 }
 
-async function waitForSrv(base, instanceId, timeout) {
-  var start = Date.now();
-  while (Date.now() - start < timeout) {
-    try {
-      var r = await getWithTimeout(base + '/api/state.json', 3000);
-      if (r.s !== 200) { await sleep(500); continue; }
-      // Verify instance ID to avoid hitting stale server
-      if (instanceId) {
+function waitForSrv(base, instanceId, timeout) {
+  return new Promise(function(resolve) {
+    var start = Date.now();
+    async function attempt() {
+      if (Date.now() - start > timeout) return resolve(null);
+      try {
+        var r = await getWithTimeout(base + '/api/state.json', 3000);
+        if (r.s !== 200) { setTimeout(attempt, 500); return; }
         var ir = await getWithTimeout(base + '/debug/test-instance', 2000);
-        if (ir.s !== 200) { await sleep(500); continue; }
+        if (ir.s !== 200) { setTimeout(attempt, 500); return; }
         var ij = JSON.parse(ir.b.toString());
-        if (ij.instanceId !== instanceId) { await sleep(500); continue; }
-      }
-      return r;
-    } catch (e) { await sleep(500); }
-  }
-  return null;
+        if (ij.instanceId !== instanceId) { setTimeout(attempt, 500); return; }
+        resolve(r);
+      } catch (e) { setTimeout(attempt, 500); }
+    }
+    attempt();
+  });
 }
 
 function getWithTimeout(url, ms) {
@@ -77,8 +84,6 @@ function getWithTimeout(url, ms) {
     req.setTimeout(ms || 3000, function() { req.destroy(); fail(new Error('timeout')); });
   });
 }
-
-function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
 function copyFixture(dst) {
   var src = path.join(CWD, 'data');
@@ -105,43 +110,45 @@ function fileEnvKey(f) {
   return 'IMAGE_INDEX_FILE';
 }
 
-async function runCase(label, envOverrides, instanceId, cb) {
+async function runCase(label, envOverrides, instanceSuffix, cb) {
+  var instanceId = 'restart_' + RUN_ID + '_' + instanceSuffix;
   var server = spawnSrv(envOverrides, instanceId);
   var st = await waitForSrv(server.base, instanceId, 25000);
   if (!st) {
-    check(label + ' start', false, 'timeout or instance mismatch');
+    if (server.exited()) {
+      check(label + ' early exit', false, 'server exited before ready');
+    } else {
+      check(label + ' start timeout', false, 'timeout or instance mismatch');
+    }
     await stopServer(server, label);
     return false;
   }
-  try {
-    await cb(server);
-  } catch (e) {
-    console.log('  [' + label + '] EXCEPTION: ' + e.message);
-    failed++; exitCode = 1;
-  }
+  try { await cb(server); }
+  catch (e) { console.log('  [' + label + '] EXCEPTION: ' + e.message); failed++; exitCode = 1; }
   await stopServer(server, label);
   return true;
 }
 
 async function main() {
   console.log('=== Restart & Recovery Test ===\n');
+  console.log('RUN_ID: ' + RUN_ID);
   fs.mkdirSync(TMPDIR, { recursive: true });
   var realDD = path.join(CWD, 'data');
   var realFiles = ['news_cache.json', 'library_state.json', 'news_rotation_state.json', 'image_index.json'];
   var hashB = {};
   realFiles.forEach(function(f) { try { hashB[f] = sha256(fs.readFileSync(path.join(realDD, f))); } catch (e) { hashB[f] = 'MISSING'; } });
 
-  // ── CASE 1 & 2: Fresh start + same-data-dir restart ──
-  console.log('--- CASE 1: Fresh start ---');
   var restartDir = path.join(TMPDIR, 'restart');
   fs.mkdirSync(restartDir, { recursive: true });
   copyFixture(restartDir);
   var env1 = fullEnv(restartDir);
 
+  console.log('\n--- CASE 1: Fresh start ---');
   await runCase('srv1', env1, 'srv1', async function(srv) {
     var st = JSON.parse((await getWithTimeout(srv.base + '/api/state.json', 5000)).b.toString());
     check('state 200', true, 'frameId=' + (st.frameId || '').slice(0,20));
-    console.log('  instance=' + (JSON.parse((await getWithTimeout(srv.base + '/debug/test-instance', 3000)).b.toString()).instanceId));
+    var ins = JSON.parse((await getWithTimeout(srv.base + '/debug/test-instance', 3000)).b.toString());
+    check('instance is unique', ins.instanceId.indexOf('restart_' + RUN_ID + '_srv1') >= 0, 'id=' + ins.instanceId);
     var fb = await getWithTimeout(srv.base + '/api/frame.bin', 10000);
     check('frame 200', fb.s === 200);
     check('frame 192010B', fb.b.length === 192010);
@@ -152,20 +159,19 @@ async function main() {
     check('news count 6', nw.items.length === 6);
   });
 
-  console.log('\n--- CASE 2: True restart (same data dir, same instance check) ---');
+  console.log('\n--- CASE 2: True restart (same data dir, unique instance) ---');
   await runCase('srv2', env1, 'srv2', async function(srv) {
     var stRes = await getWithTimeout(srv.base + '/api/state.json', 5000);
     var st = JSON.parse(stRes.b.toString());
     check('state 200 after restart', stRes.s === 200, 'http=' + stRes.s + ' mode=' + st.mode);
     check('frameId valid', st.frameId && st.frameId.length > 10);
     var ins = JSON.parse((await getWithTimeout(srv.base + '/debug/test-instance', 3000)).b.toString());
-    check('instance match srv2', ins.instanceId === 'srv2', 'got=' + ins.instanceId);
+    check('instance matches suffix', ins.instanceId.indexOf('_srv2') >= 0, 'id=' + ins.instanceId);
     var fb = await getWithTimeout(srv.base + '/api/frame.bin', 10000);
     check('frame 200', fb.s === 200);
     check('frame 192010B', fb.b.length === 192010);
   });
 
-  // ── CASE 3: Cache / renderCount ──
   console.log('\n--- CASE 3: Cache / renderCount ---');
   await runCase('cache', fullEnv(path.join(TMPDIR, 'cache3')), 'cache3', async function(srv) {
     await getWithTimeout(srv.base + '/api/state.json', 5000);
@@ -181,50 +187,44 @@ async function main() {
     check('third no new render', rc3 === rc1, '' + rc1 + ' -> ' + rc3);
   });
 
-  // ── CASE 4: 12 corrupt state file scenarios ──
   console.log('\n--- CASE 4: Corrupt state files (12 scenarios, each isolated) ---');
   var files = ['news_cache.json', 'library_state.json', 'news_rotation_state.json', 'image_index.json'];
   var modes = ['missing', 'empty', 'invalid'];
   for (var fi = 0; fi < files.length; fi++) {
     for (var mi = 0; mi < modes.length; mi++) {
-      var f = files[fi];
-      var m = modes[mi];
+      var f = files[fi], m = modes[mi];
       var tag = f.replace(/\..*$/, '').replace(/_/g, '-');
-      var label = tag + ' ' + m;
       var dir = path.join(TMPDIR, 'cx_' + tag + '_' + m);
       fs.mkdirSync(dir, { recursive: true });
       files.forEach(function(of) {
         var src = path.join(realDD, of);
         if (fs.existsSync(src) && of !== f) fs.copyFileSync(src, path.join(dir, of));
       });
-      if (m === 'empty') { fs.writeFileSync(path.join(dir, f), ''); }
-      else if (m === 'invalid') { fs.writeFileSync(path.join(dir, f), '{{{not json}}}'); }
-
+      if (m === 'empty') fs.writeFileSync(path.join(dir, f), '');
+      else if (m === 'invalid') fs.writeFileSync(path.join(dir, f), '{{{not json}}}');
       var env = { DATA_DIR: dir };
       files.forEach(function(of) { env[fileEnvKey(of)] = path.join(dir, of); });
 
-      await runCase(label, env, label, async function(srv) {
+      await runCase(tag + ' ' + m, env, tag + '_' + m, async function(srv) {
         var ins = JSON.parse((await getWithTimeout(srv.base + '/debug/test-instance', 3000)).b.toString());
-        check(label + ' instance match', ins.instanceId === label, 'expected=' + label + ' got=' + ins.instanceId);
+        check(tag + ' ' + m + ' instance unique', ins.instanceId.indexOf('_' + tag + '_' + m) >= 0, 'id=' + ins.instanceId);
         var st = await getWithTimeout(srv.base + '/api/state.json', 10000);
         var sj = JSON.parse(st.b.toString());
         var stOk = st.s === 200 && sj.frameId !== undefined;
         var fb = await getWithTimeout(srv.base + '/api/frame.bin', 15000);
         var fbOk = fb.s === 200 && fb.b.length === 192010;
-        check(label, stOk && fbOk, 'state=' + st.s + ' frame=' + fb.s + 'B=' + fb.b.length);
+        check(tag + ' ' + m, stOk && fbOk, 'state=' + st.s + ' frame=' + fb.s + 'B=' + fb.b.length);
       });
     }
   }
 
-  // ── DATA ISOLATION ──
   console.log('\n--- Data Isolation ---');
   var allDataOk = true;
   realFiles.forEach(function(f) {
     try {
       var h = sha256(fs.readFileSync(path.join(realDD, f)));
       var ok = h === hashB[f];
-      check('DATA_UNCHANGED ' + f, ok);
-      if (!ok) allDataOk = false;
+      check('DATA_UNCHANGED ' + f, ok); if (!ok) allDataOk = false;
     } catch (e) { check('DATA_UNCHANGED ' + f, false); allDataOk = false; }
   });
   if (allDataOk) check('DATA_UNCHANGED ALL', true);
