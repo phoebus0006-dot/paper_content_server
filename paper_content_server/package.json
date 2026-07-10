@@ -21,6 +21,7 @@
     "storyboard-source:test": "node scripts/storyboard-source-test.js",
     "rotation:test": "node scripts/rotation-test.js",
     "translation-quality:test": "node scripts/translation-quality-test.js",
+    "docs:check": "node scripts/docs-consistency-check.js",
     "news-render-readability:test": "node scripts/news-render-readability-test.js"
   },
   "dependencies": {
