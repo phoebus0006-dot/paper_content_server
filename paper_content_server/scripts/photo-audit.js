@@ -51,7 +51,8 @@ console.log('  rejected:', rejected.length);
 console.log('  quarantined:', quarantined.length);
 for (var i = 0; i < imageIndex.length; i++) {
   var e = imageIndex[i];
-  console.log('  [' + (e.safetyStatus || 'MISSING') + '][' + (e.poolType || '?') + '] ' + e.id.slice(0, 16) + '... ' + (e.title || '').slice(0, 40) + ' | src:' + (e.source || '?') + ' | pool:' + (e.poolType || '?') + ' | shown:' + (e.shownCount || 0));
+  var r = e.rights || {};
+  console.log('  [' + (e.safetyStatus || 'MISSING') + '][' + (e.poolType || '?') + '] ' + e.id.slice(0, 16) + '... ' + (e.title || '').slice(0, 40) + ' | src:' + (e.source || '?') + ' | pool:' + (e.poolType || '?') + ' | kind:' + (e.kind || '?') + ' | theme:' + (e.theme || '?') + ' | safety:' + (e.safetyStatus || '?') + ' | rightsStatus:' + (e.rightsStatus || (r.license ? 'known' : 'unknown') || '?') + ' | shown:' + (e.shownCount || 0));
 }
 console.log();
 

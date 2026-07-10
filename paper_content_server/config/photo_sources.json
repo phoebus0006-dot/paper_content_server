@@ -21,9 +21,15 @@
       "enabled": true,
       "poolType": "study_frames",
       "categories": [
-        { "category": "Storyboards", "kind": "storyboard", "theme": "dialogue" }
+        { "category": "Storyboards", "kind": "storyboard", "theme": "dialogue" },
+        { "category": "Medium_shots", "kind": "shot", "theme": "dialogue" },
+        { "category": "Long_shots", "kind": "shot", "theme": "wide_shot" },
+        { "category": "Full_shots", "kind": "shot", "theme": "entrance" },
+        { "category": "Night_photography", "kind": "shot", "theme": "night" },
+        { "category": "Group_portraits", "kind": "shot", "theme": "ensemble" },
+        { "category": "Film_frames", "kind": "film_still", "theme": "color" }
       ],
-      "limitPerCategory": 3,
+      "limitPerCategory": 5,
       "minWidth": 800,
       "minHeight": 480
     },
