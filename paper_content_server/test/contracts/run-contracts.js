@@ -72,6 +72,8 @@ async function main() {
   console.log('=== Phase 1 Contracts Runner ===\n');
   for (var i = 0; i < contracts.length; i++) {
     await runContract(contracts[i]);
+    // Allow OS to release ports between contracts
+    await new Promise(function(r){setTimeout(r, 2000)});
     var r = results[i];
     console.log(r.name + ': ' + r.pass + ' pass, ' + r.fail + ' fail, exit=' + r.exit + ' [' + r.status + ']');
   }

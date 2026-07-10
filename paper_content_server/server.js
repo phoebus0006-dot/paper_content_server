@@ -315,7 +315,7 @@ async function readJson(filePath, fallback) {
 }
 
 async function writeJson(filePath, data) {
-  const tempPath = `${filePath}.tmp`;
+  const tempPath = `${filePath}.tmp.${Date.now()}`;
   await fsp.writeFile(tempPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
   await fsp.rename(tempPath, filePath);
 }

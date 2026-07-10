@@ -6,7 +6,7 @@
 ## 1. Repository Baseline
 
 branch=master
-AUDITED_CODE_BASE_SHA=b49d262ff7c5d712c35075c9855f15025d3187c6
+AUDITED_CODE_BASE_SHA=26b5db2a61f6b4bd0b100499b5f9d0ac14506cdd
 origin/master at audit time=b49d262ff7c5d712c35075c9855f15025d3187c6
 server entrypoint=paper_content_server/server.js
 firmware entrypoint=NewsPhoto_esp32wf/NewsPhoto_esp32wf.ino
@@ -15,7 +15,7 @@ package manager=npm 10.x
 
 ### Audit Scope
 
-AUDITED_CODE_BASE_SHA=b49d262ff7c5d712c35075c9855f15025d3187c6
+AUDITED_CODE_BASE_SHA=26b5db2a61f6b4bd0b100499b5f9d0ac14506cdd
 AUDIT_SCOPE=paper_content_server/server.js, firmware, test scripts
 Since audit base: server.js (publish handler frameId alignment, one-shot route, buildManualPhotoFromAsset), scripts/admin-test.js (expiry boundary assertions, one-shot tests), docs/, scripts/docs-consistency-check.js.
 NAS/ESP32 evidence: NOT VERIFIED / NOT TESTED.
@@ -27,8 +27,8 @@ TOP_LEVEL_FUNCTIONS=114
 PROCESS_ENV_READS=24 (scattered across server.js)
 ROUTE_REGISTRATION=handleRequest() at byte 96995
 SHUTDOWN_HOOKS=process.on found (SIGTERM/SIGINT)
-MQTT_MODULE_IMPORT=NOT_FOUND (confirmed)
-MQTT_PACKAGE=NOT_IN_PACKAGE_JSON (confirmed)
+MQTT_MODULE_IMPORT=NOT_FOUND (verified) (confirmed)
+MQTT_PACKAGE=NOT_IN_PACKAGE_JSON (verified) (confirmed)
 
 ### Mutable Global State
 
