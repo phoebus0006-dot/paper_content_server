@@ -937,11 +937,16 @@ function isTextSemanticallyComplete(title, summary, translationStatus) {
 
   if (summary && summary.trim()) {
     const sChars = [...summary];
+    const sHasChinese = /[\u4e00-\u9fff]/.test(summary);
     if (sChars.length < 10) reasons.push('SUMMARY_TOO_SHORT');
     if (sChars.length >= 30 && !/[。！？]/.test(sChars[sChars.length - 1])) reasons.push('SUMMARY_NO_END_PUNCT');
     if (/[，；、：,;:]$/.test(summary)) reasons.push('SUMMARY_HANGING_COMMA');
     if (/Photo:|Image:|Credit:|Reuters|AFP|Getty|Bloomberg/i.test(summary)) reasons.push('PHOTO_CREDIT_RESIDUE');
     if (/<[^>]+>/.test(summary)) reasons.push('HTML_RESIDUE');
+    // Translated items: summary must be Chinese
+    if ((translationStatus === 'translated' || translationStatus === 'cached') && !sHasChinese) {
+      reasons.push('TRANSLATED_SUMMARY_NOT_CHINESE');
+    }
   }
 
   return { complete: reasons.length === 0, reasons: reasons };
@@ -1001,13 +1006,15 @@ function rewriteNewsTitle(article) {
     title = chars.slice(0, bestCut).join('').trim();
     if (title.endsWith('，') || title.endsWith('：')) title = title.slice(0, -1).trim();
     const hangingEnd = /(的|为|在|向|与|和|及|将|以|从|对|把|被|让|给|由|于|关于|成为|进行|宣布|宣布将|认定|推出|属于|位于|进入|使用|要求|开始)$/;
-    if (!hangingEnd.test(title)) return title || '新闻';
+    const openQuote = /['"「『""]$/;
+    if (!hangingEnd.test(title) && !openQuote.test(title)) return title || '新闻';
   }
 
   for (let p = 22; p >= 12; p--) {
     const c = chars.slice(0, p).join('').trim();
     const hangingEnd = /(的|为|在|向|与|和|及|将|以|从|对|把|被|让|给|由|于|关于|成为|进行|宣布|宣布将|认定|推出|属于|位于|进入|使用|要求|开始)$/;
-    if (!hangingEnd.test(c)) return c;
+    const openQuote = /['"「『""]$/;
+    if (!hangingEnd.test(c) && !openQuote.test(c)) return c;
   }
 
   return chars.slice(0, 20).join('').trim() || '新闻';
@@ -1050,8 +1057,10 @@ function rewriteNewsSummary(article) {
   if (!s) return '';
 
   const chars = [...s];
-  if (chars.length <= 70) {
-    if (chars.length > 0 && !/[。！？]/.test(chars[chars.length - 1]) && chars.length < 60) {
+  const MAX_SUMMARY_LEN = 75;
+
+  if (chars.length <= MAX_SUMMARY_LEN) {
+    if (chars.length > 0 && !/[。！？]/.test(chars[chars.length - 1])) {
       return s + '。';
     }
     return s;
@@ -1071,30 +1080,31 @@ function rewriteNewsSummary(article) {
   let result = '';
   for (const sent of sentences) {
     const nextLen = [...result + sent].length;
-    if (nextLen <= 70) {
+    if (nextLen <= MAX_SUMMARY_LEN) {
       result += sent;
-    } else if ([...result].length >= 45) {
+    } else if ([...result].length >= 40) {
       break;
     } else {
-      const needed = 45 - [...result].length;
+      const needed = 40 - [...result].length;
       const sentChars = [...sent];
-      const takeLen = Math.min(needed + 10, sentChars.length);
+      const takeLen = Math.min(needed + 15, sentChars.length);
       const lastComma = Math.max(sent.slice(0, takeLen).lastIndexOf('，'), sent.slice(0, takeLen).lastIndexOf('、'));
-      if (lastComma > 5) {
+      if (lastComma > 3) {
         const part = sentChars.slice(0, lastComma).join('') + '。';
-        if ([...result + part].length <= 70) { result += part; break; }
+        if ([...result + part].length <= MAX_SUMMARY_LEN) { result += part; break; }
       }
-      result += sentChars.slice(0, Math.min(needed + 3, sentChars.length)).join('') + '。';
       break;
     }
   }
+
+  if (!result) result = sentences[0] || s;
 
   const rChars = [...result];
   if (rChars.length > 0 && !/[。！？]/.test(rChars[rChars.length - 1])) {
     result += '。';
   }
 
-  return result || s;
+  return result;
 }
 
 function translationCacheKey(article) {
@@ -1403,7 +1413,15 @@ async function buildNewsSnapshot(now) {
       const entry = { ...item, originalTitle: item.title, originalSummary: item.summary, zhTitle: item.title, zhSummary: item.summary, translationStatus: 'original' };
       entry.zhTitle = rewriteNewsTitle(entry);
       entry.zhSummary = rewriteNewsSummary(entry);
-      mainPool.push(entry);
+      const semanticCheck = isTextSemanticallyComplete(entry.zhTitle, entry.zhSummary, 'original');
+      if (semanticCheck.complete) {
+        mainPool.push(entry);
+      } else {
+        stats.rejectSemantic++;
+        if (stats.rejects.length < 5) {
+          stats.rejects.push({ title: entry.zhTitle || entry.title || '', source: entry.source || '', reason: 'SEMANTIC:' + semanticCheck.reasons.join(',') });
+        }
+      }
     }
   }
 
@@ -2095,9 +2113,9 @@ function renderNewsSvg(news, now) {
     const titleText = fitTextWidth(item.zhTitle, titleMax);
     boxes.push(`<text x="${x0 + 4}" y="${y0 + 3 + badgeH + 5 + titleFont}" font-family="${escapeXml(FONT_STACK)}" font-size="${titleFont}" font-weight="700" fill="#111111">${escapeXml(titleText)}</text>`);
 
-    // Row 3-4: summary — 2 lines max
+    // Row 3-5: summary — 3 lines max
     const sumMax = Math.floor((cardW - 12) / (summaryFont * 0.56));
-    const sumLines = wrapText(item.zhSummary, sumMax).slice(0, 2);
+    const sumLines = wrapText(item.zhSummary, sumMax).slice(0, 3);
     for (let li = 0; li < sumLines.length; li++) {
       boxes.push(`<text x="${x0 + 4}" y="${y0 + 3 + badgeH + 5 + titleFont + 5 + (li + 1) * (summaryFont + 2)}" font-family="${escapeXml(FONT_STACK)}" font-size="${summaryFont}" fill="#111111">${escapeXml(sumLines[li])}</text>`);
     }

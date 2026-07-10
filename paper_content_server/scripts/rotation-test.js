@@ -74,11 +74,13 @@ function startHttpErrorServer(port, status) {
 
 function makeNewsItem(i, src) {
   var cats = ['technology','politics','economy','culture'];
-  var pad = 'x'.repeat(45);
+  var zhTitle = '新闻标题' + i;
+  var zhSum = '这是第' + i + '条新闻的摘要全文，包含足够的描述信息来展示新闻内容，测试新闻卡片的完整展示效果。';
   return {
-    title: 'Item' + i,
-    description: 'Summary ' + i + ' ' + pad,
+    title: zhTitle,
+    description: zhSum,
     url: 'http://test-' + i + '.com/news/' + i,
+    source: src || 'TestSrc' + ((i - 1) % 3 + 1),
     category: cats[(i - 1) % cats.length],
     publishedAt: new Date().toISOString(),
     language: 'zh',
