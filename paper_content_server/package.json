@@ -19,7 +19,9 @@
     "photo:audit": "node scripts/photo-audit.js",
     "photo:safety-test": "node scripts/photo-safety-test.js",
     "storyboard-source:test": "node scripts/storyboard-source-test.js",
-    "rotation:test": "node scripts/rotation-test.js"
+    "rotation:test": "node scripts/rotation-test.js",
+    "translation-quality:test": "node scripts/translation-quality-test.js",
+    "news-render-readability:test": "node scripts/news-render-readability-test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
