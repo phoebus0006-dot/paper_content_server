@@ -1,46 +1,57 @@
-# Deployment Runbook
+# NAS 部署与运维
 
-## Target
+## 1. 生产环境
 
-NAS (fn-nas, 192.168.1.49)
-Directory: /vol1/docker/paper-frame-server/
-Deployment mode: Docker bind mount
+NAS：
 
-## Files
+- hostname: fn-nas
+- IP: 192.168.1.49
+- 已有 public key SSH
+- 禁止索取、输出或覆盖私钥和密码
 
-Bind-mounted (read-only for code, read-write for data):
+## 2. 部署前
 
-| Host Path | Container Path | Mode |
-|-----------|---------------|------|
-| ./server.js | /app/server.js | ro |
-| ./package.json | /app/package.json | ro |
-| ./feeds.json | /app/feeds.json | ro |
-| ./scripts/ | /app/scripts/ | ro |
-| ./config.json | /app/config.json | ro |
-| ./.env | /app/.env | ro |
-| ./node_modules/ | /app/node_modules/ | ro |
-| ./data/ | /app/data/ | rw |
-| ./images/ | /app/images/ | rw |
+必须：
 
-## Procedure
+- HEAD == origin/master；
+- all required tests pass；
+- sensitive scan pass；
+- runtime data backup；
+- 确认 bind mount 或 image copy。
 
-1. Backup files on NAS: `cp server.js backup_<timestamp>/`
-2. SCP updated files to NAS
-3. `docker restart paper-frame-server`
-4. Verify: `sha256sum /app/server.js` matches local
-5. Test: HTTP endpoints return 200, frame size = 192010, code 4 = 0
+## 3. 部署方式
 
-## Rollback
+### Bind Mount
 
-1. Copy from `backup_<ts>/` to working directory
-2. `docker restart paper-frame-server`
-3. Verify
+同步 host source path，按真实 service restart。
 
-## Verification
+### Image Copy
 
-- `curl http://<host>:8787/api/state.json`
-- `curl http://<host>:8787/api/frame.bin -o /tmp/frame.bin`
-- `curl http://<host>:8787/api/news.json`
-- Check frame size: 192010
-- Check code 4: 0
-- News count: 6, no placeholders, no duplicates
+`docker compose build` + `docker compose up -d`。
+
+禁止把 `docker exec cp` 当最终持久部署方式。
+
+## 4. 部署后
+
+验证：
+
+- host SHA；
+- container SHA；
+- state API；
+- news API；
+- frame API；
+- MQTT；
+- news uniqueness；
+- frame bytes；
+- code4=0；
+- health snapshot。
+
+## 5. ESP32
+
+没有真实串口日志与屏幕观察：
+
+```text
+ESP32_RUNTIME_STATUS=NOT TESTED
+```
+
+不得写 PASS。

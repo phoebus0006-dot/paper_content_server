@@ -1,197 +1,138 @@
-# Image Library Architecture
+# 图片双图库架构
 
-## Overview
+## 1. 总体结构
 
-The system maintains two independent image libraries:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    IMAGE SYSTEM                              │
-├─────────────────────────┬───────────────────────────────────┤
-│    LEARNING LIBRARY     │         CUSTOM LIBRARY            │
-│    (Auto Acquisition)   │       (User Uploads)              │
-├─────────────────────────┼───────────────────────────────────┤
-│ Curated film sources    │ User-uploaded images              │
-│ Storyboard categories   │ Personal study materials          │
-│ Film frame sequences    │ Reference photos                  │
-│ Public domain films     │ Custom collections                │
-├─────────────────────────┼───────────────────────────────────┤
-│ Safety Gate → Relevance → Quality → Rotation                │
-│                         │                                   │
-│ Display Source Selection (explicit user choice)             │
-└─────────────────────────────────────────────────────────────┘
+```text
+Image System
+├── Learning Library
+│   ├── 自动定向抓取
+│   ├── 权利信息检查
+│   ├── NSFW 安全门
+│   ├── 学习相关性门
+│   ├── 技术质量门
+│   └── 学习轮播
+└── Custom Library
+    ├── 用户上传
+    ├── NSFW 安全门
+    ├── 元数据管理
+    ├── 相册/标签
+    └── 用户显式选择
 ```
 
-## 1. Learning Library — Automatic Acquisition
+## 2. Learning Library
 
-### Objective
-Continuously collect film and storyboard learning materials with real educational value.
+目标是自动获取：
 
-### Target Content
-- Excellent real film shots (film_still)
-- Original storyboard drawings (storyboard)
-- Storyboard sequences (sequence_frame)
-- Film frame sequences (sequence_frame)
-- Storyboard-to-final-shot pairs
+- 优秀电影静帧；
+- 原始 storyboard；
+- film frame sequence；
+- storyboard sequence；
+- comparison pair；
+- 具有构图、调度、光线、色彩、连续性学习价值的素材。
 
-### Learning Topics
-- Shot scale and framing
-- Composition (rule of thirds, leading lines, depth)
-- Character blocking and dialogue coverage (over-shoulder, two-shot, OTS)
-- Negative space and foreground blocking
-- Depth composition
-- Silhouette and backlight
-- Low-key lighting
-- Ensemble blocking
-- Color contrast
-- Motion continuity and action matching
+禁止把普通：
 
-### Source Architecture
-```
+- NASA；
+- 风景；
+- 建筑；
+- 酒店；
+- 城市天际线；
+- 普通群体肖像；
+
+当作学习内容。
+
+## 3. 自动抓取 Pipeline
+
+```text
 Source Adapter
-  → Candidate Discovery
-  → Source Metadata Validation
-  → Rights Metadata Validation
-  → Temporary Download
-  → Decode Validation
-  → NSFW Safety Gate (ZERO TOLERANCE)
-  → Learning Relevance Gate
-  → Technical Quality Check
-  → Metadata Normalization
-  → Learning Library Candidate
-  → Production Eligibility
-  → Rotation
+→ Candidate Discovery
+→ Metadata Validation
+→ Rights Validation
+→ Temporary Download
+→ Decode Validation
+→ Strict Safety Gate
+→ Relevance Gate
+→ Technical Quality
+→ Normalize Metadata
+→ Learning Repository
+→ Rotation
 ```
 
-### Relevance Gate
-| Status | Action |
-|--------|--------|
-| pass | Enter Learning Library pipeline |
-| reject | Excluded |
-| uncertain | Excluded (never enters production) |
+## 4. Learning Source Policy
 
-Relevance is determined by evaluating actual content and metadata — not by
-assuming that a category name like "film" guarantees learning value.
+允许：
 
-### Update Policy
-- Incremental fetch, small batches
-- Dedup before download (URL, hash)
-- Bounded storage
-- Source rate limit respected
-- Theme coverage balanced
-- No broad crawler behavior
+- storyboard category；
+- film still category；
+- film frame category；
+- public domain film source；
+- curated sequence source；
+- approved manual seed。
 
-## 2. Custom Library — User Uploads
+要求：
 
-### Flow
+- 每个配置 source 必须真实存在；
+- candidate count 可观测；
+- license metadata 可验证；
+- rights unknown 不自动进入 production。
+
+## 5. Custom Library
+
+用户可上传：
+
+- 电影镜头；
+- 分镜稿；
+- 参考图片；
+- 用户自有素材。
+
+流程：
+
+```text
+Upload
+→ Decode
+→ Safety Gate
+→ Safe Asset
+→ Metadata Edit
+→ Album/Tag
+→ Available for Explicit Display
 ```
-User Upload
-  → Decode Validation
-  → NSFW Safety Gate (ZERO TOLERANCE)
-  → safe → Custom Library Metadata → User Edit → Available for Display
-  → unsafe/suspicious/uncertain → Immediate deletion
-```
 
-### Rules
-- Same NSFW gate applies as Learning Library.
-- Uploads do NOT bypass content safety.
-- User edits metadata after safety clearance.
-- Deletion removes all artifacts (renders, cache, history rollback).
+## 6. Source Selection
 
-## 3. Display Source Selection
+手动或 FOCUS_LOCK 必须显式：
 
-Users must explicitly choose the source when publishing:
+- learning
+- custom
 
-| Mode | Photo Source |
-|------|-------------|
-| AUTO (default) | Learning Library |
-| ONE_SHOT_OVERRIDE | User-selected (learning or custom) |
-| FOCUS_LOCK | User-specified source + optional filter |
+禁止 silent cross-library fallback。
 
-### PHOTO_SOURCE_MODE
-At minimum:
-- `LEARNING_LIBRARY` — Only Learning Library assets
-- `CUSTOM_LIBRARY` — Only Custom Library assets
-
-No silent cross-library fallback.
-
-## 4. Display Modes (shared by both libraries)
+## 7. Display Modes
 
 ### SINGLE
-One image fills the display.
+
+单图。
 
 ### ANALYSIS_CARD
-Image with overlay showing:
-- Theme, shot type, composition notes
-- Blocking, lighting, lesson tags
-- Analysis note
+
+画面 + 精简分析字段。
 
 ### COMPARISON_PAIR
-Side-by-side display:
-- Left: Storyboard
-- Right: Final shot
-- Linked by studySetId + pairRole
+
+Storyboard vs Final Shot。
 
 ### SEQUENCE_2X2
-Four consecutive frames in a 2x2 grid:
-- Ordered by sequenceIndex (1, 2, 3, 4)
-- All from the same sequenceId
-- Deterministic sort order
 
-## 5. Safety — ZERO TOLERANCE (Both Libraries)
+sequenceId 相同，sequenceIndex=1,2,3,4。
 
-| Classification | Action |
-|---------------|--------|
-| Safe | Continue |
-| Suspicious | Delete |
-| Unsafe | Delete |
-| Uncertain | Delete |
+## 8. Learning Rotation
 
-Deletion scope: raw, processed, thumbnail, temp download, derived render,
-frame cache, snapshot cache, active publication reference, history rollback.
+考虑：
 
-Retained: tombstone only (contentHash, source, decision, reasonCode, deletedAt).
+- theme coverage；
+- recent history；
+- shown count；
+- sequence integrity；
+- study set integrity；
+- learning value score。
 
-## 6. Data Model
-
-```javascript
-{
-  assetId: string,
-  libraryType: 'learning' | 'custom',
-  kind: 'film_still' | 'storyboard' | 'sequence_frame',
-  sourceType: string,           // e.g. 'storyboard_category', 'film_still_category', 'user_upload'
-  sourceName: string,
-  sourceUrl: string,
-  author: string,
-  license: string,
-  licenseUrl: string,
-  rightsStatus: string,
-  theme: string,
-  lessonTags: string[],
-  analysisNote: string,
-  studySetId: string | null,
-  pairRole: 'storyboard' | 'final_shot' | null,
-  sequenceId: string | null,
-  sequenceIndex: number | null,
-  safetyStatus: 'safe' | 'unsafe' | 'suspicious' | 'uncertain',
-  relevanceStatus: 'pass' | 'reject' | 'uncertain' | null,
-  contentHash: string,
-  processedPngPath: string,
-  epfPath: string
-}
-```
-
-## 7. Selection Strategy
-
-### Learning Library
-- Theme coverage balanced
-- Recently-shown avoidance
-- Sequence integrity preserved (never split a sequence)
-- Study set integrity preserved
-- Learning value score considered
-
-### Custom Library
-- User-controlled (specific asset, album, tag)
-- Random within selected scope
-- Safe-only enforced
-- Deletion invalidates all references
+不是纯随机。

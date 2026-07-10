@@ -1,60 +1,60 @@
-# Rendering & EPF1
+# 渲染与 EPF1
 
-## Render Pipeline
+## 1. 单一生产链路
 
-```
-Content (news items / photo path)
-  ↓
-Layout (compute card positions, text wrapping)
-  ↓
-SVG Generation (build SVG string with text and shapes)
-  ↓
-Sharp Render (SVG → raw RGBA raster)
-  ↓
-Palette Quantization (map RGBA to nearest palette code)
-  ↓
-EPF1 Encoding (pack two pixels per byte)
-  ↓
-Frame Validation (verify size, header, palette codes)
-  ↓
-Frame Cache (in-memory, keyed by frameId)
+所有内容都必须走：
+
+```text
+Content Model
+→ Renderer
+→ RGB Raster
+→ Quantizer
+→ Palette Codes
+→ EPF1 Encoder
+→ Frame Validator
 ```
 
-## EPF1 Format
+适用于：
 
-| Offset | Size | Field |
-|--------|------|-------|
-| 0 | 4 | Magic "EPF1" |
-| 4 | 2 | Width (800, uint16 LE) |
-| 6 | 2 | Height (480, uint16 LE) |
-| 8 | 1 | Panel index (49) |
-| 9 | 1 | Frame type (1) |
-| 10 | 192000 | Pixel data |
+- schedule；
+- ONE_SHOT；
+- FOCUS_LOCK；
+- Admin preview；
+- rollback。
 
-## Palette
+## 2. 新闻
 
-| Code | Color | RGB |
-|------|-------|-----|
-| 0 | Black | #000000 |
-| 1 | White | #FFFFFF |
-| 2 | Yellow | #FFFF00 |
-| 3 | Red | #FF0000 |
-| 5 | Blue | #0000FF |
-| 6 | Green | #00FF00 |
+- 6 cards；
+- title 1 行；
+- summary 2–3 行；
+- overflow=false；
+- 使用真实 CJK 字体。
 
-Code 4 is unsupported. Each byte encodes hi=left, lo=right pixel.
+## 3. 图片
 
-## Quantization
+支持：
 
-Two modes:
-- **clean**: Direct nearest-palette-color mapping (default)
-- **fs**: Floyd-Steinberg dithering for smoother gradients
+- single；
+- analysis card；
+- comparison pair；
+- 2×2 sequence。
 
-## Frame Validation
+## 4. EPF1
 
-Every frame must pass:
-- Total bytes = 192010
-- Header bytes = 10, magic = "EPF1"
-- Width = 800, Height = 480, Panel = 49
-- Each payload nibble ∈ {0, 1, 2, 3, 5, 6}
-- Code 4 count = 0
+- header=10；
+- payload=192000；
+- total=192010；
+- high nibble=left；
+- low nibble=right。
+
+## 5. Palette
+
+允许：
+
+0,1,2,3,5,6
+
+禁止：
+
+4
+
+FrameValidator 必须逐 nibble 扫描。

@@ -1,51 +1,114 @@
-# News Pipeline
+# 新闻流水线
 
-## Process Flow
+## 1. 目标
 
-```
-Feed URLs
-  ↓
-Fetch (HTTP with timeout)
-  ↓
-Parse (RSS XML / JSON Feed)
-  ↓
-Normalize (text, strip HTML)
-  ↓
-Canonicalize (URLs)
-  ↓
-Pre-Dedup (URL, GUID, title similarity)
-  ↓
-Translate (faithful literal translation)
-  ↓
-Fidelity Verification (subject, action, numbers, entities, negation)
-  ↓
-Chinese Display Editing (concise e-paper version)
-  ↓
-Layout Fit (1-line title, 2-3 line summary)
-  ↓
-Final Dedup (URL, article ID, final Chinese title)
-  ↓
-Quality Gate (semantic completeness, formatting)
-  ↓
-Select 6 (category round-robin, max 2 per source)
-  ↓
-Last-Good Update (only if 6 valid, no duplicates, no placeholders)
-  ↓
-Snapshot + Render
+输出 6 条高质量、独立、可读的新闻。
+
+## 2. Pipeline
+
+```text
+Fetch
+→ Parse
+→ Normalize
+→ Canonicalize
+→ Pre-Dedup
+→ Faithful Translation
+→ Fidelity Verification
+→ Chinese Editing
+→ Layout Fit
+→ Final Dedup
+→ Quality Gate
+→ Select 6
+→ Last-Good
 ```
 
-## Rules
+## 3. Pre-Dedup
 
-- Source quota (max 2 per source) applies **after** final dedup.
-- Translation pipeline: faithful → verify → edit → layout.
-- LLM must not produce the final display text directly.
-- Every translated article must pass fidelity verification.
-- Last-good is overwritten only by a fully valid 6-item set.
-- Cold start with no last-good: show system status page.
+至少：
 
-## Dedup Layers
+- canonical URL；
+- GUID/article identity；
+- normalized original title；
+- title similarity。
 
-| Stage | Checks |
-|-------|--------|
-| Pre-Dedup | canonical URL, source GUID, normalized title similarity |
-| Final Dedup | canonical URL, article identity, normalized original title, normalized final Chinese title |
+## 4. Translation
+
+### Stage A：Faithful Translation
+
+不做电子纸短文本压缩。
+
+### Stage B：Fidelity Verification
+
+检查：
+
+- subject；
+- action；
+- negation；
+- numbers；
+- currency；
+- percentage；
+- time；
+- location；
+- person；
+- organization；
+- unsupportedClaims；
+- missingFacts。
+
+### Stage C：Chinese Editing
+
+把忠实译文编辑成适合电子纸的自然中文。
+
+禁止：
+
+- 机械 slice；
+- 改变事实；
+- 为凑长度编造内容。
+
+## 5. Final Dedup
+
+至少：
+
+- canonical URL；
+- article identity；
+- normalized original title；
+- normalized final Chinese title；
+- final title similarity。
+
+source quota 只能在 dedupe 后执行。
+
+## 6. Selection
+
+硬条件：
+
+```text
+FINAL_COUNT=6
+UNIQUE_CANONICAL_URL_COUNT=6
+UNIQUE_ARTICLE_ID_COUNT=6
+UNIQUE_FINAL_TITLE_COUNT=6
+DUPLICATE_ARTICLE_COUNT=0
+PLACEHOLDER_COUNT=0
+FOREIGN_UNTRANSLATED_COUNT=0
+```
+
+## 7. Layout
+
+唯一共享：
+
+```text
+layoutNewsCard()
+```
+
+生产、测试、Admin preview 共用。
+
+要求：
+
+- titleLines=1；
+- summaryLines=2 或 3；
+- overflow=false。
+
+## 8. Last-Good
+
+只有完整合格 6 条可覆盖。
+
+live fail / invalid / duplicate / insufficient：
+使用 last-good，不覆盖它。

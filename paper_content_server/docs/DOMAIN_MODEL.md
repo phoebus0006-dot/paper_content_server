@@ -1,158 +1,160 @@
-# Domain Model
+# 领域模型
 
-## OperatingMode
-```
-AUTO                — Follow schedule
-ONE_SHOT_OVERRIDE   — Manual content, revert at next HH:00/HH:30
-FOCUS_LOCK          — Manual content locked, schedule paused
+## 1. OperatingMode
+
+```text
+AUTO
+ONE_SHOT_OVERRIDE
+FOCUS_LOCK
 ```
 
-## Publication
-```
+## 2. Publication
+
+```json
 {
-  id: string,
-  mode: OperatingMode,
-  snapshotId: string,
-  frameId: string,
-  contentHash: string,
-  contentType: 'news' | 'photo',
-  publishedAt: ISO8601,
-  expiresAt: ISO8601 | null,
-  rolledBackAt: ISO8601 | null,
-  rolledBackTo: string | null
+  "publicationId": "string",
+  "contentType": "news|photo|analysis|comparison|sequence",
+  "frameId": "string",
+  "contentHash": "string",
+  "activationMode": "schedule|one_shot|focus_lock",
+  "createdAt": "ISO-8601",
+  "expiresAt": "ISO-8601|null"
 }
 ```
 
-## Snapshot
-```
+## 3. Snapshot
+
+```json
 {
-  snapshotId: string,
-  frameId: string,
-  mode: 'news' | 'photo',
-  slotKey: string,
-  contentHash: string,
-  createdAt: ISO8601,
-  validUntil: ISO8601 | null
+  "snapshotId": "string",
+  "frameId": "string",
+  "mode": "news|photo|analysis|comparison|sequence",
+  "contentRef": "string",
+  "contentHash": "string",
+  "createdAt": "ISO-8601",
+  "validUntil": "ISO-8601|null"
 }
 ```
 
-## RawArticle (pre-translation)
-```
+## 4. RawArticle
+
+```json
 {
-  articleId: string,
-  feedId: string,
-  source: string,
-  language: string,
-  canonicalUrl: string,
-  originalTitle: string,
-  originalSummary: string,
-  publishedAt: ISO8601,
-  category: string
+  "articleId": "string",
+  "feedId": "string",
+  "source": "string",
+  "language": "string",
+  "canonicalUrl": "string",
+  "originalTitle": "string",
+  "originalSummary": "string",
+  "publishedAt": "string"
 }
 ```
 
-## TranslatedArticle
-```
+## 5. TranslatedArticle
+
+```json
 {
-  ...RawArticle,
-  literalTitleZh: string,
-  literalSummaryZh: string,
-  translationProvider: string,
-  translationModel: string,
-  promptVersion: string,
-  translationStatus: 'original' | 'translated' | 'cached' | 'failed' | 'disabled',
-  verification: TranslationVerification
+  "literalTitleZh": "string",
+  "literalSummaryZh": "string",
+  "provider": "string",
+  "model": "string",
+  "promptVersion": "string",
+  "verification": {
+    "faithful": true,
+    "subjectPreserved": true,
+    "actionPreserved": true,
+    "negationPreserved": true,
+    "numbersPreserved": true,
+    "entitiesPreserved": true,
+    "unsupportedClaims": [],
+    "missingFacts": [],
+    "issues": []
+  }
 }
 ```
 
-## DisplayArticle
-```
+## 6. DisplayArticle
+
+```json
 {
-  ...TranslatedArticle,
-  finalTitle: string,
-  finalSummary: string,
-  layout: CardLayout,
-  qualityStatus: 'pass' | 'soft_pass' | 'reject',
-  productionEligible: boolean
+  "finalTitle": "string",
+  "finalSummary": "string",
+  "layout": {
+    "titleLines": 1,
+    "summaryLines": 2,
+    "overflow": false
+  },
+  "qualityStatus": "pass",
+  "productionEligible": true
 }
 ```
 
-## LibraryAsset
-```
+## 7. LibraryAsset
+
+```json
 {
-  assetId: string,
-  libraryType: 'learning' | 'custom',
-  kind: 'film_still' | 'storyboard' | 'sequence_frame',
-  sourceType: string,
-  sourceName: string,
-  sourceUrl: string,
-  author: string,
-  license: string,
-  rightsStatus: string,
-  theme: string,
-  lessonTags: string[],
-  analysisNote: string,
-  studySetId: string | null,
-  pairRole: 'storyboard' | 'final_shot' | null,
-  sequenceId: string | null,
-  sequenceIndex: number | null,
-  safetyStatus: 'safe' | 'unsafe' | 'suspicious' | 'uncertain',
-  relevanceStatus: 'pass' | 'reject' | 'uncertain' | null,
-  technicalQualityStatus: 'pass' | 'reject' | 'unknown',
-  productionEligible: boolean,
-  eligibilityReason: string[],
-  contentHash: string,
-  processedPngPath: string,
-  epfPath: string
+  "assetId": "string",
+  "libraryType": "learning|custom",
+  "kind": "film_still|storyboard|sequence_frame",
+  "sourceType": "string",
+  "sourceUrl": "string|null",
+  "rights": {
+    "author": "string|null",
+    "license": "string|null",
+    "licenseUrl": "string|null",
+    "usageTerms": "string|null"
+  },
+  "theme": "string|null",
+  "lessonTags": [],
+  "analysisNote": "string",
+  "studySetId": "string|null",
+  "pairRole": "storyboard|final_shot|null",
+  "sequenceId": "string|null",
+  "sequenceIndex": "number|null",
+  "safetyStatus": "safe|suspicious|unsafe|uncertain",
+  "relevanceStatus": "pass|reject|uncertain",
+  "technicalQualityStatus": "pass|reject|unknown",
+  "productionEligible": false,
+  "eligibilityReason": [],
+  "contentHash": "string"
 }
 ```
 
-## Production Eligibility Rules
+## 8. Learning Library Eligibility
 
-### Learning Library
-```
+必须同时：
+
+```text
 libraryType=learning
-AND safetyStatus=safe
-AND relevanceStatus=pass
-AND technicalQualityStatus=pass
-AND productionEligible=true
+safetyStatus=safe
+relevanceStatus=pass
+technicalQualityStatus=pass
+productionEligible=true
 ```
 
-### Custom Library
-```
+## 9. Custom Library Eligibility
+
+必须：
+
+```text
 libraryType=custom
-AND safetyStatus=safe
-AND productionEligible=true
-AND within explicit selected scope
+safetyStatus=safe
+productionEligible=true
+within explicit selected scope
 ```
 
-## SafetyTombstone
-```
+## 10. SafetyTombstone
+
+```json
 {
-  contentHash: string,
-  decision: 'safe' | 'suspicious' | 'unsafe' | 'uncertain',
-  reasonCode: string,
-  deletedAt: ISO8601,
-  imageBytesRemoved: true
+  "assetId": "string",
+  "contentHash": "string",
+  "source": "string",
+  "decision": "unsafe|suspicious|uncertain",
+  "reasonCode": "string",
+  "deletedAt": "ISO-8601"
 }
 ```
 
-## Sequence
-```
-{
-  sequenceId: string,
-  frames: [{ assetId: string, index: number }],
-  source: string,
-  createdAt: ISO8601
-}
-```
-
-## StudySet
-```
-{
-  studySetId: string,
-  title: string,
-  pairs: [{ storyboardAssetId: string, finalShotAssetId: string }],
-  sequences: [Sequence]
-}
-```
+不得保留图片字节。

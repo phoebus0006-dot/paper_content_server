@@ -1,16 +1,18 @@
-# ADR-0003: Strict NSFW Deletion — No Quarantine Recovery
+# ADR-0003：色情/NSFW 严格删除策略
 
-**Status:** Accepted  
-**Date:** 2026-07-10
-
-## Context
-When NSFW content is detected, options: quarantine with review, or immediate deletion.
+## Status
+Accepted
 
 ## Decision
-Any image classified as suspicious, unsafe, or uncertain is immediately deleted. Only tombstone metadata is retained.
 
-## Consequences
-- Zero tolerance policy enforced.
-- No recovery from quarantine.
-- All derived artifacts (renders, cache entries) are also deleted.
-- Tombstone prevents re-upload of the same content.
+任何 unsafe、suspicious 或 uncertain 图片：
+
+- 删除图片字节；
+- 清除所有派生文件；
+- 清除 active/cache/snapshot references；
+- 禁止 rollback；
+- 只保留 tombstone metadata。
+
+## Rationale
+
+用户要求宁可错杀，不可漏放。

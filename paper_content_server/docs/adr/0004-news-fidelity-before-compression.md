@@ -1,16 +1,15 @@
-# ADR-0004: Translation Fidelity Before Display Compression
+# ADR-0004：新闻先忠实翻译，再压缩与排版
 
-**Status:** Accepted  
-**Date:** 2026-07-10
-
-## Context
-Foreign news requires translation before display. Options: direct LLM → short text, or faithful translation → verification → compression.
+## Status
+Accepted
 
 ## Decision
-Translation is split into three stages: (1) faithful literal translation, (2) fidelity verification, (3) Chinese display compression. LLM must never produce final display text directly.
 
-## Consequences
-- Higher translation quality.
-- Verification catches errors before they reach the device.
-- More processing steps, but critical for accuracy.
-- Cache key includes prompt version to invalidate old translations.
+新闻处理拆成：
+
+1. 忠实翻译；
+2. 忠实性验证；
+3. 中文编辑；
+4. 布局适配。
+
+不得用“有中文字符”替代翻译忠实性验证。

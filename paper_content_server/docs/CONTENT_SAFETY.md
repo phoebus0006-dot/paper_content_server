@@ -1,37 +1,62 @@
-# Content Safety
+# 图片内容安全
 
-## NSFW Policy — ZERO TOLERANCE
+## 1. 政策
 
-| Classification | Action |
-|---------------|--------|
-| Safe | Keep |
-| Suspicious | Delete |
-| Unsafe | Delete |
-| Uncertain | Delete |
+色情/NSFW 零容忍。
 
-User requirement: "Better to delete a false positive than miss an unsafe image."
+严格 fail-closed：
 
-## Deletion Scope
+```text
+safe → continue
+suspicious → delete
+unsafe → delete
+uncertain → delete
+```
 
-When an image is deleted for safety reasons:
+## 2. 删除范围
 
-| Artifact | Removed? |
-|----------|----------|
-| Raw upload | Yes |
-| Processed PNG | Yes |
-| Thumbnail | Yes |
-| Derived render | Yes |
-| Frame cache entry | Yes |
-| Snapshot cache entry | Yes |
-| Active reference | Yes |
-| History rollback reference | Yes |
+发现 unsafe/suspicious/uncertain 后：
 
-## Retained Metadata (Tombstone)
+1. 从索引移除；
+2. raw 删除；
+3. processed 删除；
+4. thumbnail 删除；
+5. temp download 删除；
+6. derived render 删除；
+7. frame cache 删除；
+8. snapshot cache 删除；
+9. active publication reference 删除；
+10. history rollback blocked；
+11. 仅 tombstone 保留。
 
-Only the following is kept:
-- contentHash
-- decision (suspicious/unsafe/uncertain)
-- reasonCode
-- deletedAt
+## 3. 两个图库同样严格
 
-No image bytes are retained after deletion.
+Learning Library 和 Custom Library 都必须经过安全门。
+
+用户上传不能绕过安全门。
+
+## 4. Tombstone
+
+仅允许：
+
+- assetId；
+- contentHash；
+- source；
+- decision；
+- reasonCode；
+- deletedAt。
+
+不得保留图片字节。
+
+## 5. 测试
+
+至少：
+
+- unsafe selected=0；
+- suspicious selected=0；
+- uncertain selected=0；
+- deleted file count 正确；
+- active unsafe refs=0；
+- cache unsafe refs=0；
+- snapshot unsafe refs=0；
+- rollback unsafe refs=0。

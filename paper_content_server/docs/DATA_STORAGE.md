@@ -1,29 +1,65 @@
-# Data Storage
+# 数据与持久化
 
-## Runtime State Files
+## 1. 原则
 
-All runtime state is in the configured `DATA_DIR` (outside the repo tree in production).
+源码与生产运行数据分离。
 
-| File | Content | Schema Version |
-|------|---------|---------------|
-| news_cache.json | Translation cache (versioned by prompt) | 1 |
-| news_rotation_state.json | News shown history | 1 |
-| library_state.json | Photo rotation state | 1 |
-| image_index.json | Image library index | 1 |
-| last_good_news.json | Last successful news snapshot | 1 |
-| publish_history.json | Publication history | 1 |
-| admin_news_draft.json | Current manual news draft | 1 |
-| admin_override.json | Admin override state | 1 |
+生产状态不得污染 Git worktree。
 
-## Repository State
+## 2. 建议结构
 
-Runtime state files are NOT committed to git in production.
-The repo only contains example schemas and empty samples.
+```text
+runtime/
+  news/
+    cache/
+    last-good/
+    translation/
+  library/
+    learning/
+      originals/
+      processed/
+      metadata/
+    custom/
+      originals/
+      processed/
+      metadata/
+    tombstones/
+  publication/
+    snapshots/
+    history/
+    active/
+  frame-cache/
+```
 
-## Persistence Rules
+## 3. JsonStore
 
-- JSON writes use atomic temp file + rename pattern
-- Temp files use unique suffixes (not a shared .tmp)
-- Corrupt files are backed up as .corrupt.<timestamp>
-- Schema version mismatch triggers migration or rejection
-- ENOENT (first start) returns allowed fallback
+统一：
+
+- read；
+- writeAtomic；
+- unique temp file；
+- schemaVersion；
+- validation；
+- corrupt backup；
+- explicit errors。
+
+区分：
+
+- ENOENT；
+- JSON_CORRUPT；
+- SCHEMA_INVALID；
+- IO_ERROR。
+
+禁止 catch-all 后静默返回空数组。
+
+## 4. Publication
+
+原子顺序：
+
+```text
+build
+→ validate
+→ persist
+→ activate
+→ mqtt notify
+```

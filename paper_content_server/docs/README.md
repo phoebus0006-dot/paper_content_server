@@ -1,83 +1,34 @@
-# Paper Content Server — Documentation
+# NewsPhoto E-Paper 项目文档总索引
 
-## Navigation
+本目录是项目的正式需求、架构、技术、测试、审核、部署与重构基线。
 
-### 1. Product Requirements
-[PRODUCT_REQUIREMENTS.md](./PRODUCT_REQUIREMENTS.md)
-Complete product specification: hardware, schedule, operating modes, news,
-image library, safety, and translation requirements.
+## 文档优先级
 
-### 2. Acceptance Criteria
-[ACCEPTANCE_CRITERIA.md](./ACCEPTANCE_CRITERIA.md)
-Verifiable checklists for every requirement. Used for QA and release gate.
+1. `PRODUCT_REQUIREMENTS.md`：真实产品需求，最高优先级。
+2. `ACCEPTANCE_CRITERIA.md`：可验收行为。
+3. `SYSTEM_ARCHITECTURE.md`：目标系统架构。
+4. `DOMAIN_MODEL.md`：领域模型与状态机。
+5. `API_CONTRACT.md` 与 `MQTT_CONTRACT.md`：对外协议。
+6. `NEWS_PIPELINE.md`：新闻抓取、翻译、去重、排版。
+7. `IMAGE_LIBRARY_ARCHITECTURE.md`：双图库体系。
+8. `CONTENT_SAFETY.md`：图片内容安全。
+9. `RENDERING_AND_EPF1.md`：渲染与帧协议。
+10. `DATA_STORAGE.md`：运行数据和持久化。
+11. `TEST_STRATEGY.md`：测试体系。
+12. `REVIEW_GUIDE.md`：独立审核方法。
+13. `DEPLOYMENT_RUNBOOK.md`：NAS 部署。
+14. `REFACTOR_ROADMAP.md`：分阶段大修计划。
+15. `TRACEABILITY_MATRIX.md`：需求—代码—测试追踪矩阵。
+16. `adr/`：关键架构决策。
 
-### 3. System Architecture
-[SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md)
-Target module structure, current vs target architecture comparison.
+## 项目核心原则
 
-### 4. Domain Model
-[DOMAIN_MODEL.md](./DOMAIN_MODEL.md)
-Data types and production eligibility rules for all entities.
-
-### 5. API & MQTT Contracts
-[API_AND_MQTT_CONTRACT.md](./API_AND_MQTT_CONTRACT.md)
-Current (legacy) and target REST API contracts. MQTT behavior rules.
-
-### 6. Image Library Architecture
-[IMAGE_LIBRARY_ARCHITECTURE.md](./IMAGE_LIBRARY_ARCHITECTURE.md)
-Dual-library design: Learning Library (auto acquisition) and Custom Library (user uploads).
-Display source selection, safety, display modes, and data model.
-
-### 7. Storyboard Library
-[STORYBOARD_LIBRARY.md](./STORYBOARD_LIBRARY.md)
-Storyboard as a content type within the Learning Library. Comparison pairs and sequences.
-
-### 8. Content Safety
-[CONTENT_SAFETY.md](./CONTENT_SAFETY.md)
-Zero-tolerance NSFW policy covering both libraries. Deletion scope and tombstone retention.
-
-### 9. News Pipeline
-[NEWS_PIPELINE.md](./NEWS_PIPELINE.md)
-End-to-end news flow: fetch → parse → translate → verify → edit → select 6.
-
-### 10. Rendering & EPF1
-[RENDERING_AND_EPF1.md](./RENDERING_AND_EPF1.md)
-Frame rendering pipeline, EPF1 format specification, palette, quantization.
-
-### 11. Data Storage
-[DATA_STORAGE.md](./DATA_STORAGE.md)
-Runtime state files, persistence rules, schema versioning.
-
-### 12. Test Strategy
-[TEST_STRATEGY.md](./TEST_STRATEGY.md)
-Test levels, runner, rules for mocks and production-path testing.
-
-### 13. Deployment Runbook
-[DEPLOYMENT_RUNBOOK.md](./DEPLOYMENT_RUNBOOK.md)
-NAS deployment procedure, bind mount mapping, verification steps.
-
-### 14. Refactor Roadmap
-[REFACTOR_ROADMAP.md](./REFACTOR_ROADMAP.md)
-Phased architecture refactoring plan from current server.js to modular src/.
-
-### 15. Traceability Matrix
-[TRACEABILITY_MATRIX.md](./TRACEABILITY_MATRIX.md)
-Full requirements-to-module-to-test mapping with verification status.
-
-### 16. Architecture Decision Records
-[adr/0001-mqtt-notification-http-source-of-truth.md](./adr/0001-mqtt-notification-http-source-of-truth.md)
-[adr/0002-custom-library-only.md](./adr/0002-custom-library-only.md) — **Superseded** by ADR-0006
-[adr/0003-strict-nsfw-deletion.md](./adr/0003-strict-nsfw-deletion.md)
-[adr/0004-news-fidelity-before-compression.md](./adr/0004-news-fidelity-before-compression.md)
-[adr/0005-operating-modes.md](./adr/0005-operating-modes.md)
-[adr/0006-dual-image-library-architecture.md](./adr/0006-dual-image-library-architecture.md) — **Active**
-
-## Recommended Reading Order
-
-1. PRODUCT_REQUIREMENTS.md → 2. ACCEPTANCE_CRITERIA.md
-3. SYSTEM_ARCHITECTURE.md → 4. DOMAIN_MODEL.md
-5. API_AND_MQTT_CONTRACT.md
-6. IMAGE_LIBRARY_ARCHITECTURE.md → STORYBOARD_LIBRARY.md → CONTENT_SAFETY.md
-7. NEWS_PIPELINE.md → RENDERING_AND_EPF1.md
-8. DATA_STORAGE.md → TEST_STRATEGY.md → DEPLOYMENT_RUNBOOK.md
-9. REFACTOR_ROADMAP.md → TRACEABILITY_MATRIX.md
+- 用户需求高于历史代码行为。
+- MQTT 负责立即触发，HTTP state/frame 仍是唯一内容真相来源。
+- 60 秒 polling 永久保留作为 fallback。
+- 图片采用双图库：自动学习图库 + 用户自定义图库。
+- 色情/NSFW 采取零容忍、fail-closed、删除策略。
+- 新闻目标是 6 条高质量、独立、可读新闻，不允许 placeholder 凑数。
+- 翻译先忠实，再验证，再中文编辑，再适配电子纸布局。
+- 自动化测试通过不等于用户体验通过。
+- 所有 Admin 发布必须走正式生产渲染、快照和帧链路。
