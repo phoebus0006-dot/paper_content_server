@@ -1448,14 +1448,47 @@ async function buildNewsSnapshot(now) {
     }
   }
 
+  function canonicalUrl(u) {
+    if (!u) return '';
+    return String(u).replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/^https?:\/\//, '').toLowerCase().trim();
+  }
+
+  function normalizeDedupKey(text) {
+    return (text || '').replace(/[\s,，。！？、；：""''「『」』（）()【】\[\]\{\}]/g, '').toLowerCase().trim();
+  }
+
   const final = [];
   const sourceCount = new Map();
+  const seenUrls = new Set();
+  const seenTitles = new Set();
+
+  function isDuplicate(item) {
+    const url = canonicalUrl(item.sourceUrl || item.url || '');
+    if (url && seenUrls.has(url)) return true;
+    const origTitle = normalizeDedupKey(item.originalTitle || item.title || '');
+    if (origTitle && seenTitles.has(origTitle)) return true;
+    const zhTitle = normalizeDedupKey(item.zhTitle || '');
+    if (zhTitle && origTitle && zhTitle !== origTitle && seenTitles.has(zhTitle)) return true;
+    return false;
+  }
+
+  function markSeen(item) {
+    const url = canonicalUrl(item.sourceUrl || item.url || '');
+    if (url) seenUrls.add(url);
+    const origTitle = normalizeDedupKey(item.originalTitle || item.title || '');
+    if (origTitle) seenTitles.add(origTitle);
+    const zhTitle = normalizeDedupKey(item.zhTitle || '');
+    if (zhTitle) seenTitles.add(zhTitle);
+  }
+
   function tryAdd(items) {
     for (const { item } of items) {
       if (final.length >= NEWS_MAX_ITEMS) break;
+      if (isDuplicate(item)) continue;
       const src = item.source || '';
       if ((sourceCount.get(src) || 0) >= 2) continue;
       sourceCount.set(src, (sourceCount.get(src) || 0) + 1);
+      markSeen(item);
       final.push(item);
     }
   }
@@ -1466,9 +1499,11 @@ async function buildNewsSnapshot(now) {
   if (final.length < NEWS_MAX_ITEMS) {
     for (const item of mainPool) {
       if (final.length >= NEWS_MAX_ITEMS) break;
+      if (isDuplicate(item)) continue;
       const src = item.source || '';
       if ((sourceCount.get(src) || 0) >= 2) continue;
       sourceCount.set(src, (sourceCount.get(src) || 0) + 1);
+      markSeen(item);
       final.push(item);
     }
   }
@@ -2059,6 +2094,38 @@ function categoryStyle(category) {
   return style;
 }
 
+const NEWS_LAYOUT = {
+  HEADER_H: 36, FOOTER_H: 18, MARGIN: 14, COL_GAP: 12, ROW_GAP: 8,
+  badgeH: 14, badgeFont: 10, titleFont: 24, summaryFont: 18,
+};
+NEWS_LAYOUT.cardW = Math.floor((FRAME_WIDTH - NEWS_LAYOUT.MARGIN * 2 - NEWS_LAYOUT.COL_GAP) / 2);
+NEWS_LAYOUT.cardH = Math.floor((FRAME_HEIGHT - NEWS_LAYOUT.HEADER_H - NEWS_LAYOUT.FOOTER_H - NEWS_LAYOUT.ROW_GAP * 2 - 8) / 3);
+
+function layoutNewsCard(item, opts) {
+  opts = opts || NEWS_LAYOUT;
+  const titleMax = Math.floor((opts.cardW - 12) / (opts.titleFont * 0.55));
+  const sumMax = Math.floor((opts.cardW - 12) / (opts.summaryFont * 0.56));
+  const titleText = fitTextWidth(item.zhTitle, titleMax);
+  const sumLines = wrapText(item.zhSummary || '', sumMax);
+  const badgeH = opts.badgeH || 14;
+  const titleY = badgeH + 5 + opts.titleFont; // offset from card top
+  const sumStartY = titleY + 5;
+  const sumLineH = opts.summaryFont + 2;
+  const contentBottom = sumStartY + 3 * sumLineH + opts.summaryFont;
+  const overflow = contentBottom > opts.cardH;
+  return {
+    titleText: titleText,
+    titleLines: titleText ? 1 : 0,
+    summaryLines: sumLines.slice(0, 3),
+    summaryLineCount: Math.min(sumLines.length, 3),
+    titleFontSize: opts.titleFont,
+    summaryFontSize: opts.summaryFont,
+    overflow: overflow,
+    titleBounds: { y: titleY, height: opts.titleFont },
+    summaryBounds: { y: sumStartY, height: 3 * sumLineH },
+  };
+}
+
 function renderNewsSvg(news, now) {
   const items = (news.items || []).slice(0, 6);
   if (!items.length) {
@@ -2067,22 +2134,12 @@ function renderNewsSvg(news, now) {
        <text x="20" y="240" font-family="${escapeXml(FONT_STACK)}" font-size="24" fill="#000000">暂无新闻</text>`);
   }
 
-  const HEADER_H = 36;
-  const FOOTER_H = 18;
-  const MARGIN = 14;
-  const COL_GAP = 12;
-  const ROW_GAP = 8;
-  const cardW = Math.floor((FRAME_WIDTH - MARGIN * 2 - COL_GAP) / 2);
-  const cardH = Math.floor((FRAME_HEIGHT - HEADER_H - FOOTER_H - ROW_GAP * 2 - 8) / 3);
-  const badgeFont = 10;
-  const titleFont = 24;
-  const summaryFont = 18;
-
+  const L = NEWS_LAYOUT;
   const boxes = [];
   boxes.push(`<rect x="0" y="0" width="${FRAME_WIDTH}" height="${FRAME_HEIGHT}" fill="#ffffff"/>`);
 
   // Header
-  boxes.push(`<rect x="0" y="0" width="${FRAME_WIDTH}" height="${HEADER_H}" fill="#000000"/>`);
+  boxes.push(`<rect x="0" y="0" width="${FRAME_WIDTH}" height="${L.HEADER_H}" fill="#000000"/>`);
   boxes.push(`<text x="14" y="25" font-family="${escapeXml(FONT_STACK)}" font-size="16" font-weight="700" fill="#ffffff">简报 NEWS</text>`);
   boxes.push(`<text x="${FRAME_WIDTH - 14}" y="25" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="12" fill="#ffffff">${escapeXml(formatDateTime(now))}</text>`);
 
@@ -2090,39 +2147,36 @@ function renderNewsSvg(news, now) {
     const item = items[i];
     const col = i % 2;
     const row = Math.floor(i / 2);
-    const x0 = MARGIN + col * (cardW + COL_GAP);
-    const y0 = HEADER_H + 4 + row * (cardH + ROW_GAP);
+    const x0 = L.MARGIN + col * (L.cardW + L.COL_GAP);
+    const y0 = L.HEADER_H + 4 + row * (L.cardH + L.ROW_GAP);
 
     const style = categoryStyle(item.category);
     const label = CATEGORY_LABELS[String(item.category || '').toLowerCase()] || item.category || '综合';
     const badgeW = 7 + label.length * 8;
-    const badgeH = 14;
+
+    const layout = layoutNewsCard(item, L);
 
     // Card background
-    boxes.push(`<rect x="${x0 - 2}" y="${y0}" width="${cardW}" height="${cardH}" fill="#f6f6f6" rx="4"/>`);
+    boxes.push(`<rect x="${x0 - 2}" y="${y0}" width="${L.cardW}" height="${L.cardH}" fill="#f6f6f6" rx="4"/>`);
 
     // Row 1: badge + source + time
-    boxes.push(`<rect x="${x0 + 2}" y="${y0 + 3}" width="${badgeW}" height="${badgeH}" fill="${style.bg}" rx="2"/>`);
-    boxes.push(`<text x="${x0 + 2 + badgeW / 2}" y="${y0 + 3 + 11}" text-anchor="middle" font-family="${escapeXml(FONT_STACK)}" font-size="${badgeFont}" font-weight="700" fill="${style.text}">${escapeXml(label)}</text>`);
+    boxes.push(`<rect x="${x0 + 2}" y="${y0 + 3}" width="${badgeW}" height="${L.badgeH}" fill="${style.bg}" rx="2"/>`);
+    boxes.push(`<text x="${x0 + 2 + badgeW / 2}" y="${y0 + 3 + 11}" text-anchor="middle" font-family="${escapeXml(FONT_STACK)}" font-size="${L.badgeFont}" font-weight="700" fill="${style.text}">${escapeXml(label)}</text>`);
     boxes.push(`<text x="${x0 + 2 + badgeW + 5}" y="${y0 + 3 + 11}" font-family="${escapeXml(FONT_STACK)}" font-size="10" fill="#888888">${escapeXml(truncateText(item.source, 8))}</text>`);
     const timeText = formatDateTime(item.publishedAt).slice(11, 16);
-    boxes.push(`<text x="${x0 + cardW - 6}" y="${y0 + 3 + 11}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#aaaaaa">${escapeXml(timeText)}</text>`);
+    boxes.push(`<text x="${x0 + L.cardW - 6}" y="${y0 + 3 + 11}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#aaaaaa">${escapeXml(timeText)}</text>`);
 
-    // Row 2: title — rewritten one-line, no ellipsis
-    const titleMax = Math.floor((cardW - 12) / (titleFont * 0.55));
-    const titleText = fitTextWidth(item.zhTitle, titleMax);
-    boxes.push(`<text x="${x0 + 4}" y="${y0 + 3 + badgeH + 5 + titleFont}" font-family="${escapeXml(FONT_STACK)}" font-size="${titleFont}" font-weight="700" fill="#111111">${escapeXml(titleText)}</text>`);
+    // Row 2: title
+    boxes.push(`<text x="${x0 + 4}" y="${y0 + 3 + L.badgeH + 5 + L.titleFont}" font-family="${escapeXml(FONT_STACK)}" font-size="${L.titleFont}" font-weight="700" fill="#111111">${escapeXml(layout.titleText)}</text>`);
 
-    // Row 3-5: summary — 3 lines max
-    const sumMax = Math.floor((cardW - 12) / (summaryFont * 0.56));
-    const sumLines = wrapText(item.zhSummary, sumMax).slice(0, 3);
-    for (let li = 0; li < sumLines.length; li++) {
-      boxes.push(`<text x="${x0 + 4}" y="${y0 + 3 + badgeH + 5 + titleFont + 5 + (li + 1) * (summaryFont + 2)}" font-family="${escapeXml(FONT_STACK)}" font-size="${summaryFont}" fill="#111111">${escapeXml(sumLines[li])}</text>`);
+    // Row 3-5: summary — 3 lines
+    for (let li = 0; li < layout.summaryLines.length && li < 3; li++) {
+      boxes.push(`<text x="${x0 + 4}" y="${y0 + 3 + L.badgeH + 5 + L.titleFont + 5 + (li + 1) * (L.summaryFont + 2)}" font-family="${escapeXml(FONT_STACK)}" font-size="${L.summaryFont}" fill="#111111">${escapeXml(layout.summaryLines[li])}</text>`);
     }
   }
 
   // Footer
-  boxes.push(`<rect x="0" y="${FRAME_HEIGHT - FOOTER_H}" width="${FRAME_WIDTH}" height="${FOOTER_H}" fill="#000000"/>`);
+  boxes.push(`<rect x="0" y="${FRAME_HEIGHT - L.FOOTER_H}" width="${FRAME_WIDTH}" height="${L.FOOTER_H}" fill="#000000"/>`);
   const ftMsg = news.translationNotice || (TRANSLATION_PROVIDER === 'none' || !TRANSLATION_PROVIDER ? '翻译未启用' : '');
   boxes.push(`<text x="10" y="${FRAME_HEIGHT - 4}" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#ffffff">${escapeXml(now.toTimeString().slice(0,5))}</text>`);
   if (ftMsg) boxes.push(`<text x="${FRAME_WIDTH - 10}" y="${FRAME_HEIGHT - 4}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#ffffff">${escapeXml(ftMsg)}</text>`);
@@ -3132,6 +3186,10 @@ module.exports = {
   rewriteNewsSummary,
   evaluateNewsItemQuality,
   PROTECTED_ENTITIES,
+  renderNewsSvg,
+  wrapText,
+  layoutNewsCard,
+  NEWS_LAYOUT,
 };
 
 

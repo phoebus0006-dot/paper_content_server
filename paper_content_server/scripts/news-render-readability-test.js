@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// news-render-readability-test — production-path news frame verification
+// news-render-readability-test — production-path layout via shared layoutNewsCard
 var path = require('path');
 var http = require('http');
 var fs = require('fs');
@@ -8,6 +8,10 @@ var PORT = 8797;
 var BASE = 'http://127.0.0.1:' + PORT;
 var TMPDIR = path.join(ROOT, 'test_readability_' + Date.now());
 var exitCode = 0, passed = 0, failed = 0;
+
+var mod = require(path.join(ROOT, 'server.js'));
+var layoutNewsCard = mod.layoutNewsCard;
+var NEWS_LAYOUT = mod.NEWS_LAYOUT;
 
 function test(name, ok, detail) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + (detail ? ': ' + detail : ''));
@@ -38,21 +42,6 @@ function scanFrameCodes(buf) {
   return { codes: Object.keys(codes).map(Number).sort(), code4: code4, unsupported: unsupported.sort() };
 }
 
-function wrapText(text, max) {
-  if (!text) return [''];
-  var source = String(text).replace(/\s+/g,' ').trim();
-  if (!source) return [''];
-  var lines = [], current = '', currentW = 0;
-  for (var i = 0; i < source.length; i++) {
-    var ch = source[i];
-    var w = /[\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf]/.test(ch) ? 2 : 1;
-    if (current && currentW + w > max) { lines.push(current); current = ''; currentW = 0; }
-    current += ch; currentW += w;
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
 fs.mkdirSync(TMPDIR, { recursive: true });
 
 var env = Object.assign({}, process.env, {
@@ -80,7 +69,7 @@ async function main() {
     var nw = await fetch('/api/news.json', 60000);
     test('NEWS_HTTP_200', nw.s === 200, 'status=' + nw.s);
     var nj = JSON.parse(nw.b);
-    test('NEWS_COUNT_6', nj.items && nj.items.length >= 4, 'count=' + nj.items.length);
+    test('NEWS_COUNT_6', nj.items && nj.items.length === 6, 'count=' + nj.items.length);
 
     var fb = await fetch('/api/frame.bin', 20000);
     test('FRAME_HTTP_200', fb.s === 200, 'status=' + fb.s);
@@ -91,31 +80,27 @@ async function main() {
     test('UNSUPPORTED_EMPTY', scan.unsupported.length === 0, 'unsupported=' + JSON.stringify(scan.unsupported));
     test('VALID_CODES', scan.codes.length > 0, 'codes=' + JSON.stringify(scan.codes));
 
-    // Verify 3-line summary layout using production wrapText
-    var FRAME_W = 800, FRAME_H = 480;
-    var cardW = Math.floor((FRAME_W - 14*2 - 12) / 2);
-    var cardH = Math.floor((FRAME_H - 36 - 18 - 8*2 - 8) / 3);
-    var titleFont = 24, summaryFont = 18;
+    // Use shared production layoutNewsCard for every card
+    if (!layoutNewsCard || !NEWS_LAYOUT) {
+      test('LAYOUT_FN_MISSING', false, 'layoutNewsCard or NEWS_LAYOUT not exported');
+    } else {
+      var sumFont = NEWS_LAYOUT.summaryFont;
+      var all3 = true, noOverflow = true;
+      nj.items.slice(0, 6).forEach(function(item, i) {
+        var layout = layoutNewsCard(item, NEWS_LAYOUT);
+        var row = Math.floor(i / 2);
+        var y0 = NEWS_LAYOUT.HEADER_H + 4 + row * (NEWS_LAYOUT.cardH + NEWS_LAYOUT.ROW_GAP);
+        var sumEndY = y0 + 3 + NEWS_LAYOUT.badgeH + 5 + NEWS_LAYOUT.titleFont + 5 + 3 * (NEWS_LAYOUT.summaryFont + 2);
+        var overflow = layout.overflow || (sumEndY + NEWS_LAYOUT.summaryFont > y0 + NEWS_LAYOUT.cardH);
+        if (layout.summaryLineCount !== 3) all3 = false;
+        if (overflow) noOverflow = false;
+        test('CARD_' + (i+1) + '_SUMMARY_LINES=' + layout.summaryLineCount, layout.summaryLineCount === 3, 'summaryLines=' + layout.summaryLineCount + (layout.overflow ? ' OVERFLOW' : ''));
+      });
+      test('ALL_3_SUMMARY_LINES', all3, 'fontSize=' + sumFont);
+      test('NO_OVERFLOW', noOverflow, 'cardH=' + NEWS_LAYOUT.cardH);
+    }
 
-    var all3Lines = nj.items.slice(0, 6).every(function(item) {
-      var sumMax = Math.floor((cardW - 12) / (summaryFont * 0.56));
-      var lines = wrapText(item.zhSummary || '', sumMax);
-      return lines.length >= 3;
-    });
-    test('ALL_CARDS_3_SUMMARY_LINES', all3Lines, 'fontSize=' + summaryFont);
-
-    var noOverflow = nj.items.slice(0, 6).every(function(item, i) {
-      var row = Math.floor(i / 2);
-      var y0 = 36 + 4 + row * (cardH + 8);
-      var sumMax = Math.floor((cardW - 12) / (summaryFont * 0.56));
-      var lines = wrapText(item.zhSummary || '', sumMax).slice(0, 3);
-      var badgeH = 14;
-      var sumEndY = y0 + 3 + badgeH + 5 + titleFont + 5 + lines.length * (summaryFont + 2);
-      return sumEndY + summaryFont <= y0 + cardH;
-    });
-    test('NO_CARD_OVERFLOW', noOverflow, 'cardH=' + cardH);
-
-    // Verify EPF1 frame header
+    // EPF1 header
     test('EPF1_HEADER', fb.b.slice(0, 4).toString() === 'EPF1', 'magic=' + fb.b.slice(0, 4).toString());
     var fw = fb.b.readUInt16LE(4);
     var fh = fb.b.readUInt16LE(6);
