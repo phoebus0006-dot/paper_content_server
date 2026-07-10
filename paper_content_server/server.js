@@ -17,6 +17,7 @@ const FRAME_HEIGHT = 480;
 const FRAME_HEADER_BYTES = 10;
 const FRAME_PAYLOAD_BYTES = Math.ceil((FRAME_WIDTH * FRAME_HEIGHT) / 2);
 const { resolveDisplayMode } = require('./lib/schedule');
+const { sortSequenceFrames } = require('./lib/sequence');
 const PHOTO_FOOTER_HEIGHT = 56;
 const NEWS_HEADER_HEIGHT = 38;
 const NEWS_FOOTER_HEIGHT = 18;
@@ -2896,6 +2897,7 @@ module.exports = {
   isImageApproved,
   isImageReady,
   imageToFrameBuffer,
+  sortSequenceFrames,
 };
 
 

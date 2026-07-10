@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const { URL } = require('url');
 const sharp = require('sharp');
 
+const { fetchWikimediaCategoryCandidates } = require(path.join(__dirname, '..', 'lib', 'wikimedia'));
+
 const ROOT_DIR = path.join(__dirname, '..');
 
 function loadJson(filePath, fallback) {
@@ -450,54 +452,6 @@ async function addCandidate(candidate, index, options) {
   entry.poolType = options.poolType || candidate.poolType || 'decorative_photos';
   index.push(entry);
   return { status: 'downloaded', id, path: rawPath };
-}
-
-async function fetchWikimediaCategoryCandidates(source) {
-  const candidates = [];
-  const categories = source.categories || [];
-  const limit = source.limitPerCategory || 3;
-
-  for (const cat of categories) {
-    try {
-      const url = `https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=Category:${encodeURIComponent(cat.category)}&gcmtype=file&gcmlimit=${limit}&prop=imageinfo|fileusage&iiprop=url|size|mime|user|timestamp|metadata&iiurlwidth=1200&format=json`;
-      const data = await fetchJson(url);
-      const pages = data?.query?.pages || {};
-
-      for (const page of Object.values(pages)) {
-        const imageinfo = page?.imageinfo?.[0];
-        if (!imageinfo?.url) continue;
-        const title = page.title?.replace(/^File:/, '').replace(/_/g, ' ') || cat.category;
-        const metadata = {
-          pageId: page.pageid,
-          filePageUrl: `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title || '')}`,
-          author: imageinfo.user || '',
-          timestamp: imageinfo.timestamp || '',
-          description: page.description || '',
-          sourceCategory: cat.category,
-        };
-        // If license info is missing, mark as rightsStatus unknown
-        const extmetadata = imageinfo.extmetadata || {};
-        const license = (extmetadata.Artists || extmetadata.Credit || {}).value || '';
-        metadata.license = license;
-        metadata.licenseUrl = (extmetadata.LicenseUrl || {}).value || '';
-        candidates.push({
-          url: imageinfo.url,
-          title: title,
-          sourceType: 'wikimedia_category',
-          source: 'Wikimedia Commons',
-          theme: cat.theme || 'cinematic',
-          kind: cat.kind || 'film_still',
-          poolType: source.poolType || 'study_frames',
-          metadata: metadata,
-        });
-      }
-      await sleep(2500);
-    } catch (error) {
-      console.log(`wikimedia category failed for ${cat.category}: ${error.message}`);
-    }
-  }
-
-  return candidates;
 }
 
 async function fetchWikimediaCandidates(source) {
