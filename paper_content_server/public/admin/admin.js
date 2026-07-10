@@ -94,23 +94,25 @@ function loadNewsReview(){
   });
 }
 
-function saveNewsDraft(){
+async function saveNewsDraft(){
   var items=(STATE.news&&STATE.news.selected)||[];
   var titles=document.querySelectorAll('.news-title');
   var summaries=document.querySelectorAll('.news-summary');
   titles.forEach(function(inp,i){if(items[i])items[i].title=inp.value});
   summaries.forEach(function(inp,i){if(items[i])items[i].summary=inp.value});
-  api('/api/admin/news/draft',{method:'POST',body:JSON.stringify({items:items})}).then(function(r){
-    toast('草稿已保存','success');
-  }).catch(function(e){toast('保存失败: '+e.message,'error')});
+  var r = await api('/api/admin/news/draft',{method:'POST',body:JSON.stringify({items:items})});
+  if(r && r.error) throw new Error(r.error);
+  toast('草稿已保存','success');
+  return r;
 }
 
-function publishNews(){
-  saveNewsDraft();
-  api('/api/admin/publish/news',{method:'POST'}).then(function(r){
+async function publishNews(){
+  try {
+    await saveNewsDraft();
+    var r = await api('/api/admin/publish/news',{method:'POST'});
     if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard()}
     else toast('发布失败','error');
-  }).catch(function(e){toast('发布失败: '+e.message,'error')});
+  } catch(e) { toast('发布失败: '+e.message,'error'); }
 }
 
 function moveNews(idx,dir){
