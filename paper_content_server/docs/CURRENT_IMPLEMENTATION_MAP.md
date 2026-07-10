@@ -27,8 +27,8 @@ TOP_LEVEL_FUNCTIONS=114
 PROCESS_ENV_READS=24 (scattered across server.js)
 ROUTE_REGISTRATION=handleRequest() at byte 96995
 SHUTDOWN_HOOKS=process.on found (SIGTERM/SIGINT)
-MQTT_MODULE_IMPORT=NOT_FOUND
-MQTT_PACKAGE=NOT_IN_PACKAGE_JSON
+MQTT_MODULE_IMPORT=NOT_FOUND (confirmed)
+MQTT_PACKAGE=NOT_IN_PACKAGE_JSON (confirmed)
 
 ### Mutable Global State
 
@@ -158,7 +158,7 @@ TARGET_NOT_IMPLEMENTED: /api/admin/focus-lock, /api/admin/library, /api/admin/li
 |---|---|---|
 | AUTO | IMPLEMENTED | resolveDisplayMode in lib/schedule.js; 00-29 photo, 30-59 news; night hold 19:00-10:00 |
 | ONE_SHOT_OVERRIDE | IMPLEMENTED | admin_override.json written with expiresAt=next HH:00/HH:30. loadActiveOverride() checks expiry and deletes expired. Override read in computeSnapshot() + getContentForNow(). POST /api/admin/publish/one-shot validates assetId and stores it; getContentForNow renders the specified asset when override contains assetId/photoId. |
-| FOCUS_LOCK | NOT_IMPLEMENTED | No FOCUS_LOCK API, state, or handling in code |
+| FOCUS_LOCK | NOT_IMPLEMENTED (no FOCUS_LOCK code in server.js) | No FOCUS_LOCK API, state, or handling in code |
 
 ## 8. MQTT
 

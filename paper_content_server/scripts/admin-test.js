@@ -113,9 +113,14 @@ async function main() {
     check('frame 200', fb.s === 200);
     check('frame 192010B', fb.b.length === 192010);
     var pl = fb.b.slice(10);
-    var codes = {};
-    for (var pi = 0; pi < 100; pi++) { codes[String((pl[pi] >> 4) & 0x0F)] = true; codes[String(pl[pi] & 0x0F)] = true; }
-    check('sample codes valid', true);
+    var seenCodes = {}, code4 = 0;
+    for (var pi = 0; pi < 100; pi++) {
+      var hi = (pl[pi] >> 4) & 0x0F, lo = pl[pi] & 0x0F;
+      seenCodes[String(hi)] = true; seenCodes[String(lo)] = true;
+      if (hi === 4) code4++; if (lo === 4) code4++;
+    }
+    var allValid = Object.keys(seenCodes).every(function(c) { return ['0','1','2','3','5','6'].indexOf(c) >= 0; });
+    check('sample codes valid', allValid && code4 === 0, 'codes=' + Object.keys(seenCodes).join(',') + ' c4=' + code4);
 
     console.log('\n--- PHOTO ---');
     check('unknown photo', (await post('/api/admin/publish/photo', { photoId: 'nonexistent' }, TOKEN)).s >= 400);

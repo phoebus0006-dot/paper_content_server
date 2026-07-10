@@ -22,7 +22,8 @@
     "rotation:test": "node scripts/rotation-test.js",
     "translation-quality:test": "node scripts/translation-quality-test.js",
     "docs:check": "node scripts/docs-consistency-check.js",
-    "news-render-readability:test": "node scripts/news-render-readability-test.js"
+    "news-render-readability:test": "node scripts/news-render-readability-test.js",
+    "contracts:test": "node test/contracts/A-schedule-contract.js && node test/contracts/B-epf1-contract.js && node test/contracts/C-state-frame-contract.js && node test/contracts/D-schedule-night-contract.js && node test/contracts/E-news-contract.js && node test/contracts/F-news-render-contract.js && node test/contracts/G-photo-contract.js && node test/contracts/H-safety-contract.js && node test/contracts/I-news-lastgood-contract.js && node test/contracts/J-admin-contract.js && node test/contracts/K-operating-modes-contract.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
