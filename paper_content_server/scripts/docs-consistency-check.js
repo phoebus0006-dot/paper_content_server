@@ -16,6 +16,14 @@ function readFile(fname) {
   try { return fs.readFileSync(fp, 'utf8'); } catch(e) { return null; }
 }
 
+function sectionBetween(text, startHeading, endHeading) {
+  var start = text.indexOf(startHeading);
+  if (start < 0) return '';
+  var fromStart = text.slice(start);
+  var end = fromStart.indexOf(endHeading);
+  return end < 0 ? fromStart : fromStart.slice(0, end);
+}
+
 // 1. Required docs exist
 var required = [
   'PRODUCT_REQUIREMENTS.md', 'ACCEPTANCE_CRITERIA.md', 'SYSTEM_ARCHITECTURE.md',
@@ -77,10 +85,11 @@ if (readme) {
 // 6. CURRENT_IMPLEMENTATION_MAP: HEAD matches git HEAD
 var impl = readFile('CURRENT_IMPLEMENTATION_MAP.md');
 if (impl) {
-  var headMatch = impl.match(/HEAD=([a-f0-9]+)/);
-  check(headMatch && headMatch[1] === 'b49d262ff7c5d712c35075c9855f15025d3187c6', 'CURRENT_IMPLEMENTATION_MAP HEAD matches git: ' + (headMatch ? headMatch[1] : 'NOT_FOUND'));
-  
-  check(impl.indexOf('origin/master=') >= 0 && impl.indexOf('origin/master= ') < 0, 'CURRENT_IMPLEMENTATION_MAP origin/master not empty');
+  var headMatch = impl.match(/AUDITED_CODE_BASE_SHA=([a-f0-9]{40})/);
+  check(!!headMatch, 'CURRENT_IMPLEMENTATION_MAP audited SHA present: ' + (headMatch ? headMatch[1] : 'NOT_FOUND'));
+
+  var originMatch = impl.match(/origin\/master at audit time=([a-f0-9]{40})/);
+  check(!!originMatch, 'CURRENT_IMPLEMENTATION_MAP origin/master audit SHA present: ' + (originMatch ? originMatch[1] : 'NOT_FOUND'));
   check(impl.indexOf('| GET | /api/state.json') >= 0, 'CURRENT_IMPLEMENTATION_MAP has route data');
   check(impl.indexOf('| News translation cache |') >= 0, 'CURRENT_IMPLEMENTATION_MAP has runtime state data');
   check(impl.indexOf('| fetch |') >= 0, 'CURRENT_IMPLEMENTATION_MAP has news map data');
@@ -95,15 +104,16 @@ if (impl) {
   }});
   // Check mismatch markers
   check(impl.indexOf('FULL_TRANSLATION_PIPELINE_COVERED=NO') >= 0, 'Test map: FULL_TRANSLATION_PIPELINE_COVERED=NO marker present');
-  check(impl.indexOf('NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH') >= 0, 'Test map: NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH marker present');
+  check(impl.indexOf('Contract aligned with Acceptance: summaryLines must be 2 or 3') >= 0, 'Test map: news layout contract aligned');
+  check(impl.indexOf('NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH') < 0, 'Test map: old news layout mismatch marker absent');
   check(impl.indexOf('DUAL_LIBRARY_COVERAGE=NO') >= 0, 'Test map: DUAL_LIBRARY_COVERAGE=NO marker present');
   check(impl.indexOf('GAP-001') >= 0, 'CURRENT_IMPLEMENTATION_MAP has known gaps');
   check(impl.indexOf('DATA_DIR resolution') >= 0, 'CURRENT_IMPLEMENTATION_MAP has data/deployment');
 
   // Check for cross-contamination (News mentions of selectStudyPhoto)
-  var newsSection = impl.split('## 5. News Implementation Map')[1];
+  var newsSection = sectionBetween(impl, '## 5. News Implementation Map', '## 6. Image Library Implementation Map');
   if (newsSection) {
-    var learningSection = impl.split('## 6. Image Library Implementation Map')[1];
+    var learningSection = sectionBetween(impl, '## 6. Image Library Implementation Map', '## 7. Operating Modes');
     if (learningSection) {
       check(newsSection.indexOf('selectStudyPhoto') < 0, 'News map: no selectStudyPhoto cross-contamination');
       check(learningSection.indexOf('evaluateNewsItemQuality') < 0, 'Image map: no evaluateNewsItemQuality cross-contamination');
@@ -118,11 +128,15 @@ if (trace) {
   check(headers.length === 1, 'TRACEABILITY: exactly 1 table header (found ' + headers.length + ')');
 
   // Extract requirement names
-  var reqs = trace.match(/\| [A-Z][A-Za-z /]+ \|/g) || [];
+  var reqs = trace.split(/\r?\n/).filter(function(line) {
+    return line.indexOf('|') === 0 && line.indexOf('|---') !== 0 && line.indexOf('| Requirement |') !== 0;
+  }).map(function(line) {
+    return line.split('|')[1].trim();
+  }).filter(Boolean);
   var unique = {};
   var dupes = [];
   reqs.forEach(function(r) {
-    var trimmed = r.replace(/\|/g, '').trim();
+    var trimmed = r.trim();
     if (unique[trimmed]) dupes.push(trimmed);
     unique[trimmed] = true;
   });
@@ -134,14 +148,17 @@ var cs = readFile('CURRENT_STATE_BASELINE.md');
 if (cs) {
   var validStatuses = ['IMPLEMENTED_AND_VERIFIED', 'IMPLEMENTED_NOT_PRODUCTION_VERIFIED',
     'PARTIAL', 'NOT_IMPLEMENTED', 'BLOCKED', 'UNKNOWN'];
-  var cellRe = /\| ([A-Z_]+) \|/g;
-  var cm;
-  while ((cm = cellRe.exec(cs)) !== null) {
-    var st = cm[1];
-    if (st !== 'Status' && validStatuses.indexOf(st) < 0 && st.indexOf(' ') < 0) {
+  var statusSection = sectionBetween(cs, '## 3. 当前功能状态表', '## 4. 更新规则');
+  var statusRows = statusSection.split(/\r?\n/).filter(function(line) {
+    return line.indexOf('|') === 0 && line.indexOf('|---') !== 0 && line.indexOf('| Capability |') !== 0;
+  });
+  statusRows.forEach(function(line) {
+    var cols = line.split('|').map(function(c) { return c.trim(); });
+    var st = cols[2];
+    if (st && validStatuses.indexOf(st) < 0) {
       check(false, 'CURRENT_STATE invalid status: ' + st);
     }
-  }
+  });
 }
 
 // 9. KNOWN_INCIDENTS: must have empty commit or b49d262

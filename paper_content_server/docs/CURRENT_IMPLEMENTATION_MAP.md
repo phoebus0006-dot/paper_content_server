@@ -17,12 +17,12 @@ package manager=npm 10.x
 
 AUDITED_CODE_BASE_SHA=b49d262ff7c5d712c35075c9855f15025d3187c6
 AUDIT_SCOPE=paper_content_server/server.js, firmware, test scripts
-Since audit base, only docs/ and docs-consistency-check.js have changed.
-Business code diff since audit base: NONE (verified by git diff --name-only)
+Since audit base: server.js (publish handler frameId alignment, one-shot route, buildManualPhotoFromAsset), scripts/admin-test.js (expiry boundary assertions, one-shot tests), docs/, scripts/docs-consistency-check.js.
+NAS/ESP32 evidence: NOT VERIFIED / NOT TESTED.
 
 ## 2. Server Entrypoint
 
-SERVER_JS_LOC=3197
+SERVER_JS_LOC=3418
 TOP_LEVEL_FUNCTIONS=114
 PROCESS_ENV_READS=24 (scattered across server.js)
 ROUTE_REGISTRATION=handleRequest() at byte 96995
@@ -88,8 +88,9 @@ All mutable state lives in single `runtime` object:
 | GET | /api/admin/publish-history|handleRequest|readPubHistory|No|CURRENT_LEGACY|
 | POST | /api/admin/rollback|handleRequest|readPubHistory+writeFileSync|YES direct fs|CURRENT_LEGACY|
 | GET | /api/admin/photos|handleRequest|index filter|No|CURRENT_LEGACY|
+| POST | /api/admin/publish/one-shot|handleRequest|validate+writeFileSync|YES direct fs|TARGET_IMPLEMENTED (admin-test only, NAS NOT VERIFIED, ESP32 NOT TESTED)|
 
-TARGET_NOT_IMPLEMENTED: /api/admin/publish/one-shot, /api/admin/focus-lock, /api/admin/library, /api/admin/library/custom/upload
+TARGET_NOT_IMPLEMENTED: /api/admin/focus-lock, /api/admin/library, /api/admin/library/custom/upload
 
 ## 4. Runtime State
 
@@ -101,7 +102,7 @@ TARGET_NOT_IMPLEMENTED: /api/admin/publish/one-shot, /api/admin/focus-lock, /api
 | Image index | runtime.imageIndex+fullImageIndex | data/image_index.json | buildPhotoSnapshot() | selectPhotoSnapshot/selectStudyPhoto |
 | Library state | runtime.libraryState | data/library_state.json | buildPhotoSnapshot() | updateLibraryStateForPhoto() |
 | Publication history | none | data/publish_history.json | publish/news + publish/photo | readPubHistory() |
-| Admin override | none | data/admin_override.json | publish/news + publish/photo | computeSnapshot() |
+| Admin override | none | data/admin_override.json | publish/news + publish/photo | loadActiveOverride() in computeSnapshot() and getContentForNow() |
 | Frame cache | runtime.cachedFrames (Map) | in-memory only | getContentForNow() | getContentForNow() |
 | Snapshot cache | runtime.cachedSnapshots (Map) | in-memory only | buildNewsSnapshot/computeSnapshot | same |
 | Pin store | runtime.pinnedSnapshots (Map) | in-memory 30s TTL | setPinnedSnapshot() | getPinnedSnapshot() |
@@ -156,7 +157,7 @@ TARGET_NOT_IMPLEMENTED: /api/admin/publish/one-shot, /api/admin/focus-lock, /api
 | Mode | Status | Evidence |
 |---|---|---|
 | AUTO | IMPLEMENTED | resolveDisplayMode in lib/schedule.js; 00-29 photo, 30-59 news; night hold 19:00-10:00 |
-| ONE_SHOT_OVERRIDE | PARTIAL | admin_override.json written but expiresAt=null. No HH:00/HH:30 boundary expiry. No auto-revert. Override persists across restart. |
+| ONE_SHOT_OVERRIDE | IMPLEMENTED | admin_override.json written with expiresAt=next HH:00/HH:30. loadActiveOverride() checks expiry and deletes expired. Override read in computeSnapshot() + getContentForNow(). POST /api/admin/publish/one-shot validates assetId and stores it; getContentForNow renders the specified asset when override contains assetId/photoId. |
 | FOCUS_LOCK | NOT_IMPLEMENTED | No FOCUS_LOCK API, state, or handling in code |
 
 ## 8. MQTT
@@ -198,7 +199,7 @@ TARGET_NOT_IMPLEMENTED: /api/admin/publish/one-shot, /api/admin/focus-lock, /api
 | storyboard-source-test.js | lib modules | Wikimedia HTTP | No | No | N/A | 0 | metadata parsing, sequence sort |
 | rotation-test.js | full server HTTP | feed HTTP mock | No | No | timeout=FAIL | 0 | photo unit/HTTP rotation/last-good A/B/C |
 | translation-quality-test.js | isTextSemanticallyComplete, normalizeEntities, rewriteTitle, rewriteSummary, evaluateQuality, PROTECTED_ENTITIES | none | No | No | N/A | 0 | TEST_LEVEL=HELPER_FUNCTION_PATH FULL_TRANSLATION_PIPELINE_COVERED=NO FIDELITY_SEMANTIC_VALIDATION_COVERED=NO |
-| news-render-readability-test.js | full server HTTP + layoutNewsCard | server process | No | No | timeout=FAIL | 0 | LEGACY_REQUIREMENT_MISMATCH=YES (test enforces exactly 3 summary lines, Acceptance allows 2-3). NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH=YES |
+| news-render-readability-test.js | full server HTTP + layoutNewsCard | server process | No | No | timeout=FAIL | 0 | Contract aligned with Acceptance: summaryLines must be 2 or 3; overflow remains forbidden. |
 | rss-selftest.js | standalone | none | No | No | N/A | 0 | self-contained |
 | docs-consistency-check.js | fs only | none | No | No | N/A | 0 | 25 docs, 6 ADRs, patterns |
 
@@ -218,7 +219,7 @@ TARGET_NOT_IMPLEMENTED: /api/admin/publish/one-shot, /api/admin/focus-lock, /api
 
 GAP-001 MQTT Immediate Refresh — NOT_IMPLEMENTED. No MQTT code. Risk: device waits 60s.
 GAP-002 FOCUS_LOCK — NOT_IMPLEMENTED. No focus lock API or state.
-GAP-003 ONE_SHOT Boundary Expiry — PARTIAL. admin_override written with expiresAt=null; no HH:00/HH:30 auto-revert.
+GAP-003 ONE_SHOT Boundary Expiry — IMPLEMENTED. admin_override written with expiresAt=next HH:00/HH:30; loadActiveOverride() deletes expired.
 GAP-004 Dual-Library Source Isolation — NOT_IMPLEMENTED. No libraryType field. Single selector.
 GAP-005 Custom Library Upload/API — NOT_IMPLEMENTED. No HTTP upload.
 GAP-006 Learning Relevance Gate — NOT_IMPLEMENTED. No relevance evaluation.
@@ -227,7 +228,7 @@ GAP-008 Real Translation Fidelity Verifier — PARTIAL. isTextSemanticallyComple
 GAP-009 Analysis Card Renderer — NOT_IMPLEMENTED.
 GAP-010 Comparison Pair Renderer — NOT_IMPLEMENTED.
 GAP-011 Sequence 2x2 Renderer — NOT_IMPLEMENTED.
-GAP-012 Production-Path Admin Publication — PARTIAL. Admin writes override.json directly; no snapshot service. FrameId as Date.now().toString(36).
+GAP-012 Production-Path Admin Publication — PARTIAL. POST /api/admin/publish/one-shot implemented with asset validation and expiry. getContentForNow renders the specific asset when override contains assetId/photoId. Legacy publish/photo also writes photoId for corrected rendering. Evidence: admin-test only (62 tests). No snapshot service, no MQTT. NAS NOT VERIFIED, ESP32 NOT TESTED.
 
 
 ### GAP-013: Final Dedupe Completeness
@@ -240,10 +241,10 @@ GAP-012 Production-Path Admin Publication — PARTIAL. Admin writes override.jso
 
 ### GAP-014: News Layout Test Requirement Mismatch
 - **Requirement**: Acceptance requires summaryLines=2 or 3
-- **Current Implementation**: news-render-readability-test enforces summaryLines === 3
-- **Status**: TEST_REQUIREMENT_MISMATCH
-- **Risk**: Test may fail when summary naturally fits 2 lines. Test not aligned with current Acceptance.
-- **Planned Phase**: Phase 6 — News Pipeline
+- **Current Implementation**: news-render-readability-test accepts summaryLines 2 or 3 while still rejecting overflow.
+- **Status**: RESOLVED_IN_PHASE_1_CONTRACT
+- **Risk**: None for the previous 3-line-only mismatch. Full news pipeline fidelity remains separate Phase 6 work.
+- **Planned Phase**: Phase 1 — Characterization Contracts
 
 ### GAP-015: Photo Safety Test — Dual Library Coverage
 - **Requirement**: Dual-library architecture with Learning Library + Custom Library source isolation

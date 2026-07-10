@@ -46,10 +46,10 @@
 | Analysis Card | NOT_IMPLEMENTED | | | | |
 | Comparison Pair | NOT_IMPLEMENTED | | | | |
 | Sequence 2×2 | NOT_IMPLEMENTED | | | | |
-| ONE_SHOT_OVERRIDE | PARTIAL | | | | |
+| ONE_SHOT_OVERRIDE | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | admin-test 62/62 includes one-shot endpoint, expiry boundary, state/frameId consistency | NOT VERIFIED | NOT TESTED |
 | FOCUS_LOCK | NOT_IMPLEMENTED | | | | |
 | MQTT immediate refresh | NOT_IMPLEMENTED | | | | |
-| Admin production-path publication | PARTIAL | | | | |
+| Admin production-path publication | PARTIAL | | admin-test 62/62 covers one-shot photo valid/invalid assetId, expiry, frameId consistency, legacy publish/photo photoId propagation. No snapshot service, no MQTT. | NOT VERIFIED | NOT TESTED |
 
 ## 4. 更新规则
 
@@ -85,7 +85,7 @@
 | Analysis Card | — | — | NOT VERIFIED | N/A |
 | Comparison Pair | — | — | NOT VERIFIED | N/A |
 | Sequence 2×2 | — | — | NOT VERIFIED | N/A |
-| ONE_SHOT_OVERRIDE | server.js L3048/L3066 | admin-test | NOT VERIFIED | NOT TESTED |
+| ONE_SHOT_OVERRIDE | server.js L3093/L3113 computeNextHalfHourBoundary + loadActiveOverride + getContentForNow + buildManualPhotoFromAsset | admin-test (override expiry test, one-shot photo endpoint, frameId consistency) | NOT VERIFIED | NOT TESTED |
 | FOCUS_LOCK | — | — | NOT VERIFIED | NOT TESTED |
 | MQTT immediate refresh | — | — | NOT VERIFIED | NOT TESTED |
-| Admin production-path pub | server.js L3047-3070 | admin-test | NOT VERIFIED | NOT TESTED |
+| Admin production-path pub | server.js one-shot route, buildManualPhotoFromAsset, legacy publish/photo photoId propagation | admin-test (one-shot valid/invalid, asset validation, expiry boundary, frameId consistency) | NOT VERIFIED | NOT TESTED |
