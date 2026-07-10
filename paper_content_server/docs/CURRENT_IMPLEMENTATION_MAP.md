@@ -1,189 +1,227 @@
-# 当前实现映射
+# Current Implementation Map
 
-> 本文件描述“代码现在实际怎么工作”，不是目标架构。必须由执行器根据最新代码扫描填写，并由 reviewer 复核。
+> This file describes "what the code actually does". Generated from live code scan.
+> Generator: executor (docs-only phase)
 
 ## 1. Repository Baseline
 
-```text
 branch=master
-HEAD=757053264aaa4c892ff31bcf948813f9c3e31c50
-origin/master=
-server entrypoint=server.js
-firmware entrypoint=NewsPhoto_esp32wf/
+HEAD=b49d262ff7c5d712c35075c9855f15025d3187c6
+origin/master=b49d262ff7c5d712c35075c9855f15025d3187c6
+server entrypoint=paper_content_server/server.js
+firmware entrypoint=NewsPhoto_esp32wf/NewsPhoto_esp32wf.ino
 node major=v24.14.1
-package manager=npm
-```
+package manager=npm 10.x
 
 ## 2. Server Entrypoint
 
-记录：
+SERVER_JS_LOC=3197
+TOP_LEVEL_FUNCTIONS=114
+PROCESS_ENV_READS=24 (scattered across server.js)
+ROUTE_REGISTRATION=handleRequest() at byte 96995
+SHUTDOWN_HOOKS=process.on found (SIGTERM/SIGINT)
+MQTT_MODULE_IMPORT=NOT_FOUND
+MQTT_PACKAGE=NOT_IN_PACKAGE_JSON
 
-- server.js LOC；
-- top-level functions；
-- top-level mutable state；
-- process.env 读取位置；
-- route registration 位置；
-- shutdown hooks。
+### Mutable Global State
+
+All mutable state lives in single `runtime` object:
+- runtime.feeds / runtime.feedsLoadedAt
+- runtime.newsCache (persisted: news_cache.json)
+- runtime.newsRotation (persisted: news_rotation_state.json)
+- runtime.lastGoodNews (persisted: last_good_news.json)
+- runtime.fallbackStudyEntries / runtime.fallbackStudyReady
+- runtime.libraryState (persisted: library_state.json)
+- runtime.imageIndex / runtime.fullImageIndex (persisted: image_index.json)
+- runtime.cachedFrames (Map, in-memory)
+- runtime.cachedSnapshots (Map, in-memory)
+- runtime.pinnedSnapshots (Map, in-memory, 30s TTL)
+- runtime.nowProvider / runtime.pinNowProvider (global test overrides)
+- runtime.renderCount / runtime.serverStartTime / runtime.lastNewsRefreshAt
 
 ## 3. HTTP Routes
 
-| Method | Path | Handler Location | Service Called | Writes State | Target/Legacy |
+| Method | Path | Handler Location | Service Called | Writes State | Classification |
 |---|---|---|---|---|---|
+| GET | /api/state.json | handleRequest | computeSnapshot() | No (reads caches) | CURRENT_PRODUCTION |
+| GET | /api/frame.bin | handleRequest | getContentForNow() | No (reads caches) | CURRENT_PRODUCTION |
+| GET | /api/news.json | handleRequest | buildNewsSnapshot() | No (reads caches) | CURRENT_PRODUCTION |
+| GET | /api/health.json | handleRequest | inline counters | No | CURRENT_PRODUCTION |
+| GET | /api/review.json | handleRequest | getContentForNow() | No | CURRENT_PRODUCTION |
+| GET | /api/library.json | handleRequest | inline index filter | No | CURRENT_PRODUCTION |
+| GET | /debug/config | handleRequest | inline | No | DEBUG_ONLY |
+| GET | /debug/clock | handleRequest | runtime.nowProvider | No | DEBUG_ONLY |
+| GET | /debug/news.svg | handleRequest | buildNewsSnapshot + render | No | DEBUG_ONLY |
+| GET | /debug/news.png | handleRequest | buildNewsSnapshot + sharp | No | DEBUG_ONLY |
+| GET | /debug/news-review-6.png | handleRequest | buildNewsSnapshot + sharp | No | DEBUG_ONLY |
+| GET | /debug/photo.png | handleRequest | buildPhotoSnapshot + sharp | No | DEBUG_ONLY |
+| GET | /debug/photo-info.json | handleRequest | buildPhotoSnapshot() | No | DEBUG_ONLY |
+| GET | /debug/photo-palette.json | handleRequest | inline | No | DEBUG_ONLY |
+| GET | /debug/photo-before-after.png | handleRequest | buildPhotoSnapshot + sharp | No | DEBUG_ONLY |
+| GET | /debug/photo-review.png | handleRequest | buildPhotoSnapshot | No | DEBUG_ONLY |
+| GET | /debug/pin-state.json | handleRequest | getPinnedSnapshot | No | DEBUG_ONLY |
+| GET | /test/frame-ok|handleRequest|buildFrameBuffer static|No|DEBUG_ONLY|
+| GET | /test/frame-500|handleRequest|HTTP 500|No|DEBUG_ONLY|
+| GET | /test/frame-id-missing|handleRequest|no X-Frame-Id|No|DEBUG_ONLY|
+| GET | /test/frame-id-mismatch|handleRequest|wrong X-Frame-Id|No|DEBUG_ONLY|
+| GET | /test/frame-short|handleRequest|100-byte body|No|DEBUG_ONLY|
+| GET | /test/frame-bad-magic|handleRequest|BAD! header|No|DEBUG_ONLY|
+| GET | /test/frame-bad-size|handleRequest|1234x567|No|DEBUG_ONLY|
+| GET | /test/frame-bad-panel|handleRequest|panel 99|No|DEBUG_ONLY|
+| GET | /test/frame-short-read|handleRequest|truncated EPF1|No|DEBUG_ONLY|
+| GET | /admin|handleRequest|serveAdminFile|No|CURRENT_LEGACY|
+| GET | /admin/admin.css|handleRequest|serveAdminFile|No|CURRENT_LEGACY|
+| GET | /admin/admin.js|handleRequest|serveAdminFile|No|CURRENT_LEGACY|
+| GET | /api/admin/dashboard|handleRequest|inline stats|No|CURRENT_LEGACY|
+| GET | /api/admin/news|handleRequest|read cachedSnapshots|No|CURRENT_LEGACY|
+| POST | /api/admin/news/draft|handleRequest|validate+writeFileSync|YES direct fs|CURRENT_LEGACY|
+| POST | /api/admin/publish/news|handleRequest|inline render+writeFileSync|YES direct fs|CURRENT_LEGACY|
+| POST | /api/admin/publish/photo|handleRequest|inline check+writeFileSync|YES direct fs|CURRENT_LEGACY|
+| DELETE | /api/admin/override|handleRequest|unlinkSync|YES direct fs|CURRENT_LEGACY|
+| GET | /api/admin/publish-history|handleRequest|readPubHistory|No|CURRENT_LEGACY|
+| POST | /api/admin/rollback|handleRequest|readPubHistory+writeFileSync|YES direct fs|CURRENT_LEGACY|
+| GET | /api/admin/photos|handleRequest|index filter|No|CURRENT_LEGACY|
 
-必须覆盖：
-
-- device routes；
-- news routes；
-- frame routes；
-- debug routes；
-- admin routes；
-- health routes。
+TARGET_NOT_IMPLEMENTED: /api/admin/publish/one-shot, /api/admin/focus-lock, /api/admin/library, /api/admin/library/custom/upload
 
 ## 4. Runtime State
 
-| State | In-memory Owner | Persistent File/Store | Write Paths | Read Paths |
+| State | In-memory Owner | Persistent File | Write Paths | Read Paths |
 |---|---|---|---|---|
-
-至少检查：
-
-- news cache；
-- translation cache；
-- news rotation；
-- last-good；
-- image index；
-- library state；
-- publication history；
-- override / operating mode；
-- frame cache；
-- snapshot cache；
-- pin store。
+| News translation cache | runtime.newsCache.translations | data/news_cache.json | translateArticle() | translateArticle() cache lookup |
+| News rotation history | runtime.newsRotation.shown | data/news_rotation_state.json | recordShownItems() | isRecentlyShown() |
+| Last-good news | runtime.lastGoodNews | data/last_good_news.json | buildNewsSnapshot() (6 valid) | buildNewsSnapshot() fallback |
+| Image index | runtime.imageIndex+fullImageIndex | data/image_index.json | buildPhotoSnapshot() | selectPhotoSnapshot/selectStudyPhoto |
+| Library state | runtime.libraryState | data/library_state.json | buildPhotoSnapshot() | updateLibraryStateForPhoto() |
+| Publication history | none | data/publish_history.json | publish/news + publish/photo | readPubHistory() |
+| Admin override | none | data/admin_override.json | publish/news + publish/photo | computeSnapshot() |
+| Frame cache | runtime.cachedFrames (Map) | in-memory only | getContentForNow() | getContentForNow() |
+| Snapshot cache | runtime.cachedSnapshots (Map) | in-memory only | buildNewsSnapshot/computeSnapshot | same |
+| Pin store | runtime.pinnedSnapshots (Map) | in-memory 30s TTL | setPinnedSnapshot() | getPinnedSnapshot() |
 
 ## 5. News Implementation Map
 
-```text
-fetch function=fetchText() — IMPLEMENTED
-parse function=parseFeedXml() + parseJsonFeed() — IMPLEMENTED
-normalize function=normalizeText() — IMPLEMENTED
-pre-dedupe=loadNewsCandidates() bigramDice() — IMPLEMENTED
-translation provider entry=translateArticle() — IMPLEMENTED
-translation cache=runtime.newsCache.translations — IMPLEMENTED
-format gate=evaluateNewsItemQuality() — IMPLEMENTED
-fidelity verifier=isTextSemanticallyComplete() — PARTIAL (format+fidelity mixed)
-display editor=rewriteNewsTitle() + rewriteNewsSummary() — IMPLEMENTED
-layout function=layoutNewsCard() — IMPLEMENTED
-final dedupe=seenUrls + seenTitles in buildNewsSnapshot — IMPLEMENTED
-quality gate=evaluateNewsItemQuality() — PARTIAL
-selector=selectStudyPhoto() — PARTIAL (no dual-library source selection)selectStudyPhoto() — IMPLEMENTEDtryAdd() + selectNewsItems() — IMPLEMENTED
-last-good=runtime.lastGoodNews + LAST_GOOD_NEWS_FILE — IMPLEMENTED
-```
-
-每项必须区分：
-
-- IMPLEMENTED
-- PARTIAL
-- NOT_IMPLEMENTED
+| Stage | Function | File | Status | Evidence |
+|---|---|---|---|---|
+| fetch | fetchText() | server.js L658 | IMPLEMENTED | HTTP with AbortController |
+| parse | parseFeedXml/parseJsonFeed | server.js L591/L620 | IMPLEMENTED | RSS + JSON feed |
+| normalize | normalizeText/stripHtml | server.js L331/L338 | IMPLEMENTED | Unicode + HTML |
+| pre-dedupe | bigramDice+canonicalUrl | server.js L716 | IMPLEMENTED | URL + 0.88 similarity |
+| translation provider | translateArticle | server.js L1115 | IMPLEMENTED | openai/gemini/deepl |
+| translation cache | runtime.newsCache.translations | server.js L1173 | IMPLEMENTED | key=provider+lang+source+title+summary |
+| format gate | evaluateNewsItemQuality | server.js L1327 | IMPLEMENTED | length+bad endings |
+| fidelity verifier | isTextSemanticallyComplete | server.js L907 | PARTIAL | format only (Chinese chars, punctuation, hanging ends). NOT semantic fidelity. |
+| Chinese editor | rewriteNewsTitle+rewriteNewsSummary | server.js L950/L1024 | IMPLEMENTED | entity normalization, hanging-end removal |
+| layout | layoutNewsCard | server.js L2106 | IMPLEMENTED | shared by production+tests |
+| final dedupe | seenUrls+seenTitles | server.js L1462 | IMPLEMENTED | canonical URL + original title + zh title |
+| quality gate | evaluateNewsItemQuality + isTextSemanticallyComplete | server.js L1327/L907 | PARTIAL | format+basic completeness. No true semantic gate. |
+| selector | tryAdd+selectNewsItems | server.js L1453/L765 | IMPLEMENTED | source quota max 2, category round-robin |
+| last-good | runtime.lastGoodNews | server.js L1542 | IMPLEMENTED | saved on 6 valid, used as fallback |
 
 ## 6. Image Library Implementation Map
 
 ### Learning Library
 
-```text
-source adapters=NOT_IMPLEMENTED (Wikimedia integration exists as photo_sources.json)
-rights gate=NOT_IMPLEMENTED (rights metadata exists in wikimedia adapter)
-safety gate=same BLOCKLIST_WORDS — PARTIALBLOCKLIST_WORDS regex + isImageReady — PARTIAL (no real safety scanner)
-relevance gate=NOT_IMPLEMENTED
-technical quality gate=NOT_IMPLEMENTED (only decode validation)evaluateNewsItemQuality() — PARTIAL
-repository=same image_index.json — PARTIAL (no libraryType field)image_index.json — IMPLEMENTED
-selector=selectStudyPhoto() — PARTIAL (no dual-library source selection)selectStudyPhoto() — IMPLEMENTEDtryAdd() + selectNewsItems() — IMPLEMENTED
-rotation=updateLibraryStateForPhoto() — IMPLEMENTED
-```
+| Capability | Status | File | Function | Evidence | Gap |
+|---|---|---|---|---|---|
+| source adapters | NOT_IMPLEMENTED | — | — | No learning/source-adapters/ | Wikimedia photo_sources.json exists but is not targeted learning adapter |
+| rights gate | NOT_IMPLEMENTED | — | — | parseWikimediaRights in lib/wikimedia.js not integrated | No formal rights verification gate |
+| safety gate | PARTIAL | server.js L890 | BLOCKLIST_WORDS regex | Regex only; no real NSFW scanner | isImageReady checks file existence only |
+| relevance gate | NOT_IMPLEMENTED | — | — | No relevance evaluation | selectStudyPhoto selects by theme/kind only |
+| technical quality | NOT_IMPLEMENTED | — | — | isImageReady checks dimensions+exists only | No decode quality assessment |
+| repository | IMPLEMENTED | server.js L1588 | loadImageIndex() | image_index.json loaded at startup | |
+| selector | IMPLEMENTED | server.js L1937 | selectStudyPhoto() | isStudySelectable filter | Uses old safetyStatus/poolType model |
+| rotation | IMPLEMENTED | server.js L1852 | updateLibraryStateForPhoto() | Theme-based, daySeed, slot tracking | |
 
 ### Custom Library
 
-```text
-upload endpoint=NOT_IMPLEMENTED (process-images.js is CLI)
-decode validation=sharp decode — IMPLEMENTED (CLI only)
-safety gate=same BLOCKLIST_WORDS — PARTIALBLOCKLIST_WORDS regex + isImageReady — PARTIAL (no real safety scanner)
-repository=same image_index.json — PARTIAL (no libraryType field)image_index.json — IMPLEMENTED
-album/tag=NOT_IMPLEMENTED
-selector=selectStudyPhoto() — PARTIAL (no dual-library source selection)selectStudyPhoto() — IMPLEMENTEDtryAdd() + selectNewsItems() — IMPLEMENTED
-```
+| Capability | Status | File | Function | Evidence | Gap |
+|---|---|---|---|---|---|
+| upload endpoint | NOT_IMPLEMENTED | — | — | No HTTP upload | CLI-only process-images.js |
+| decode validation | PARTIAL | process-images.js | sharp decode | CLI validates decode | No server-side upload validation |
+| safety gate | PARTIAL | server.js L890 | BLOCKLIST_WORDS | Same regex as Learning | No upload-path safety integration |
+| repository | PARTIAL | server.js L1588 | loadImageIndex() | Same image_index.json | No libraryType field |
+| album/tag | NOT_IMPLEMENTED | — | — | No album/tag data model | |
+| selector | PARTIAL | server.js L1937 | selectStudyPhoto() | No libraryType filter | No PHOTO_SOURCE_MODE |
 
-## 7. Publication and Operating Modes
+## 7. Operating Modes
 
-记录真实当前实现：
-
-```text
-AUTO=schedule resolver resolveDisplayMode() — IMPLEMENTED
-ONE_SHOT_OVERRIDE=admin_override + manual publish — IMPLEMENTED (no atomic expiry)
-FOCUS_LOCK=NOT_IMPLEMENTED
-publication store=admin_override.json + publish_history.json — IMPLEMENTED (direct file write)
-active pointer=runtime.cachedFrames + runtime.cachedSnapshots — IMPLEMENTED
-rollback=readPubHistory() — PARTIAL (no real snapshot restore)
-```
-
-不能根据目标文档填写。
+| Mode | Status | Evidence |
+|---|---|---|
+| AUTO | IMPLEMENTED | resolveDisplayMode in lib/schedule.js; 00-29 photo, 30-59 news; night hold 19:00-10:00 |
+| ONE_SHOT_OVERRIDE | PARTIAL | admin_override.json written but expiresAt=null. No HH:00/HH:30 boundary expiry. No auto-revert. Override persists across restart. |
+| FOCUS_LOCK | NOT_IMPLEMENTED | No FOCUS_LOCK API, state, or handling in code |
 
 ## 8. MQTT
 
-```text
-server MQTT publisher=NOT_IMPLEMENTED
-topic=NOT_CONFIGURED
-publish ordering=NOT_IMPLEMENTED
-firmware MQTT client=NOT_IMPLEMENTED
-callback behavior=NOT_IMPLEMENTED
-reconnect behavior=NOT_IMPLEMENTED
-poll fallback=60s HTTP polling in firmware — IMPLEMENTED
-```
-
-未实现必须写 NOT_IMPLEMENTED。
+| Capability | Status | Evidence |
+|---|---|---|
+| server publisher | NOT_IMPLEMENTED | No MQTT library in package.json; no MQTT code in server.js |
+| topic configuration | NOT_IMPLEMENTED | — |
+| publish ordering | NOT_IMPLEMENTED | — |
+| firmware client | NOT_IMPLEMENTED | No MQTT code in firmware directory |
+| callback behavior | NOT_IMPLEMENTED | — |
+| reconnect/resubscribe | NOT_IMPLEMENTED | — |
+| immediate state check | NOT_IMPLEMENTED | — |
+| poll fallback | IMPLEMENTED | 60s HTTP polling in firmware (confirmed existing behavior) |
 
 ## 9. Rendering and Frame
 
-```text
-news renderer=renderNewsSvg() + renderNewsFrame() — IMPLEMENTED
-photo renderer=renderPhotoFrame() — IMPLEMENTED
-analysis renderer=NOT_IMPLEMENTED
-comparison renderer=NOT_IMPLEMENTED
-sequence renderer=NOT_IMPLEMENTED
-quantizer=nearestPaletteCode() + imageToFrameBuffer() — IMPLEMENTED
-EPF1 encoder=buildFrameBuffer() — IMPLEMENTED
-frame validator=NOT_IMPLEMENTED (no dedicated validator)
-```
+| Capability | Status | File | Function | Evidence |
+|---|---|---|---|---|
+| news renderer | IMPLEMENTED | server.js L2130 | renderNewsSvg+renderNewsFrame | SVG-based, 6 cards, sharp PNG |
+| photo renderer | IMPLEMENTED | server.js L2168 | renderPhotoFrame | sharp PNG, resize, quantize |
+| analysis card | NOT_IMPLEMENTED | — | — | No analysis overlay code |
+| comparison pair | NOT_IMPLEMENTED | — | — | No side-by-side renderer |
+| sequence 2x2 | NOT_IMPLEMENTED | — | — | No 2x2 grid renderer |
+| quantizer | IMPLEMENTED | server.js L2258 | imageToFrameBuffer+nearestPaletteCode | nearest-neighbor; optional FS dither |
+| EPF1 encoder | IMPLEMENTED | server.js L2350 | buildFrameBuffer | 10-byte header + 192000 payload |
+| frame validator | NOT_IMPLEMENTED | — | — | No dedicated validator module; validation ad-hoc in tests/firmware |
 
 ## 10. Test Map
 
-| Test Script | Production Modules Called | External Mocks | Duplicated Algorithm? | Exit Code Reliable? |
-|---|---|---|---|---|
+| Test Script | Production Modules Called | External Mocks | Duplicated Algorithm? | Hardcoded Pass? | Network Error | Exit Code | Notes |
+|---|---|---|---|---|---|---|---|
+| schedule-test.js | lib/schedule.js | none | No | No | N/A | 0 | 18 boundaries |
+| frame-selftest.js | imageToFrameBuffer | none | No | No | N/A | 0 | palette encoding |
+| coherence-test.js | full server HTTP | server process | No | No | timeout=FAIL | 0 | state/frame/pinning/TTL |
+| restart-test.js | full server HTTP | server process | No | No | timeout=FAIL | 0 | fresh/restart/corrupt/isolation |
+| admin-test.js | full server HTTP | server process | No | No | error=FAIL | 0 | auth/draft/publish/photo/override |
+| photo-safety-test.js | selectStudyPhoto, isStudySelectable, isImageApproved | none | No | No | N/A | 0 | mixed pool 1000 iterations |
+| storyboard-source-test.js | lib modules | Wikimedia HTTP | No | No | N/A | 0 | metadata parsing, sequence sort |
+| rotation-test.js | full server HTTP | feed HTTP mock | No | No | timeout=FAIL | 0 | photo unit/HTTP rotation/last-good A/B/C |
+| translation-quality-test.js | isTextSemanticallyComplete, normalizeEntities, rewriteTitle, rewriteSummary, evaluateQuality, PROTECTED_ENTITIES | none | No | No | N/A | 0 | 31 production function tests |
+| news-render-readability-test.js | full server HTTP + layoutNewsCard | server process | No | No | timeout=FAIL | 0 | 11 tests, shared layoutNewsCard |
+| rss-selftest.js | standalone | none | No | No | N/A | 0 | self-contained |
+| docs-consistency-check.js | fs only | none | No | No | N/A | 0 | 25 docs, 6 ADRs, patterns |
 
 ## 11. Data and Deployment
 
-```text
-DATA_DIR resolution=
-tracked runtime files=
-NAS target path=
-Docker mode=
-bind mounts=
-persistent volumes=
-```
+| Item | Value | Evidence |
+|---|---|---|
+| DATA_DIR resolution | resolveConfiguredPath(APP_CONFIG.dataDir || 'data') | server.js L149 |
+| Tracked runtime files | image_index.json, library_state.json, news_cache.json, news_rotation_state.json, last_good_news.json, publish_history.json, admin_news_draft.json, admin_override.json | all in data/ |
+| NAS target path | /vol1/docker/paper-frame-server/ | previous deployments |
+| Docker mode | docker compose with build + docker-compose.yml | compose.yml |
+| Bind mounts | server.js, package.json, feeds.json, scripts/, config.json, .env (ro); data/, images/ (rw) | docker-compose.yml |
+| Persistent volumes | none (bind mounts only) | docker-compose.yml |
+| Container name | paper-frame-server | docker-compose.yml |
 
 ## 12. Known Gaps
 
-列出目标文档与当前实现之间的差距。
-
-每项格式：
-
-```text
-GAP-ID:
-Requirement:
-Current Implementation:
-Risk:
-Evidence:
-Planned Phase:
-```
+GAP-001 MQTT Immediate Refresh — NOT_IMPLEMENTED. No MQTT code. Risk: device waits 60s.
+GAP-002 FOCUS_LOCK — NOT_IMPLEMENTED. No focus lock API or state.
+GAP-003 ONE_SHOT Boundary Expiry — PARTIAL. admin_override written with expiresAt=null; no HH:00/HH:30 auto-revert.
+GAP-004 Dual-Library Source Isolation — NOT_IMPLEMENTED. No libraryType field. Single selector.
+GAP-005 Custom Library Upload/API — NOT_IMPLEMENTED. No HTTP upload.
+GAP-006 Learning Relevance Gate — NOT_IMPLEMENTED. No relevance evaluation.
+GAP-007 Strict NSFW Delete Pipeline — PARTIAL. Blocklist regex only; no delete pipeline or tombstone store.
+GAP-008 Real Translation Fidelity Verifier — PARTIAL. isTextSemanticallyComplete checks format only.
+GAP-009 Analysis Card Renderer — NOT_IMPLEMENTED.
+GAP-010 Comparison Pair Renderer — NOT_IMPLEMENTED.
+GAP-011 Sequence 2x2 Renderer — NOT_IMPLEMENTED.
+GAP-012 Production-Path Admin Publication — PARTIAL. Admin writes override.json directly; no snapshot service. FrameId as Date.now().toString(36).
 
 ## 13. Update Rule
 
-每个重构 Phase 合并后更新本文件。
-
-禁止把“目标模块已写在 SYSTEM_ARCHITECTURE.md”当成“当前代码已实现”。
+Each refactor Phase must update this file after merge. Prohibited: claiming target module as implemented because it appears in SYSTEM_ARCHITECTURE.md.

@@ -87,3 +87,12 @@
 - 复用已有 SSH 配置；
 - 不向用户索取私钥；
 - Git push 成功不等于 NAS 已部署。
+
+## 11. 空提交和 Commit Message 与 Diff 不一致
+
+教训：
+
+- b49d262 是 0 files changed 的空提交，但 commit message 声称"reconcile acceptance and traceability"；
+- 实际内容已在 f1db1d6 中完成；
+- 审查必须检查 `git diff HEAD^ --stat` 确认每个 commit 有真实 diff；
+- 禁止在有 staged diff 时创建 empty commit。
