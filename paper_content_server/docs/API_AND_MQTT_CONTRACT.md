@@ -34,23 +34,37 @@ Current news data (same 6 items as frame).
 ### GET /api/health.json
 Server health and pipeline statistics.
 
-### Admin Routes
-| Route | Method | Purpose |
-|-------|--------|---------|
-| /admin | GET | Admin UI |
-| /api/admin/dashboard | GET | Server status |
-| /api/admin/news | GET | Cached news list |
-| /api/admin/news/draft | POST | Draft news items |
-| /api/admin/publish/news | POST | Publish manual news |
-| /api/admin/publish/photo | POST | Publish manual photo |
-| /api/admin/override | DELETE | Clear admin override |
-| /api/admin/publish-history | GET | Publication history |
-| /api/admin/rollback | POST | Rollback publication |
-| /api/admin/photos | GET | Photo library overview |
-| /api/admin/library | GET | List library assets (query: libraryType) |
-| /api/admin/publish/one-shot | POST | Publish one-shot with source selection |
+## CURRENT (Legacy) Admin Routes
+These routes represent the current implementation. They remain operational but
+are expected to be replaced or wrapped by target API in future refactoring.
 
-### One-Shot Publish Body
+| Route | Method | Purpose | Status |
+|-------|--------|---------|--------|
+| /admin | GET | Admin UI | CURRENT |
+| /api/admin/dashboard | GET | Server status | CURRENT |
+| /api/admin/news | GET | Cached news list | CURRENT |
+| /api/admin/news/draft | POST | Draft news items | CURRENT |
+| /api/admin/publish/news | POST | Publish manual news | CURRENT |
+| /api/admin/publish/photo | POST | Publish manual photo | CURRENT |
+| /api/admin/override | DELETE | Clear admin override | CURRENT |
+| /api/admin/publish-history | GET | Publication history | CURRENT |
+| /api/admin/rollback | POST | Rollback publication | CURRENT |
+| /api/admin/photos | GET | Photo library overview | CURRENT |
+
+## TARGET (Future) Admin Routes
+These routes define the intended API contract after refactoring.
+
+### Library
+```
+GET /api/admin/library?libraryType=learning|custom
+```
+Returns list of assets filtered by library type.
+
+### One-Shot Publish
+```
+POST /api/admin/publish/one-shot
+```
+**Body:**
 ```json
 {
   "contentType": "photo",
@@ -58,14 +72,41 @@ Server health and pipeline statistics.
   "assetId": "film-shot-001"
 }
 ```
+**Expiry behavior:**
+- Published at 10:12 → expires at 10:30 (next half-hour boundary)
+- Published at 10:42 → expires at 11:00 (next hour boundary)
+- On expiry: AUTO mode resumes automatically
+- MQTT refresh sent on publication and on expiry
 
 ### Focus Lock
+```
+PUT /api/admin/focus-lock
+```
+**Body:**
 ```json
 {
   "libraryType": "learning",
   "theme": "dialogue"
 }
 ```
+or:
+```json
+{
+  "libraryType": "custom",
+  "albumId": "my-study"
+}
+```
+**Behavior:**
+- Schedule paused
+- Only content matching the specified source/filter is shown
+- Active until explicitly released
+
+```
+DELETE /api/admin/focus-lock
+```
+**Behavior:**
+- Immediately restores current-time AUTO snapshot
+- Sends MQTT refresh when active snapshot is ready
 
 ## MQTT
 

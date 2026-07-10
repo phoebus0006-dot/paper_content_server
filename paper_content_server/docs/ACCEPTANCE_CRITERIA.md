@@ -56,22 +56,41 @@
 - [ ] Frame = 192010 bytes
 - [ ] Code 4 = 0
 
-## Photo
-- [ ] Approved + poolType=study_frames only selectable
-- [ ] 1000 iterations: nonApproved=0, decorative=0, missingStatus=0
-- [ ] Fallback study frames when no approved images
-- [ ] At least 2 unique image IDs across 6 time slots
-
 ## Image Library — Dual Architecture
-- [ ] LEARNING_LIBRARY_AUTO_FETCH: Sources produce real learning candidates
-- [ ] LEARNING_RELEVANCE: Landscape/architecture/NASA excluded as learning content
-- [ ] CUSTOM_LIBRARY_UPLOAD: User upload succeeds
-- [ ] SOURCE_SELECTION_LEARNING: Learning selected → only learning images shown
-- [ ] SOURCE_SELECTION_CUSTOM: Custom selected → only custom images shown
-- [ ] NSFW_STRICT_DELETE_BOTH: Both libraries enforce zero-tolerance deletion
-- [ ] LEARNING_ROTATION: Multiple time slots produce different learning images
-- [ ] COMPARISON_PAIR: Storyboard/final shot pair displays both sides
-- [ ] SEQUENCE_2x2: Sequence frames in correct order
+
+### A. Learning Library
+- [ ] LEARNING_AUTO_FETCH: Automatic source produces real learning candidates
+- [ ] LEARNING_SAFETY: safetyStatus=safe required for production
+- [ ] LEARNING_RELEVANCE: relevanceStatus=pass required
+- [ ] LEARNING_QUALITY: technicalQualityStatus=pass required
+- [ ] LEARNING_ELIGIBLE: Only fully eligible assets (safe + pass + pass) selectable
+- [ ] LEARNING_RELEVANCE_REJECT: Broad NASA/landscape/architecture decorative content not admitted
+- [ ] LEARNING_ROTATION: Multiple time slots produce different learning assets
+
+### B. Custom Library
+- [ ] CUSTOM_UPLOAD: User upload succeeds
+- [ ] CUSTOM_SAFETY: Safety gate mandatory — unsafe/suspicious/uncertain deleted
+- [ ] CUSTOM_SELECTABLE: Safe custom asset is selectable
+- [ ] CUSTOM_ALBUM: Album/tag/specific asset selection works
+
+### C. Source Isolation
+- [ ] SOURCE_LEARNING: When source=learning, selectedCustomCount=0
+- [ ] SOURCE_CUSTOM: When source=custom, selectedLearningCount=0
+- [ ] NO_SILENT_FALLBACK: No silent cross-library fallback
+
+### D. AUTO
+- [ ] AUTO_SOURCE: AUTO photo source defaults to Learning Library
+
+### E. ONE_SHOT
+- [ ] ONESHOT_SOURCE: Explicit source (learning or custom)
+- [ ] ONESHOT_EXPIRY: Expires automatically at next HH:00 or HH:30
+  - 10:12 publish → expires 10:30
+  - 10:42 publish → expires 11:00
+
+### F. FOCUS_LOCK
+- [ ] FOCUS_SOURCE: Explicit source or content scope
+- [ ] FOCUS_SCHEDULE_PAUSED: Schedule paused until lock disabled
+- [ ] FOCUS_CLOSE: Close restores current AUTO snapshot + MQTT refresh
 
 ## Admin Publication
 - [ ] Manual news: draft → render → publish → state/frame same frameId

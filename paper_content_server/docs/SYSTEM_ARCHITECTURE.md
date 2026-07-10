@@ -11,8 +11,11 @@ src/
   mqtt/           — MQTT notification client
   snapshot/       — Snapshot service (state, pinning, frame dispatch)
   news/           — News pipeline (fetch, parse, translate, verify, select)
-  library/        — Custom image library repository and rotation
-  safety/         — NSFW/content safety scanner
+  library/
+    learning/     — Learning Library (auto acquisition, source adapters, relevance)
+    custom/       — Custom Library (user uploads, albums)
+    shared/       — Asset model, selector, display modes
+  safety/         — Safety service, delete-unsafe, tombstone store
   render/         — Renderers (news-layout, news-render, photo-render, quantizer)
   epaper/         — Frame format (EPF1 encoder/decoder, palette, validator)
   publication/    — Publication service (override, history, rollback)

@@ -98,10 +98,32 @@ FOCUS_LOCK          — Manual content locked, schedule paused
   sequenceIndex: number | null,
   safetyStatus: 'safe' | 'unsafe' | 'suspicious' | 'uncertain',
   relevanceStatus: 'pass' | 'reject' | 'uncertain' | null,
+  technicalQualityStatus: 'pass' | 'reject' | 'unknown',
+  productionEligible: boolean,
+  eligibilityReason: string[],
   contentHash: string,
   processedPngPath: string,
   epfPath: string
 }
+```
+
+## Production Eligibility Rules
+
+### Learning Library
+```
+libraryType=learning
+AND safetyStatus=safe
+AND relevanceStatus=pass
+AND technicalQualityStatus=pass
+AND productionEligible=true
+```
+
+### Custom Library
+```
+libraryType=custom
+AND safetyStatus=safe
+AND productionEligible=true
+AND within explicit selected scope
 ```
 
 ## SafetyTombstone
