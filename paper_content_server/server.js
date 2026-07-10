@@ -156,12 +156,17 @@ const IMAGE_INDEX_FILE = resolveConfiguredPath(APP_CONFIG.imageIndexFile || path
 const RAW_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.rawImagesDir || path.join(DATA_DIR, 'raw_images'));
 const PROCESSED_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.processedImagesDir || path.join(DATA_DIR, 'processed_images'));
 const IMPORT_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.importImagesDir || path.join(DATA_DIR, 'import_images'));
+const LAST_GOOD_NEWS_FILE = resolveConfiguredPath(APP_CONFIG.lastGoodNewsFile || path.join(DATA_DIR, 'last_good_news.json'));
+const FALLBACK_STUDY_DIR = resolveConfiguredPath(APP_CONFIG.fallbackStudyDir || path.join(DATA_DIR, 'fallback_study'));
 
 const runtime = {
   feeds: null,
   feedsLoadedAt: 0,
   newsCache: { version: 1, updatedAt: null, translations: {} },
   newsRotation: { version: 1, updatedAt: null, shown: [] },
+  lastGoodNews: null,
+  fallbackStudyEntries: null,
+  fallbackStudyReady: false,
   libraryState: {
     themeCursor: 0,
     currentTheme: null,
@@ -196,6 +201,8 @@ async function main() {
   runtime.newsRotation = await readJson(NEWS_ROTATION_FILE, { version: 1, updatedAt: null, shown: [] });
   runtime.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
   runtime.imageIndex = await loadImageIndex();
+  runtime.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
+  ensureFallbackStudyFrames().catch(function(e) { console.log('fallback frames init error: ' + e.message); });
   warmRefreshLoop();
   const server = http.createServer(handleRequest);
 
@@ -1448,6 +1455,49 @@ async function buildNewsSnapshot(now) {
     slotKey,
   };
 
+  // Save last-good-news if we have enough items
+  if (final.length >= NEWS_MAX_ITEMS) {
+    runtime.lastGoodNews = news;
+    writeJson(LAST_GOOD_NEWS_FILE, news).catch(function(e) { console.log('last-good-news write failed: ' + e.message); });
+  }
+
+  // If no items, fall back to last-good-news or built-in placeholder
+  if (news.items.length === 0) {
+    if (runtime.lastGoodNews && runtime.lastGoodNews.items && runtime.lastGoodNews.items.length >= NEWS_MAX_ITEMS) {
+      console.log('live news empty, using last-good-news (' + runtime.lastGoodNews.items.length + ' items)');
+      runtime.cachedSnapshots.set(key, runtime.lastGoodNews);
+      return runtime.lastGoodNews;
+    }
+    // Built-in safe placeholder (never show "暂无新闻" with empty items)
+    var placeholderItems = [];
+    var placeholderSources = ['System', 'Standby', 'Status'];
+    for (var pi = 0; pi < NEWS_MAX_ITEMS; pi++) {
+      var psrc = placeholderSources[pi % placeholderSources.length];
+      placeholderItems.push({
+        originalTitle: 'News feed temporarily unavailable',
+        originalSummary: 'Waiting for next refresh cycle',
+        zhTitle: '新闻源暂时不可用',
+        zhSummary: '正在等待下一次刷新。系统将持续自动重试。',
+        sourceUrl: '',
+        source: psrc,
+        category: 'general',
+        publishedAt: new Date().toISOString(),
+        translationStatus: 'placeholder',
+      });
+    }
+    var fallbackNews = {
+      translationProvider: TRANSLATION_PROVIDER,
+      translationNotice: '系统启动中',
+      updatedAt: new Date().toISOString(),
+      items: placeholderItems,
+      frameId: 'news:' + sha1('placeholder:' + Date.now()),
+      title: 'STANDBY',
+      slotKey: snapshot.slotKey || 'standby',
+    };
+    runtime.cachedSnapshots.set(key, fallbackNews);
+    return fallbackNews;
+  }
+
   runtime.cachedSnapshots.set(key, news);
   return news;
 }
@@ -1465,12 +1515,131 @@ async function loadImageIndex() {
   }
 }
 
+var FALLBACK_STUDY_THEMES = [
+  { id: 'fb-dialogue-sb', theme: 'dialogue', kind: 'storyboard', title: 'Dialogue Framing - Rule of Thirds', lessonTags: ['rule-of-thirds', 'framing', 'dialogue'] },
+  { id: 'fb-wideshot', theme: 'wide_shot', kind: 'shot', title: 'Wide Shot - Establishing Context', lessonTags: ['wide-shot', 'establishing', 'composition'] },
+  { id: 'fb-entrance', theme: 'entrance', kind: 'shot', title: 'Entrance Framing - Full Body', lessonTags: ['entrance', 'full-shot', 'balance'] },
+  { id: 'fb-night', theme: 'night', kind: 'shot', title: 'Night Scene - Low Key', lessonTags: ['night', 'low-light', 'silhouette'] },
+  { id: 'fb-ensemble', theme: 'ensemble', kind: 'shot', title: 'Group Balance - Ensemble', lessonTags: ['ensemble', 'group', 'balance'] },
+  { id: 'fb-color', theme: 'color', kind: 'film_still', title: 'Color Harmony - Complementary', lessonTags: ['color', 'harmony', 'palette'] },
+  { id: 'fb-dialogue-ms', theme: 'dialogue', kind: 'shot', title: 'Medium Shot - Dialogue', lessonTags: ['medium-shot', 'over-shoulder', 'dialogue'] },
+  { id: 'fb-ensemble-sb', theme: 'ensemble', kind: 'storyboard', title: 'Blocking Layout - Storyboard', lessonTags: ['storyboard', 'blocking', 'layout'] },
+];
+
+function generateFallbackStudySvg(entry) {
+  var boxes = [];
+  var bg = '#f5f3ee';
+  var gridColor = '#d4c9b8';
+  var textColor = '#2c2c2c';
+  var accentColor = '#8b7355';
+  boxes.push('<rect width="800" height="480" fill="' + bg + '"/>');
+  var thirdsLines = [
+    { x1: 267, y1: 0, x2: 267, y2: 480 },
+    { x1: 533, y1: 0, x2: 533, y2: 480 },
+    { x1: 0, y1: 160, x2: 800, y2: 160 },
+    { x1: 0, y1: 320, x2: 800, y2: 320 },
+  ];
+  for (var li = 0; li < thirdsLines.length; li++) {
+    var l = thirdsLines[li];
+    boxes.push('<line x1="' + l.x1 + '" y1="' + l.y1 + '" x2="' + l.x2 + '" y2="' + l.y2 + '" stroke="' + gridColor + '" stroke-width="1" stroke-dasharray="6,4"/>');
+  }
+  var cx = [134, 400, 666];
+  var cy = [80, 240, 400];
+  for (var yi = 0; yi < 3; yi++) {
+    for (var xi = 0; xi < 3; xi++) {
+      boxes.push('<circle cx="' + cx[xi] + '" cy="' + cy[yi] + '" r="4" fill="' + accentColor + '" opacity="0.5"/>');
+    }
+  }
+  var subjectX = cx[xi - 2];
+  var subjectY = cy[yi - 1];
+  var frameStyle = 'stroke="' + accentColor + '" stroke-width="2" fill="none" stroke-dasharray="8,4"';
+  if (entry.kind === 'storyboard') {
+    boxes.push('<rect x="80" y="60" width="280" height="180" ' + frameStyle + '/>');
+    boxes.push('<rect x="440" y="60" width="280" height="180" ' + frameStyle + '/>');
+    boxes.push('<rect x="80" y="260" width="280" height="180" ' + frameStyle + '/>');
+    boxes.push('<rect x="440" y="260" width="280" height="180" ' + frameStyle + '/>');
+    boxes.push('<text x="400" y="36" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="bold" fill="' + textColor + '">' + escapeXml(entry.title) + '</text>');
+    boxes.push('<text x="400" y="460" text-anchor="middle" font-family="sans-serif" font-size="11" fill="' + accentColor + '">composition study card · ' + escapeXml(entry.lessonTags.join(' · ')) + '</text>');
+  } else {
+    // Shot: draw framing rectangle in center
+    var fw = 480, fh = 288;
+    boxes.push('<rect x="' + ((800 - fw) / 2) + '" y="' + ((480 - fh) / 2) + '" width="' + fw + '" height="' + fh + '" ' + frameStyle + ' rx="4"/>');
+    if (entry.theme === 'wide_shot' || entry.theme === 'entrance') {
+      boxes.push('<rect x="' + ((800 - fw) / 2) + '" y="' + ((480 - fh) / 2) + '" width="' + (fw / 3) + '" height="' + fh + '" fill="#8b7355" opacity="0.08"/>');
+      boxes.push('<rect x="' + ((800 - fw) / 2 + fw * 2 / 3) + '" y="' + ((480 - fh) / 2) + '" width="' + (fw / 3) + '" height="' + fh + '" fill="#8b7355" opacity="0.08"/>');
+    }
+    boxes.push('<text x="400" y="36" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="bold" fill="' + textColor + '">' + escapeXml(entry.title) + '</text>');
+    boxes.push('<text x="400" y="470" text-anchor="middle" font-family="sans-serif" font-size="11" fill="' + accentColor + '">composition study card · ' + escapeXml(entry.lessonTags.join(' · ')) + '</text>');
+  }
+  return '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480">' + boxes.join('') + '</svg>';
+}
+
+async function ensureFallbackStudyFrames() {
+  if (runtime.fallbackStudyReady) return;
+  await ensureDir(FALLBACK_STUDY_DIR);
+  var entries = [];
+  for (var fbi = 0; fbi < FALLBACK_STUDY_THEMES.length; fbi++) {
+    var t = FALLBACK_STUDY_THEMES[fbi];
+    var svgStr = generateFallbackStudySvg(t);
+    var pngPath = path.join(FALLBACK_STUDY_DIR, t.id + '.png');
+    var epfPath = path.join(FALLBACK_STUDY_DIR, t.id + '.epf');
+    if (!fs.existsSync(pngPath) || !fs.existsSync(epfPath)) {
+      try {
+        var { data, info } = await sharp(Buffer.from(svgStr))
+          .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
+          .flatten({ background: '#ffffff' })
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+        var epfBuf = imageToFrameBuffer(data, info.width, info.height, info.channels);
+        await fsp.writeFile(pngPath, await sharp(Buffer.from(svgStr)).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).flatten({ background: '#ffffff' }).png().toBuffer());
+        await fsp.writeFile(epfPath, epfBuf);
+        console.log('generated fallback study frame: ' + t.id);
+      } catch (genErr) {
+        console.log('fallback study frame gen failed ' + t.id + ': ' + genErr.message);
+        continue;
+      }
+    }
+    entries.push({
+      id: t.id,
+      url: 'builtin://fallback/' + t.id,
+      title: t.title,
+      sourceType: 'fallback',
+      source: 'Built-in Study Pack',
+      theme: t.theme,
+      kind: t.kind,
+      poolType: 'study_frames',
+      safetyStatus: 'approved',
+      rightsStatus: 'known',
+      rights: { author: 'Built-in', license: 'CC0', licenseUrl: '', usageTerms: 'Study use', sourcePageUrl: '' },
+      lessonTags: t.lessonTags,
+      processedPngPath: pngPath,
+      epfPath: epfPath,
+      width: FRAME_WIDTH,
+      height: FRAME_HEIGHT,
+      imageName: t.id + '.png',
+      createdAt: new Date().toISOString(),
+      lastShownAt: null,
+      shownCount: 0,
+      metadata: { fallback: true, lessonTags: t.lessonTags },
+      hash: sha1(t.id),
+    });
+  }
+  runtime.fallbackStudyEntries = entries;
+  runtime.fallbackStudyReady = true;
+  console.log('fallback study frames ready: ' + entries.length + ' entries');
+}
+
 function selectableImages() {
   return (runtime.fullImageIndex || runtime.imageIndex || []).filter(function(e) { return isImageReady(e) && isImageApproved(e); });
 }
 
 function studySelectableImages() {
-  return (runtime.fullImageIndex || runtime.imageIndex || []).filter(isStudySelectable);
+  var realEntries = (runtime.fullImageIndex || runtime.imageIndex || []).filter(isStudySelectable);
+  if (realEntries.length > 0) return realEntries;
+  if (runtime.fallbackStudyReady && runtime.fallbackStudyEntries) {
+    return runtime.fallbackStudyEntries.filter(function(e) { return fs.existsSync(e.processedPngPath); });
+  }
+  return [];
 }
 
 async function reloadImageIndexIfNeeded() {
