@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// F-news-render-contract: production layoutNewsCard via shared function
+// F-news-render-contract: strict Acceptance (title===1, summary 2-3, no overflow)
 var path=require('path');
 var mod=require(path.join(__dirname,'..','..','server.js'));
 var ec=0,pass=0,fail=0;
@@ -17,10 +17,10 @@ var items=[
 ];
 items.forEach(function(item,i){
   var lay=lc(item,NL);
-  t('C'+(i+1)+'_TLINES='+lay.titleLines,lay.titleLines<=2,'tl='+lay.titleLines);
-  // Acceptance requires summaryLines = 2 or 3
-  var ok2or3 = lay.summaryLineCount === 2 || lay.summaryLineCount === 3;
-  t('C'+(i+1)+'_SLINES='+lay.summaryLineCount, ok2or3, 'sl='+lay.summaryLineCount+' font='+lay.summaryFontSize);
-  t('C'+(i+1)+'_OVERFLOW',!lay.overflow,'');
+  // Acceptance: titleLines === 1, summaryLineCount === 2 or 3, overflow === false
+  t('C'+(i+1)+'_TITLE_EQ1',lay.titleLines===1,'tl='+lay.titleLines+':'+item.zhTitle);
+  var ok2or3=lay.summaryLineCount===2||lay.summaryLineCount===3;
+  t('C'+(i+1)+'_SLINES_2or3',ok2or3,'sl='+lay.summaryLineCount+' font='+lay.summaryFontSize);
+  t('C'+(i+1)+'_NO_OVERFLOW',!lay.overflow,'');
 });
 console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec);

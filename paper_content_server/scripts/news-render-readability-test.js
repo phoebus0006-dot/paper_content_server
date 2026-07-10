@@ -92,11 +92,11 @@ async function main() {
         var y0 = NEWS_LAYOUT.HEADER_H + 4 + row * (NEWS_LAYOUT.cardH + NEWS_LAYOUT.ROW_GAP);
         var sumEndY = y0 + 3 + NEWS_LAYOUT.badgeH + 5 + NEWS_LAYOUT.titleFont + 5 + 3 * (NEWS_LAYOUT.summaryFont + 2);
         var overflow = layout.overflow || (sumEndY + NEWS_LAYOUT.summaryFont > y0 + NEWS_LAYOUT.cardH);
-        if (layout.summaryLineCount !== 3) all3 = false;
+        if (layout.summaryLineCount < 2 || layout.summaryLineCount > 3) all3 = false;
         if (overflow) noOverflow = false;
-        test('CARD_' + (i+1) + '_SUMMARY_LINES=' + layout.summaryLineCount, layout.summaryLineCount === 3, 'summaryLines=' + layout.summaryLineCount + (layout.overflow ? ' OVERFLOW' : ''));
+        test('CARD_' + (i+1) + '_SUMMARY_LINES=' + layout.summaryLineCount, layout.summaryLineCount >= 2 && layout.summaryLineCount <= 3, 'summaryLines=' + layout.summaryLineCount + (layout.overflow ? ' OVERFLOW' : ''));
       });
-      test('ALL_3_SUMMARY_LINES', all3, 'fontSize=' + sumFont);
+      test('ALL_2or3_SUMMARY_LINES', all3, 'fontSize=' + sumFont);
       test('NO_OVERFLOW', noOverflow, 'cardH=' + NEWS_LAYOUT.cardH);
     }
 

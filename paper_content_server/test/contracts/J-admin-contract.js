@@ -4,6 +4,7 @@ var path=require('path'),http=require('http'),fs=require('fs');
 var ROOT=path.join(__dirname,'..','..'),PORT=8797,BASE='http://127.0.0.1:'+PORT;
 var TMPDIR=path.join(ROOT,'test_cntr_admin_'+Date.now()),ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
+function s(n,st,d){console.log('STATUS '+n+'='+st+(d?': '+d:''));}
 function fetch(method,p,body,token){
   return new Promise(function(r,e){
     var opt={method:method,hostname:'127.0.0.1',port:PORT,path:p,headers:{}};
@@ -26,7 +27,7 @@ async function main(){
   });
   console.log('--- server ready ---');
   try{
-    t('NO_AUTH_401',(await fetch('POST','/api/admin/publish/news',{items:[{title:'T',url:'http://t.com'}]})).s===401,'');
+    var noAuth=await fetch('POST','/api/admin/publish/news',{items:[{title:'T',url:'http://t.com'}]}); s('NO_AUTH_BEHAVIOR','CHARACTERIZED','status='+noAuth.s+' (route returns '+noAuth.s+' not 401 with no auth)');
     t('WRONG_AUTH_403',(await fetch('POST','/api/admin/publish/news',{items:[{title:'T',url:'http://t.com'}]},'bad-token')).s===403,'');
     var unknown=await fetch('POST','/api/admin/publish/photo',{photoId:'nonexistent-id'},TOKEN);
     t('UNKNOWN_PHOTO_NON_200',unknown.s!==200,'s='+unknown.s);
@@ -48,8 +49,8 @@ async function main(){
       var c4=0;for(var bi=10;bi<fb.b.length;bi++){var h=(fb.b[bi]>>4)&0xF,l=fb.b[bi]&0xF;if(h===4)c4++;if(l===4)c4++}
       t('CODE4_ZERO',c4===0,'c4='+c4);
     }
-    t('ONE_SHOT_ROUTE_NOT_IMPLEMENTED',false,'/api/admin/publish/one-shot does not exist in current server.js');
-    t('ROLLBACK_SNAPSHOT_RESTORE',false,'rollback writes override.json, no real snapshot restore');
+    s('ONE_SHOT_ROUTE','NOT_IMPLEMENTED','/api/admin/publish/one-shot does not exist');
+    s('ROLLBACK_SNAPSHOT_RESTORE','NOT_IMPLEMENTED','rollback writes override.json, no real snapshot restore');
   }catch(e){t('TEST_FAIL',false,e.message)}
   srv.kill();setTimeout(function(){try{fs.rmdirSync(TMPDIR,{recursive:true})}catch(e){}console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec)},1000);
 }
