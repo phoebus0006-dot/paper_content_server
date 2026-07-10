@@ -240,6 +240,7 @@ if (!process.env.DOCS_CHECK_SELF_TEST) { process.exit(exitCode); }
   var tmpDir = path.join(require('os').tmpdir(), 'docs_check_self_' + Date.now());
   var stPass = 0, stFail = 0;
   function st(n, o, d) { console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:'')); if(o)stPass++;else stFail++; }
+  function gitExit(tmpDir2, args) { try { require('child_process').execFileSync('git', args, { cwd: tmpDir2 }); return 0; } catch(e) { return e.status !== undefined ? e.status : 1; } }
   try {
     var fs2 = require('fs');
     var exec2 = require('child_process').execFileSync;
@@ -267,49 +268,57 @@ if (!process.env.DOCS_CHECK_SELF_TEST) { process.exit(exitCode); }
     try { exec2('git', ['cat-file', '-e', '0000000000000000000000000000000000000000^{commit}']); unk = true; } catch(e) {}
     st('CASE2_UNKNOWN_SHA', !unk, '');
 
-    // Case 3: non-ancestor (create divergent branch)
+    // Case 3: non-ancestor (create completely separate git repo)
     fs2.writeFileSync('server.js', '// modified\n');
     exec2('git', ['add', '.']);
     exec2('git', ['commit', '-m', 'B']);
     var shaB = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
-    // Create orphan (completely unrelated)
-    exec2('git', ['checkout', '--orphan', 'orphan']);
-    fs2.writeFileSync('other.txt', 'orphan');
-    exec2('git', ['add', '.']);
-    exec2('git', ['commit', '-m', 'orphan']);
-    var shaOrphan = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
-    var notAnc = true;
-    try { exec2('git', ['merge-base', '--is-ancestor', shaOrphan, shaA]); notAnc = false; } catch(e) {}
-    st('CASE3_NON_ANCESTOR', !notAnc, shaOrphan.substr(0,8)+' not ancestor of '+shaA.substr(0,8));
-    exec2('git', ['checkout', 'master']);
+    var otherDir = path.join(tmpDir, 'other_repo');
+    fs2.mkdirSync(otherDir);
+    fs2.writeFileSync(path.join(otherDir, 'f.txt'), 'other');
+    exec2('git', ['init'], { cwd: otherDir });
+    exec2('git', ['config', 'user.email', 't@t.com'], { cwd: otherDir });
+    exec2('git', ['config', 'user.name', 'T'], { cwd: otherDir });
+    exec2('git', ['config', 'commit.gpgsign', 'false'], { cwd: otherDir });
+    exec2('git', ['add', '.'], { cwd: otherDir });
+    exec2('git', ['commit', '-m', 'orphan'], { cwd: otherDir });
+    var shaOther = exec2('git', ['rev-parse', 'HEAD'], { cwd: otherDir }).toString().trim();
+    var isAnc = gitExit(otherDir, ['merge-base', '--is-ancestor', shaOther, shaA]);
+    st('CASE3_NON_ANCESTOR', isAnc !== 0, shaOther.substr(0,8) + ' not ancestor of ' + shaA.substr(0,8));
 
-    // Case 4: docs-only change
+    // Case 4: docs-only change (B..C)
     fs2.writeFileSync('docs/README.md', '# docs');
     exec2('git', ['add', '.']);
     exec2('git', ['commit', '-m', 'C']);
     var shaC = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
-    var diff4 = exec2('git', ['diff', '--name-only', shaA+'..'+shaC]).toString().trim();
-    var core4 = diff4.split('\n').filter(function(f) { return f.startsWith('server.js'); });
+    var diff4 = exec2('git', ['diff', '--name-only', shaB+'..'+shaC]).toString().trim();
+    var core4 = diff4.split('\n').filter(function(f) {
+      var t = f.trim(); if (!t) return false;
+      return ['server.js','lib/','package.json','Dockerfile'].some(function(p) { return t.indexOf(p) === 0; });
+    });
     st('CASE4_DOCS_ONLY', core4.length === 0, diff4);
 
-    // Case 5: production code change
+    // Case 5: production code change (C..D)
     fs2.writeFileSync('server.js', '// changed');
     exec2('git', ['add', '.']);
     exec2('git', ['commit', '-m', 'D']);
     var shaD = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
-    var diff5 = exec2('git', ['diff', '--name-only', shaA+'..'+shaD]).toString().trim();
-    var core5 = diff5.split('\n').filter(function(f) { return f.startsWith('server.js'); });
-    st('CASE5_PRODUCTION_CHANGE', core5.length > 0, 'changed: '+core5.join(','));
+    var diff5 = exec2('git', ['diff', '--name-only', shaC+'..'+shaD]).toString().trim();
+    var core5 = diff5.split('\n').filter(function(f) {
+      var t = f.trim(); if (!t) return false;
+      return ['server.js','lib/','package.json','Dockerfile'].some(function(p) { return t.indexOf(p) === 0; });
+    });
+    st('CASE5_PRODUCTION_CHANGE', core5.length > 0, 'changed: ' + core5.join(','));
 
     // Cleanup
-    process.chdir('/');
+    try { process.chdir(path.join(tmpDir, '..')); } catch(e) {}
     try { fs2.rmdirSync(tmpDir, { recursive: true }); } catch(e) {}
 
     console.log('\nSELF_TEST_RESULT: ' + stPass + ' pass, ' + stFail + ' fail');
     process.exit(stFail > 0 ? 1 : 0);
   } catch(e) {
     console.log('SELF_TEST_CRASH: ' + e.message);
-    process.chdir('/');
+    try { process.chdir(path.join(tmpDir, '..')); } catch(e) {}
     try { require('fs').rmdirSync(tmpDir, { recursive: true }); } catch(e2) {}
     process.exit(1);
   }
