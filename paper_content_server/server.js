@@ -1478,6 +1478,7 @@ function isImageReady(entry) {
   if (!entry || !entry.id || !entry.theme) return false;
   if (!entry.processedPngPath || !fs.existsSync(entry.processedPngPath)) return false;
   if (entry.width !== FRAME_WIDTH || entry.height !== FRAME_HEIGHT) return false;
+  if (entry.safetyStatus !== 'approved') return false;
   return true;
 }
 
@@ -2781,7 +2782,7 @@ async function handleRequest(req, res) {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var idx = [];
       try { idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
-      respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, createdAt: e.createdAt }; }) });
+      respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }) });
       return;
     }
 

@@ -268,6 +268,7 @@ async function processImage(rawEntry, imageIndex) {
     lastShownAt: null,
     shownCount: 0,
     metadata: rawEntry.metadata || {},
+    safetyStatus: rawEntry.safetyStatus || 'pending',
   };
   imageIndex.push(entry);
   return { status: 'processed', id: entry.id, path: processedPngPath };
