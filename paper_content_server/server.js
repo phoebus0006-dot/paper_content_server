@@ -2921,19 +2921,19 @@ async function handleRequest(req, res) {
       try {
         var db = JSON.parse(await readBody(req));
         var di = db.items || db.selected || [];
-        if (di.length !== 6) { respondJson(res, { error: 'need exactly 6 items, got ' + di.length }); return; }
+        if (di.length !== 6) { failJson(res, 400, 'need exactly 6 items, got ' + di.length); return; }
         var su = {}, st = {};
         for (var dk = 0; dk < di.length; dk++) {
           var d = di[dk];
-          if (!d.title || !d.title.trim()) { respondJson(res, { error: 'item ' + (dk+1) + ': title empty' }); return; }
-          if (d.title.length > 24) { respondJson(res, { error: 'item ' + (dk+1) + ': title too long (' + d.title.length + ')' }); return; }
-          if (!d.summary || !d.summary.trim()) { respondJson(res, { error: 'item ' + (dk+1) + ': summary empty' }); return; }
-          if (!d.url || !d.url.trim()) { respondJson(res, { error: 'item ' + (dk+1) + ': URL empty' }); return; }
+          if (!d.title || !d.title.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': title empty'); return; }
+          if (d.title.length > 24) { failJson(res, 400, 'item ' + (dk+1) + ': title too long (' + d.title.length + ')'); return; }
+          if (!d.summary || !d.summary.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': summary empty'); return; }
+          if (!d.url || !d.url.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': URL empty'); return; }
           var un = d.url.toLowerCase().replace(/[?#].*$/, '');
-          if (su[un]) { respondJson(res, { error: 'duplicate URL: ' + d.url }); return; }
+          if (su[un]) { failJson(res, 400, 'duplicate URL: ' + d.url); return; }
           su[un] = true;
           var tn = d.title.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
-          if (st[tn]) { respondJson(res, { error: 'duplicate title: ' + d.title }); return; }
+          if (st[tn]) { failJson(res, 400, 'duplicate title: ' + d.title); return; }
           st[tn] = true;
         }
         require('fs').writeFileSync(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: di }, null, 2));
@@ -2956,6 +2956,12 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/publish/photo' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var photoId = '';
+      try { var pb = JSON.parse(await readBody(req)); photoId = (pb && pb.photoId) || ''; } catch(e) {}
+      var imgIdx = [];
+      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      var foundPhoto = imgIdx.some(function(e) { return e.id === photoId; });
+      if (!foundPhoto && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
       var fid2 = 'manual-photo:' + Date.now().toString(36);
       fs.writeFileSync(path.join(DATA_DIR, 'admin_override.json'), JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null }, null, 2));
       var hst2 = readPubHistory(DATA_DIR);
@@ -2988,6 +2994,13 @@ async function handleRequest(req, res) {
       return;
     }
 
+
+    if (parsed.pathname === '/api/admin/override' && req.method === 'DELETE') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
+      respondJson(res, { status: 'ok' });
+      return;
+    }
 
     if (parsed.pathname === '/api/health.json') {
       var uptime = Math.floor((Date.now() - runtime.serverStartTime) / 1000);

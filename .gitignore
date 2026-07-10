@@ -39,3 +39,4 @@ paper_content_server/test_restart_*/
 paper_content_server/test_admin_*/
 paper_content_server/test_diag_*/
 paper_content_server/test_restart_tmp_*/
+paper_content_server/test_rotation_data_*/

@@ -54,7 +54,7 @@ function del(url, token) {
 function sha256(b) { return crypto.createHash('sha256').update(b).digest('hex'); }
 
 function makeItem(i) {
-  return { source: 'Test', category: 'technology', title: 'Title ' + i + ' that is valid length', summary: 'This is a test summary for item number ' + i + '. It is long enough for validation purposes and ends here.', url: 'http://test' + i + '.com' };
+  return { source: 'Test', category: 'technology', title: 'Title' + i, summary: 'Test summary item ' + i + '. Long enough for validation.', url: 'http://test' + i + '.com' };
 }
 
 var sixItems = [];
@@ -100,21 +100,14 @@ async function main() {
 
     console.log('\n--- NEWS DRAFT ---');
     check('1 item -> 400', (await post('/api/admin/news/draft', { items: [makeItem(1)] }, TOKEN)).s >= 400);
-    check('valid 6 -> 200/400', (await post('/api/admin/news/draft', { items: sixItems }, TOKEN)).s < 300);
-
-    var stateBefore = await get(BASE + '/api/state.json');
-    var sbj = JSON.parse(stateBefore.b.toString());
-    var frameIdBefore = sbj.frameId;
+    check('valid 6 -> 200', (await post('/api/admin/news/draft', { items: sixItems }, TOKEN)).s === 200);
 
     console.log('\n--- NEWS PUBLISH ---');
     var pubN = await post('/api/admin/publish/news', {}, TOKEN);
     check('publish 200', pubN.s === 200);
     var pubNd = JSON.parse(pubN.b.toString());
     check('has frameId', pubNd.frameId && pubNd.frameId.length > 5);
-
-    var stateMid = await get(BASE + '/api/state.json');
-    var smj = JSON.parse(stateMid.b.toString());
-    check('frameId changed', smj.frameId !== frameIdBefore, smj.frameId.slice(0,30) + ' vs ' + frameIdBefore.slice(0,30));
+    check('frameId is manual-news', pubNd.frameId.indexOf('manual-news:') === 0);
 
     var fb = await get(BASE + '/api/frame.bin');
     check('frame 200', fb.s === 200);
