@@ -79,6 +79,48 @@ function normalizeText(text) {
     .replace(/^\s+|\s+$/g, '');
 }
 
+function isDomainAllowed(url, safeDomains) {
+  if (!safeDomains || !safeDomains.length) return true;
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    return safeDomains.some(function(d) { return hostname === d.toLowerCase() || hostname.endsWith('.' + d.toLowerCase()); });
+  } catch { return false; }
+}
+
+function isBlocklistedContent(text, blocklistWords) {
+  if (!blocklistWords || !blocklistWords.length) return false;
+  const lower = String(text || '').toLowerCase();
+  for (const word of blocklistWords) {
+    const w = word.toLowerCase().trim();
+    if (!w) continue;
+    if (lower.indexOf(w) !== -1) return true;
+  }
+  return false;
+}
+
+function contentSafetyCheck(entry, safeDomains, blocklistWords) {
+  // Domain check
+  if (!isDomainAllowed(entry.url, safeDomains)) {
+    return { pass: false, reason: 'domain-not-in-safe-list' };
+  }
+  // Blocklist check on combined text fields
+  const combined = [
+    entry.title,
+    entry.url,
+    entry.source,
+    entry.sourceType,
+    entry.kind,
+    (entry.metadata && entry.metadata.description) || '',
+    (entry.metadata && entry.metadata.file) || '',
+    (entry.metadata && entry.metadata.identifier) || '',
+  ].filter(Boolean).join(' ');
+  if (isBlocklistedContent(combined, blocklistWords)) {
+    return { pass: false, reason: 'blocklist-word-match' };
+  }
+  return { pass: true };
+}
+
 function isLowQualityTitle(title, url) {
   const haystack = `${title || ''} ${url || ''}`;
   return QUALITY_BLOCKLIST.some((pattern) => pattern.test(haystack));
@@ -329,6 +371,14 @@ async function addCandidate(candidate, index, options) {
   const normalizedUrl = canonicalUrl(candidate.url);
   if (isDuplicateByUrl(normalizedUrl, index)) return { status: 'skipped', reason: 'duplicate-url' };
 
+  // Content safety: domain check before download
+  if (options.safeDomains || options.blocklistWords) {
+    const safety = contentSafetyCheck(candidate, options.safeDomains, options.blocklistWords);
+    if (!safety.pass) {
+      return { status: 'skipped', reason: `safety:${safety.reason}` };
+    }
+  }
+
   let buffer;
   try {
     buffer = await fetchBuffer(normalizedUrl);
@@ -386,6 +436,17 @@ async function addCandidate(candidate, index, options) {
     status: 'downloaded',
     metadata: candidate.metadata || {},
   };
+
+  // Content safety: blocklist check on full metadata after download
+  if (options.blocklistWords) {
+    const safety = contentSafetyCheck(entry, options.safeDomains, options.blocklistWords);
+    if (!safety.pass) {
+      return { status: 'skipped', reason: `safety:${safety.reason}` };
+    }
+  }
+
+  // All externally-fetched entries default to pending; only manual approval promotes to approved
+  entry.safetyStatus = 'pending';
   index.push(entry);
   return { status: 'downloaded', id, path: rawPath };
 }
@@ -711,10 +772,14 @@ async function main() {
   const limited = args.limit > 0 ? candidates.slice(0, args.limit) : candidates;
 
   const results = { downloaded: 0, skipped: 0, failed: 0, details: [] };
+  var safeDomains = config.safeDomains || [];
+  var blocklistWords = config.blocklistWords || [];
   for (const candidate of limited) {
     const result = await addCandidate(candidate, index, {
       minWidth: config.minImageWidth || MIN_WIDTH,
       minHeight: config.minImageHeight || MIN_HEIGHT,
+      safeDomains: safeDomains,
+      blocklistWords: blocklistWords,
     });
     if (result.status === 'downloaded') results.downloaded++;
     else if (result.status === 'skipped') results.skipped++;
