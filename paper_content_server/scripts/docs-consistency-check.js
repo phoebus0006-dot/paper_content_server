@@ -149,7 +149,21 @@ if (impl) {
     }
   }
 
-  // 6f. Original map content checks (SHA-independent)
+  // 6f. Verify SHA consistency across 3 truth baseline docs
+  var gbl = readFile('GLOBAL_REFACTOR_BASELINE.md');
+  var gaa = readFile('GLOBAL_ARCHITECTURE_AUDIT.md');
+  if (gbl && gaa) {
+    var shaMap = impl.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
+    var shaBl = gbl.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
+    var shaAa = gaa.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
+    var mapShaVal = shaMap ? shaMap[1] : null;
+    var blShaVal = shaBl ? shaBl[1] : null;
+    var aaShaVal = shaAa ? shaAa[1] : null;
+    var allSame = mapShaVal && blShaVal && aaShaVal && mapShaVal === blShaVal && blShaVal === aaShaVal;
+    check(allSame, 'Truth baseline SHA consistent across 3 docs: MAP=' + (mapShaVal||'MISS').substr(0,12) + ' BL=' + (blShaVal||'MISS').substr(0,12) + ' AA=' + (aaShaVal||'MISS').substr(0,12));
+  }
+
+  // 6g. Original map content checks (SHA-independent)
   check(impl.indexOf('| GET | /api/state.json') >= 0, 'CURRENT_IMPLEMENTATION_MAP has route data');
   check(impl.indexOf('| News translation cache |') >= 0, 'CURRENT_IMPLEMENTATION_MAP has runtime state data');
   check(impl.indexOf('| fetch |') >= 0, 'CURRENT_IMPLEMENTATION_MAP has news map data');
@@ -268,23 +282,32 @@ if (!process.env.DOCS_CHECK_SELF_TEST) { process.exit(exitCode); }
     try { exec2('git', ['cat-file', '-e', '0000000000000000000000000000000000000000^{commit}']); unk = true; } catch(e) {}
     st('CASE2_UNKNOWN_SHA', !unk, '');
 
-    // Case 3: non-ancestor (create completely separate git repo)
+    // Case 3: non-ancestor (same repo, orphan branch — no shared history)
+    // Commit B is child of A (normal)
     fs2.writeFileSync('server.js', '// modified\n');
     exec2('git', ['add', '.']);
     exec2('git', ['commit', '-m', 'B']);
     var shaB = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
-    var otherDir = path.join(tmpDir, 'other_repo');
-    fs2.mkdirSync(otherDir);
-    fs2.writeFileSync(path.join(otherDir, 'f.txt'), 'other');
-    exec2('git', ['init'], { cwd: otherDir });
-    exec2('git', ['config', 'user.email', 't@t.com'], { cwd: otherDir });
-    exec2('git', ['config', 'user.name', 'T'], { cwd: otherDir });
-    exec2('git', ['config', 'commit.gpgsign', 'false'], { cwd: otherDir });
-    exec2('git', ['add', '.'], { cwd: otherDir });
-    exec2('git', ['commit', '-m', 'orphan'], { cwd: otherDir });
-    var shaOther = exec2('git', ['rev-parse', 'HEAD'], { cwd: otherDir }).toString().trim();
-    var isAnc = gitExit(otherDir, ['merge-base', '--is-ancestor', shaOther, shaA]);
-    st('CASE3_NON_ANCESTOR', isAnc !== 0, shaOther.substr(0,8) + ' not ancestor of ' + shaA.substr(0,8));
+    // Create orphan commit C with completely unrelated history
+    exec2('git', ['checkout', '--orphan', 'orphan-branch']);
+    // Clean working tree for orphan
+    try { exec2('git', ['rm', '-rf', '.']); } catch(e) {}
+    try { exec2('git', ['reset', '--hard']); } catch(e) {}
+    fs2.writeFileSync('orphan.txt', 'orphan content');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'C']);
+    var shaC = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+    // Verify both commits exist
+    var c3LeftOk = gitExit(tmpDir, ['cat-file', '-e', shaC + '^{commit}']) === 0;
+    st('CASE3_LEFT_EXISTS', c3LeftOk, shaC.substr(0,8));
+    var c3RightOk = gitExit(tmpDir, ['cat-file', '-e', shaB + '^{commit}']) === 0;
+    st('CASE3_RIGHT_EXISTS', c3RightOk, shaB.substr(0,8));
+    // merge-base between unrelated orphans should exit 1
+    var mbExit = gitExit(tmpDir, ['merge-base', '--is-ancestor', shaC, shaB]);
+    st('CASE3_MERGE_BASE_EXIT', mbExit === 1, 'exit=' + mbExit);
+    st('CASE3_VALID_NON_ANCESTOR', mbExit === 1, shaC.substr(0,8) + ' not ancestor of ' + shaB.substr(0,8));
+    // Return to master
+    exec2('git', ['checkout', 'master']);
 
     // Case 4: docs-only change (B..C)
     fs2.writeFileSync('docs/README.md', '# docs');

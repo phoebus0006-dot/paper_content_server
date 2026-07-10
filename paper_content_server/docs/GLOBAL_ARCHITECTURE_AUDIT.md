@@ -1,7 +1,7 @@
 # Global Architecture Audit
 
 **Date**: 2026-07-10
-**Audited SHA**: a6cb25b27f7aeaf232c2c6bce21729fc5d5a7db3
+AUDITED_CODE_SHA=465cbd6e362fa203453e39623df20d68cdd4e975
 **Branch**: master
 
 ## Domain Risk Matrix

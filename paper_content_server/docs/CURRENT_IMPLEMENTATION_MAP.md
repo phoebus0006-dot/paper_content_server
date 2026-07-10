@@ -6,7 +6,7 @@
 ## 1. Repository Baseline
 
 branch=master
-AUDITED_CODE_SHA=ffbce098f82b508719b9bfb2f5d20fc904afd3b1
+AUDITED_CODE_SHA=465cbd6e362fa203453e39623df20d68cdd4e975
 origin/master at audit time=b49d262ff7c5d712c35075c9855f15025d3187c6
 server entrypoint=paper_content_server/server.js
 firmware entrypoint=NewsPhoto_esp32wf/NewsPhoto_esp32wf.ino
@@ -15,7 +15,6 @@ package manager=npm 10.x
 
 ### Audit Scope
 
-AUDITED_CODE_SHA=ffbce098f82b508719b9bfb2f5d20fc904afd3b1
 AUDIT_SCOPE=paper_content_server/server.js, firmware, test scripts
 Since audit base: server.js (publish handler frameId alignment, one-shot route, buildManualPhotoFromAsset), scripts/admin-test.js (expiry boundary assertions, one-shot tests), docs/, scripts/docs-consistency-check.js.
 NAS/ESP32 evidence: NOT VERIFIED / NOT TESTED.
