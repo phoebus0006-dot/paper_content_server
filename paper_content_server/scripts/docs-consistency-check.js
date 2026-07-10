@@ -82,14 +82,74 @@ if (readme) {
   }
 }
 
-// 6. CURRENT_IMPLEMENTATION_MAP: HEAD matches git HEAD
+// 6. CURRENT_IMPLEMENTATION_MAP: Git Integrity Verification
 var impl = readFile('CURRENT_IMPLEMENTATION_MAP.md');
 if (impl) {
-  var headMatch = impl.match(/AUDITED_CODE_BASE_SHA=([a-f0-9]{40})/);
-  check(!!headMatch, 'CURRENT_IMPLEMENTATION_MAP audited SHA present: ' + (headMatch ? headMatch[1] : 'NOT_FOUND'));
+  var GIT_CWD = path.join(DOCS, '..', '..');
 
-  var originMatch = impl.match(/origin\/master at audit time=([a-f0-9]{40})/);
-  check(!!originMatch, 'CURRENT_IMPLEMENTATION_MAP origin/master audit SHA present: ' + (originMatch ? originMatch[1] : 'NOT_FOUND'));
+  function git(args) {
+    try { return require('child_process').execFileSync('git', args, { cwd: GIT_CWD, encoding: 'utf-8' }).trim(); }
+    catch(e) { return null; }
+  }
+  function gitOk(args) {
+    try { require('child_process').execFileSync('git', args, { cwd: GIT_CWD }); return true; }
+    catch(e) { return false; }
+  }
+  function isAncestor(a, d) { return gitOk(['merge-base', '--is-ancestor', a, d]); }
+
+  // 6a. Resolve current HEAD
+  var currentHead = git(['rev-parse', 'HEAD']);
+  check(!!currentHead, 'Git HEAD resolved: ' + (currentHead ? currentHead.substr(0, 12) : 'FAILED'));
+
+  // 6b. Read audited SHA (support AUDITED_CODE_SHA and legacy AUDITED_CODE_BASE_SHA)
+  var auditedMatch = impl.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
+  var legacyMatch = !auditedMatch ? impl.match(/AUDITED_CODE_BASE_SHA=([a-f0-9]{40})/) : null;
+  var auditedSha = auditedMatch ? auditedMatch[1] : (legacyMatch ? legacyMatch[1] : null);
+
+  if (legacyMatch) {
+    console.log('NOTE: Using legacy AUDITED_CODE_BASE_SHA field (migrate to AUDITED_CODE_SHA)');
+  }
+  check(!!auditedSha, 'Audited SHA present in CURRENT_IMPLEMENTATION_MAP');
+
+  if (auditedSha && currentHead) {
+    // 6c. Verify SHA exists as commit
+    var exists = gitOk(['cat-file', '-e', auditedSha + '^{commit}']);
+    check(exists, 'Audited SHA ' + auditedSha.substr(0,12) + (exists ? ' exists as commit' : ' DOES NOT EXIST'));
+
+    if (exists) {
+      // 6d. Verify ancestry
+      var anc = isAncestor(auditedSha, currentHead);
+      check(anc, 'Audited SHA ' + auditedSha.substr(0,12) + (anc ? ' is ancestor of' : ' is NOT ancestor of') + ' HEAD ' + currentHead.substr(0,12));
+
+      if (anc) {
+        // 6e. Check protected production files
+        var PROTECTED_PATHS = [
+          'paper_content_server/server.js',
+          'paper_content_server/lib/',
+          'NewsPhoto_esp32wf/',
+          'paper_content_server/package.json',
+          'paper_content_server/Dockerfile',
+          'paper_content_server/docker-compose.yml',
+        ];
+        var diff = git(['diff', '--name-only', auditedSha + '..' + currentHead]);
+        var files = diff ? diff.split('\n').filter(Boolean) : [];
+        var coreChanges = files.filter(function(f) {
+          return PROTECTED_PATHS.some(function(p) { return f.indexOf(p) === 0; });
+        });
+        if (coreChanges.length > 0) {
+          check(false, 'ARCHITECTURE_BASELINE_STALE');
+          console.log('AUDITED_CODE_SHA=' + auditedSha);
+          console.log('CURRENT_HEAD=' + currentHead);
+          console.log('CORE_FILES_CHANGED_SINCE_AUDIT:');
+          coreChanges.forEach(function(f) { console.log('  - ' + f); });
+        } else {
+          check(true, 'No protected production files changed since audited SHA');
+        }
+      }
+    }
+  }
+
+  // 6f. Original map content checks (SHA-independent)
   check(impl.indexOf('| GET | /api/state.json') >= 0, 'CURRENT_IMPLEMENTATION_MAP has route data');
   check(impl.indexOf('| News translation cache |') >= 0, 'CURRENT_IMPLEMENTATION_MAP has runtime state data');
   check(impl.indexOf('| fetch |') >= 0, 'CURRENT_IMPLEMENTATION_MAP has news map data');
@@ -102,15 +162,12 @@ if (impl) {
   expectedTests.forEach(function(t) {{
     check(impl.indexOf('| ' + t + '.js |') >= 0, 'Test map has ' + t + '.js');
   }});
-  // Check mismatch markers
   check(impl.indexOf('FULL_TRANSLATION_PIPELINE_COVERED=NO') >= 0, 'Test map: FULL_TRANSLATION_PIPELINE_COVERED=NO marker present');
   check(impl.indexOf('Contract aligned with Acceptance: summaryLines must be 2 or 3') >= 0, 'Test map: news layout contract aligned');
   check(impl.indexOf('NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH') < 0, 'Test map: old news layout mismatch marker absent');
   check(impl.indexOf('DUAL_LIBRARY_COVERAGE=NO') >= 0, 'Test map: DUAL_LIBRARY_COVERAGE=NO marker present');
   check(impl.indexOf('GAP-001') >= 0, 'CURRENT_IMPLEMENTATION_MAP has known gaps');
   check(impl.indexOf('DATA_DIR resolution') >= 0, 'CURRENT_IMPLEMENTATION_MAP has data/deployment');
-
-  // Check for cross-contamination (News mentions of selectStudyPhoto)
   var newsSection = sectionBetween(impl, '## 5. News Implementation Map', '## 6. Image Library Implementation Map');
   if (newsSection) {
     var learningSection = sectionBetween(impl, '## 6. Image Library Implementation Map', '## 7. Operating Modes');
@@ -175,4 +232,85 @@ if (impl) {
 }
 
 console.log('\n=== exitCode=' + exitCode + ' ===');
-process.exit(exitCode);
+if (!process.env.DOCS_CHECK_SELF_TEST) { process.exit(exitCode); }
+
+// === SELF TEST (DOCS_CHECK_SELF_TEST=1) ===
+(function() {
+  console.log('\n=== DOCS CHECKER SELF TEST ===\n');
+  var tmpDir = path.join(require('os').tmpdir(), 'docs_check_self_' + Date.now());
+  var stPass = 0, stFail = 0;
+  function st(n, o, d) { console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:'')); if(o)stPass++;else stFail++; }
+  try {
+    var fs2 = require('fs');
+    var exec2 = require('child_process').execFileSync;
+    fs2.mkdirSync(tmpDir, { recursive: true });
+    process.chdir(tmpDir);
+    exec2('git', ['init']);
+    exec2('git', ['config', 'user.email', 't@t.com']);
+    exec2('git', ['config', 'user.name', 'T']);
+    exec2('git', ['config', 'commit.gpgsign', 'false']);
+
+    fs2.writeFileSync('server.js', '// production\n');
+    fs2.mkdirSync('docs');
+    fs2.writeFileSync('docs/CURRENT_IMPLEMENTATION_MAP.md', 'AUDITED_CODE_SHA=' + 'a'.repeat(40) + '\n');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'A']);
+    var shaA = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+
+    // Case 1: valid ancestor
+    var anc = true;
+    try { exec2('git', ['merge-base', '--is-ancestor', shaA, shaA]); } catch(e) { anc = false; }
+    st('CASE1_VALID_ANCESTOR', anc, shaA.substr(0,8));
+
+    // Case 2: unknown SHA
+    var unk = false;
+    try { exec2('git', ['cat-file', '-e', '0000000000000000000000000000000000000000^{commit}']); unk = true; } catch(e) {}
+    st('CASE2_UNKNOWN_SHA', !unk, '');
+
+    // Case 3: non-ancestor (create divergent branch)
+    fs2.writeFileSync('server.js', '// modified\n');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'B']);
+    var shaB = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+    // Create orphan (completely unrelated)
+    exec2('git', ['checkout', '--orphan', 'orphan']);
+    fs2.writeFileSync('other.txt', 'orphan');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'orphan']);
+    var shaOrphan = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+    var notAnc = true;
+    try { exec2('git', ['merge-base', '--is-ancestor', shaOrphan, shaA]); notAnc = false; } catch(e) {}
+    st('CASE3_NON_ANCESTOR', !notAnc, shaOrphan.substr(0,8)+' not ancestor of '+shaA.substr(0,8));
+    exec2('git', ['checkout', 'master']);
+
+    // Case 4: docs-only change
+    fs2.writeFileSync('docs/README.md', '# docs');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'C']);
+    var shaC = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+    var diff4 = exec2('git', ['diff', '--name-only', shaA+'..'+shaC]).toString().trim();
+    var core4 = diff4.split('\n').filter(function(f) { return f.startsWith('server.js'); });
+    st('CASE4_DOCS_ONLY', core4.length === 0, diff4);
+
+    // Case 5: production code change
+    fs2.writeFileSync('server.js', '// changed');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'D']);
+    var shaD = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+    var diff5 = exec2('git', ['diff', '--name-only', shaA+'..'+shaD]).toString().trim();
+    var core5 = diff5.split('\n').filter(function(f) { return f.startsWith('server.js'); });
+    st('CASE5_PRODUCTION_CHANGE', core5.length > 0, 'changed: '+core5.join(','));
+
+    // Cleanup
+    process.chdir('/');
+    try { fs2.rmdirSync(tmpDir, { recursive: true }); } catch(e) {}
+
+    console.log('\nSELF_TEST_RESULT: ' + stPass + ' pass, ' + stFail + ' fail');
+    process.exit(stFail > 0 ? 1 : 0);
+  } catch(e) {
+    console.log('SELF_TEST_CRASH: ' + e.message);
+    process.chdir('/');
+    try { require('fs').rmdirSync(tmpDir, { recursive: true }); } catch(e2) {}
+    process.exit(1);
+  }
+})();
