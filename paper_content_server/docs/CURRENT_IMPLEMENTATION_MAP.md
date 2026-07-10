@@ -15,13 +15,14 @@ package manager=npm 10.x
 
 ### Audit Scope
 
-AUDIT_SCOPE=paper_content_server/server.js, firmware, test scripts
-Since audit base: server.js (publish handler frameId alignment, one-shot route, buildManualPhotoFromAsset), scripts/admin-test.js (expiry boundary assertions, one-shot tests), docs/, scripts/docs-consistency-check.js.
+AUDIT_SCOPE=paper_content_server/server.js at AUDITED_CODE_SHA
+AUDITED FEATURES: schedule resolver via lib/schedule.js, news pipeline (fetch/parse/translate/select), photo rotation, basic admin override, EPF1 frame format, state/frame coherence
+NOT_IN_SCOPE: ONE_SHOT route, boundary expiry, FOCUS_LOCK, MQTT, learning/custom library, safety delete pipeline
 NAS/ESP32 evidence: NOT VERIFIED / NOT TESTED.
 
 ## 2. Server Entrypoint
 
-SERVER_JS_LOC=3418
+SERVER_JS_PHYSICAL_LINES=3418
 TOP_LEVEL_FUNCTIONS=114
 PROCESS_ENV_READS=24 (scattered across server.js)
 ROUTE_REGISTRATION=handleRequest() at byte 96995
@@ -157,7 +158,7 @@ TARGET_NOT_IMPLEMENTED: /api/admin/focus-lock, /api/admin/library, /api/admin/li
 |---|---|---|
 | AUTO | IMPLEMENTED | resolveDisplayMode in lib/schedule.js; 00-29 photo, 30-59 news; night hold 19:00-10:00 |
 | ONE_SHOT_OVERRIDE | IMPLEMENTED | admin_override.json written with expiresAt=next HH:00/HH:30. loadActiveOverride() checks expiry and deletes expired. Override read in computeSnapshot() + getContentForNow(). POST /api/admin/publish/one-shot validates assetId and stores it; getContentForNow renders the specified asset when override contains assetId/photoId. |
-| FOCUS_LOCK | NOT_IMPLEMENTED (no FOCUS_LOCK code in server.js) | No FOCUS_LOCK API, state, or handling in code |
+| FOCUS_LOCK | NOT_IMPLEMENTED | No FOCUS_LOCK API, state, or handling in code |
 
 ## 8. MQTT
 

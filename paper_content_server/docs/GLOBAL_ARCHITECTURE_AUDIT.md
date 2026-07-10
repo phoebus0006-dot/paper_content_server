@@ -60,9 +60,9 @@ AUDITED_CODE_SHA=465cbd6e362fa203453e39623df20d68cdd4e975
 
 | Document | Claim | Code Reality |
 |----------|-------|-------------|
-| API_CONTRACT.md | /api/admin/publish/one-shot defined | Route does NOT exist |
-| API_CONTRACT.md | /api/admin/focus-lock defined | Route does NOT exist |
-| API_CONTRACT.md | /api/admin/library defined | Route does NOT exist |
+| API_CONTRACT.md | /api/admin/publish/one-shot | Route does NOT exist (confirmed at AUDITED_CODE_SHA)
+| API_CONTRACT.md | /api/admin/focus-lock | Route does NOT exist (confirmed at AUDITED_CODE_SHA)
+| API_CONTRACT.md | /api/admin/library | Route does NOT exist (confirmed at AUDITED_CODE_SHA)
 | DOMAIN_MODEL.md | libraryType field on LibraryAsset | No libraryType in image_index.json |
 | DOMAIN_MODEL.md | relevanceStatus, technicalQualityStatus | Fields do not exist |
 
