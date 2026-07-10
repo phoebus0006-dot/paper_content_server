@@ -2715,8 +2715,27 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/news/draft' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      fs.writeFileSync(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify(JSON.parse(await readBody(req)), null, 2));
-      respondJson(res, { status: 'ok' });
+      try {
+        var db = JSON.parse(await readBody(req));
+        var di = db.items || db.selected || [];
+        if (di.length !== 6) { respondJson(res, { error: 'need exactly 6 items, got ' + di.length }); return; }
+        var su = {}, st = {};
+        for (var dk = 0; dk < di.length; dk++) {
+          var d = di[dk];
+          if (!d.title || !d.title.trim()) { respondJson(res, { error: 'item ' + (dk+1) + ': title empty' }); return; }
+          if (d.title.length > 24) { respondJson(res, { error: 'item ' + (dk+1) + ': title too long (' + d.title.length + ')' }); return; }
+          if (!d.summary || !d.summary.trim()) { respondJson(res, { error: 'item ' + (dk+1) + ': summary empty' }); return; }
+          if (!d.url || !d.url.trim()) { respondJson(res, { error: 'item ' + (dk+1) + ': URL empty' }); return; }
+          var un = d.url.toLowerCase().replace(/[?#].*$/, '');
+          if (su[un]) { respondJson(res, { error: 'duplicate URL: ' + d.url }); return; }
+          su[un] = true;
+          var tn = d.title.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
+          if (st[tn]) { respondJson(res, { error: 'duplicate title: ' + d.title }); return; }
+          st[tn] = true;
+        }
+        require('fs').writeFileSync(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: di }, null, 2));
+        respondJson(res, { status: 'ok', count: di.length });
+      } catch(e) { failJson(res, 500, e.message); }
       return;
     }
 
