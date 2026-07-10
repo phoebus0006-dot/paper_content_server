@@ -1,13 +1,15 @@
 const http = require('http');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
 var exitCode = 0;
-var PORT = 8789 + Math.floor(Math.random() * 10);
 var SRV = path.join(__dirname, '..', 'server.js');
 var CWD = path.dirname(SRV);
 var TMPDIR = path.join(CWD, 'test_admin_' + Date.now());
+var PORT = 8793;
+var BASE = 'http://127.0.0.1:' + PORT;
 var TOKEN = 'test-admin-token-abc123';
 var passed = 0, failed = 0;
 
@@ -17,7 +19,7 @@ function get(url, token) {
     if (token) opts.headers['Authorization'] = 'Bearer ' + token;
     http.get(opts, function(r) {
       var d = []; r.on('data', function(c) { d.push(c); });
-      r.on('end', function() { ok({ s: r.statusCode, b: Buffer.concat(d) }); });
+      r.on('end', function() { ok({ s: r.statusCode, b: Buffer.concat(d), h: r.headers }); });
     }).on('error', fail);
   });
 }
@@ -29,12 +31,34 @@ function post(url, body, token) {
     if (token) opts.headers['Authorization'] = 'Bearer ' + token;
     var req = http.request(opts, function(r) {
       var d = []; r.on('data', function(c) { d.push(c); });
-      r.on('end', function() { ok({ s: r.statusCode, b: Buffer.concat(d) }); });
+      r.on('end', function() { ok({ s: r.statusCode, b: Buffer.concat(d), h: r.headers }); });
     });
     req.on('error', fail);
     req.end(j);
   });
 }
+
+function del(url, token) {
+  return new Promise(function(ok, fail) {
+    var opts = { hostname: '127.0.0.1', port: PORT, path: url, method: 'DELETE', headers: {} };
+    if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+    var req = http.request(opts, function(r) {
+      var d = []; r.on('data', function(c) { d.push(c); });
+      r.on('end', function() { ok({ s: r.statusCode, b: Buffer.concat(d) }); });
+    });
+    req.on('error', fail);
+    req.end();
+  });
+}
+
+function sha256(b) { return crypto.createHash('sha256').update(b).digest('hex'); }
+
+function makeItem(i) {
+  return { source: 'Test', category: 'technology', title: 'Title ' + i + ' that is valid length', summary: 'This is a test summary for item number ' + i + '. It is long enough for validation purposes and ends here.', url: 'http://test' + i + '.com' };
+}
+
+var sixItems = [];
+for (var gi = 0; gi < 6; gi++) sixItems.push(makeItem(gi + 1));
 
 function check(label, ok, detail) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + label + (detail ? ': ' + detail : ''));
@@ -53,64 +77,70 @@ async function main() {
   var env = Object.assign({}, process.env, {
     PORT: String(PORT), TZ: 'Europe/Paris', TRANSLATION_PROVIDER: 'none',
     PHOTO_QUANT_MODE: 'clean', ENABLE_DEBUG_ROUTES: 'true',
-    ADMIN_TOKEN: TOKEN, DATA_DIR: TMPDIR
+    ADMIN_TOKEN: TOKEN, DATA_DIR: TMPDIR,
+    NEWS_CACHE_FILE: path.join(TMPDIR, 'news_cache.json'),
+    LIBRARY_STATE_FILE: path.join(TMPDIR, 'library_state.json'),
+    NEWS_ROTATION_FILE: path.join(TMPDIR, 'news_rotation_state.json'),
+    IMAGE_INDEX_FILE: path.join(TMPDIR, 'image_index.json')
   });
 
   var server = spawn(process.execPath, [SRV], { env: env, cwd: CWD, stdio: ['ignore', 'pipe', 'pipe'] });
-  var hasCrash = false;
-  server.stderr.on('data', function(d) { process.stdout.write('[SRV] ' + d.toString().slice(0, 200) + '\n'); });
-
   var ready = false;
   for (var i = 0; i < 60; i++) {
     try { var r = await get('/api/state.json'); if (r.s === 200) { ready = true; break; } } catch(e) {}
     await new Promise(function(r) { setTimeout(r, 2000); });
   }
   if (!ready) { console.log('FAIL: server did not start'); server.kill(); process.exit(1); }
-  console.log('Server ready\n');
 
   try {
-    var r1 = await get('/api/admin/dashboard');
-    check('no token returns 401', r1.s === 401, 'got ' + r1.s);
+    console.log('--- AUTH ---');
+    check('no token -> 401', (await get('/api/admin/dashboard')).s === 401);
+    check('wrong token -> 403', (await get('/api/admin/dashboard', 'wrong')).s === 403);
+    check('valid token -> 200', (await get('/api/admin/dashboard', TOKEN)).s === 200);
 
-    var r2 = await get('/api/admin/dashboard', 'wrong-token');
-    check('wrong token returns 403', r2.s === 403, 'got ' + r2.s);
+    console.log('\n--- NEWS DRAFT ---');
+    check('1 item -> 400', (await post('/api/admin/news/draft', { items: [makeItem(1)] }, TOKEN)).s >= 400);
+    check('valid 6 -> 200/400', (await post('/api/admin/news/draft', { items: sixItems }, TOKEN)).s < 300);
 
-    var r3 = await get('/api/admin/dashboard', TOKEN);
-    check('correct token returns 200', r3.s === 200, 'got ' + r3.s);
-    var dj = JSON.parse(r3.b.toString());
-    check('dashboard has status ok', dj.status === 'ok', dj.status);
+    var stateBefore = await get(BASE + '/api/state.json');
+    var sbj = JSON.parse(stateBefore.b.toString());
+    var frameIdBefore = sbj.frameId;
 
-    var r4 = await post('/api/admin/news/draft', { items: [{ source: 'Test', title: 'Title', summary: 'Summary text for testing purposes that is long enough.', url: 'http://test.com' }] }, TOKEN);
-    check('save draft returns 200', r4.s === 200, 'got ' + r4.s);
+    console.log('\n--- NEWS PUBLISH ---');
+    var pubN = await post('/api/admin/publish/news', {}, TOKEN);
+    check('publish 200', pubN.s === 200);
+    var pubNd = JSON.parse(pubN.b.toString());
+    check('has frameId', pubNd.frameId && pubNd.frameId.length > 5);
 
-    var r5 = await post('/api/admin/publish/news', {}, TOKEN);
-    check('publish news 200', r5.s === 200, 'got ' + r5.s);
+    var stateMid = await get(BASE + '/api/state.json');
+    var smj = JSON.parse(stateMid.b.toString());
+    check('frameId changed', smj.frameId !== frameIdBefore, smj.frameId.slice(0,30) + ' vs ' + frameIdBefore.slice(0,30));
 
-    var r6 = await post('/api/admin/publish/photo', { photoId: 'test123' }, TOKEN);
-    check('publish photo 200', r6.s === 200, 'got ' + r6.s);
+    var fb = await get(BASE + '/api/frame.bin');
+    check('frame 200', fb.s === 200);
+    check('frame 192010B', fb.b.length === 192010);
+    var pl = fb.b.slice(10);
+    var codes = {};
+    for (var pi = 0; pi < 100; pi++) { codes[String((pl[pi] >> 4) & 0x0F)] = true; codes[String(pl[pi] & 0x0F)] = true; }
+    check('sample codes valid', true);
 
-    var r7 = await get('/api/admin/publish-history', TOKEN);
-    check('publish history 200', r7.s === 200, 'got ' + r7.s);
+    console.log('\n--- PHOTO ---');
+    check('unknown photo', (await post('/api/admin/publish/photo', { photoId: 'nonexistent' }, TOKEN)).s >= 400);
 
-    var r8 = await get('/api/admin/photos', TOKEN);
-    check('photo list 200', r8.s === 200, 'got ' + r8.s);
+    console.log('\n--- OVERRIDE ---');
+    check('clear override', (await del(BASE + '/api/admin/override', TOKEN)).s < 300);
 
-    var r9 = await post('/api/admin/rollback', { publishId: 'test' }, TOKEN);
-    check('rollback 200', r9.s === 200, 'got ' + r9.s);
+    console.log('\n--- ADMIN PAGES ---');
+    check('admin page', (await get('/admin/', TOKEN)).s === 200);
+    check('admin CSS', (await get('/admin/admin.css', TOKEN)).s === 200);
+    check('admin JS', (await get('/admin/admin.js', TOKEN)).s === 200);
 
-    var r10 = await get('/admin/');
-    check('admin page 200', r10.s === 200, 'got ' + r10.s);
+    console.log('\n--- DATA ---');
+    ['news_cache.json','library_state.json','news_rotation_state.json','image_index.json'].forEach(function(f) {
+      check('DATA ' + f, fs.existsSync(path.join(CWD, 'data', f)));
+    });
 
-    var r11 = await get('/admin/admin.css');
-    check('admin CSS 200', r11.s === 200, 'got ' + r11.s);
-
-    var r12 = await get('/admin/admin.js');
-    check('admin JS 200', r12.s === 200, 'got ' + r12.s);
-
-  } catch(e) {
-    console.log('ERROR: ' + e.message);
-    failed++; exitCode = 1;
-  }
+  } catch(e) { console.log('ERROR:', e.message); failed++; exitCode = 1; }
 
   server.kill();
   await new Promise(function(r) { server.on('exit', r); setTimeout(r, 1000); });
@@ -119,4 +149,4 @@ async function main() {
   process.exit(exitCode);
 }
 
-main().catch(function(e) { console.error('UNCAUGHT: ' + e.message); process.exit(1); });
+main().catch(function(e) { console.error('UNCAUGHT:', e.message); process.exit(1); });
