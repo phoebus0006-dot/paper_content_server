@@ -22,14 +22,17 @@ var r1Clock = R1_SystemClock();
 var r1Logger = R1_ConsoleLogger();
 var r1HttpClient = R1_createHttpClient(20000);
 
+// R2 Frame Core
+var epaperPalette = require('./src/epaper/palette');
+var epaperImageFrame = require('./src/epaper/image-frame');
+var epaperEpf1 = require('./src/epaper/epf1');
+var epaperFrameValidator = require('./src/epaper/frame-validator');
+
 const ROOT_DIR = __dirname;
 const DEFAULT_PORT = 8787;
 const DEFAULT_PANEL = 49;
-const PANEL_INDEX = 49;
 const FRAME_WIDTH = 800;
 const FRAME_HEIGHT = 480;
-const FRAME_HEADER_BYTES = 10;
-const FRAME_PAYLOAD_BYTES = Math.ceil((FRAME_WIDTH * FRAME_HEIGHT) / 2);
 const { resolveDisplayMode } = require('./lib/schedule');
 const { sortSequenceFrames } = require('./lib/sequence');
 const PHOTO_FOOTER_HEIGHT = 56;
@@ -44,14 +47,6 @@ const NEWS_SHOWN_RETENTION_DAYS = 7;
 const DEFAULT_PROVIDER = 'none';
 const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 const SHOT_STORYBOARD_PATTERN = ['shot', 'shot', 'storyboard', 'shot', 'shot', 'storyboard'];
-const PALETTE = [
-  { code: 0, name: 'black', rgb: [0, 0, 0] },
-  { code: 1, name: 'white', rgb: [255, 255, 255] },
-  { code: 2, name: 'yellow', rgb: [255, 255, 0] },
-  { code: 3, name: 'red', rgb: [255, 0, 0] },
-  { code: 5, name: 'blue', rgb: [0, 0, 255] },
-  { code: 6, name: 'green', rgb: [0, 255, 0] },
-];
 
 const PHOTO_THEME_POOL = [
   'cinematic',
@@ -2231,107 +2226,16 @@ async function renderNewsFrame(news, now) {
   return imageToFrameBuffer(data, info.width, info.height, info.channels);
 }
 
-function nearestPaletteCode(r, g, b) {
-  let best = PALETTE[0];
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const color of PALETTE) {
-    const dr = r - color.rgb[0];
-    const dg = g - color.rgb[1];
-    const db = b - color.rgb[2];
-    const distance = dr * dr + dg * dg + db * db;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = color;
-    }
-  }
-  return best.code;
-}
-
 function imageToFrameBuffer(raw, width, height, channels) {
-  const output = Buffer.alloc(FRAME_PAYLOAD_BYTES, 0x11);
-  const pixels = new Float32Array(width * height * 3);
-  const inputChannels = Math.max(3, Number(channels) || 3);
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const pixelIndex = y * width + x;
-      const offset = pixelIndex * inputChannels;
-      const p = pixelIndex * 3;
-      let r = raw[offset] ?? 255;
-      let g = raw[offset + 1] ?? r;
-      let b = raw[offset + 2] ?? r;
-      if (inputChannels >= 4) {
-        const a = raw[offset + 3] ?? 255;
-        if (a < 128) {
-          r = 255;
-          g = 255;
-          b = 255;
-        }
-      }
-      pixels[p] = r;
-      pixels[p + 1] = g;
-      pixels[p + 2] = b;
-    }
-  }
-
-  const spread = DITHERING_ENABLED;
-  const getPixelIndex = (x, y) => (y * width + x) * 3;
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const index = getPixelIndex(x, y);
-      let r = pixels[index];
-      let g = pixels[index + 1];
-      let b = pixels[index + 2];
-      const code = nearestPaletteCode(r, g, b);
-      const palette = PALETTE.find((item) => item.code === code) || PALETTE[0];
-      if (spread) {
-        const er = r - palette.rgb[0];
-        const eg = g - palette.rgb[1];
-        const eb = b - palette.rgb[2];
-        distributeError(pixels, width, height, x + 1, y, er, eg, eb, 7 / 16);
-        distributeError(pixels, width, height, x - 1, y + 1, er, eg, eb, 3 / 16);
-        distributeError(pixels, width, height, x, y + 1, er, eg, eb, 5 / 16);
-        distributeError(pixels, width, height, x + 1, y + 1, er, eg, eb, 1 / 16);
-      }
-
-      const pixelIndex = y * width + x;
-      const byteIndex = Math.floor(pixelIndex / 2);
-      if (pixelIndex % 2 === 0) {
-        output[byteIndex] = (output[byteIndex] & 0x0F) | ((code & 0x0F) << 4);
-      } else {
-        output[byteIndex] = (output[byteIndex] & 0xF0) | (code & 0x0F);
-      }
-    }
-  }
-
-  return output;
-}
-
-function distributeError(pixels, width, height, x, y, er, eg, eb, factor) {
-  if (x < 0 || x >= width || y < 0 || y >= height) return;
-  const index = (y * width + x) * 3;
-  pixels[index] = clampColor(pixels[index] + er * factor);
-  pixels[index + 1] = clampColor(pixels[index + 1] + eg * factor);
-  pixels[index + 2] = clampColor(pixels[index + 2] + eb * factor);
-}
-
-function clampColor(value) {
-  return Math.max(0, Math.min(255, value));
+  return epaperImageFrame.imageToFrameBuffer(raw, width, height, channels, DITHERING_ENABLED);
 }
 
 function buildFrameBuffer(frameImage) {
-  const header = Buffer.alloc(FRAME_HEADER_BYTES);
-  header.write('EPF1', 0, 4, 'ascii');
-  header.writeUInt16LE(FRAME_WIDTH, 4);
-  header.writeUInt16LE(FRAME_HEIGHT, 6);
-  header.writeUInt8(PANEL_INDEX, 8);
-  header.writeUInt8(1, 9);
-  return Buffer.concat([header, frameImage]);
+  return epaperImageFrame.buildFrameBuffer(frameImage);
 }
 
-function hexPreview(buf, bytes = 32) {
-  return Array.from(buf.subarray(0, bytes), (b) => b.toString(16).padStart(2, '0')).join(' ');
+function hexPreview(buf, bytes) {
+  return epaperEpf1.hexPreview(buf, bytes || 32);
 }
 
 function computeSnapshot(now) {
@@ -2805,7 +2709,7 @@ async function handleRequest(req, res) {
         counts[String((payload[i] >> 4) & 0x0F)] = (counts[String((payload[i] >> 4) & 0x0F)] || 0) + 1;
         counts[String(payload[i] & 0x0F)] = (counts[String(payload[i] & 0x0F)] || 0) + 1;
       }
-      const palette = PALETTE.map(c => ({ code: c.code, name: c.name, pixelCount: counts[String(c.code)] || 0 }));
+        const palette = epaperPalette.PALETTE.map(function(c) { return { code: c.code, name: c.name, pixelCount: counts[String(c.code)] || 0 }; });
       palette.push({ code: 4, name: 'orange(unsupported)', pixelCount: counts['4'] || 0 });
       palette.push({ code: 7, name: 'reserved', pixelCount: counts['7'] || 0 });
       const body = Buffer.from(JSON.stringify({ timestamp: now.toISOString(), frameId: photo.frameId, imageName: photo.imageName, width: FRAME_WIDTH, height: FRAME_HEIGHT, totalPixels: FRAME_WIDTH * FRAME_HEIGHT, unsupportedCode4: counts['4'] || 0, palette }, null, 2));
@@ -3160,6 +3064,7 @@ if (require.main === module) {
 module.exports = {
   handleRequest: handleRequest,
   main: main,
+  PALETTE: epaperPalette.PALETTE,
   extractTag,
   extractItems,
   parseFeedXml,
