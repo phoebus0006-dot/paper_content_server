@@ -22,6 +22,8 @@ var tests = [
   'test/r3/rollback-integration-test.js',
   'test/r3/snapshot-corruption-test.js',
   'test/r3/dependency-boundary-test.js',
+  'test/r3/full-frame-integrity-test.js',
+  'test/r3/history-failure-test.js',
 ];
 
 var overallFail = false;

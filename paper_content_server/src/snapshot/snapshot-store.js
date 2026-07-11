@@ -1,6 +1,8 @@
-// snapshot-store.js — Immutable snapshot persistence with integrity verification
-// save: validate → write frame → write meta → reload → verify hash
-// load: read meta → read frame → validate length/EPF1/hash → reject corrupt
+// snapshot-store.js — Immutable snapshot persistence with full EPF1 integrity verification
+// save: validate → write frame → write meta → reload → verify
+// load: read meta → read frame → full EPF1 validation + hash verification
+// Snapshot not found (meta ENOENT) → null
+// Meta found but frame missing → SNAPSHOT_INTEGRITY_ERROR
 
 var path = require('path');
 var fs = require('fs');
@@ -8,10 +10,8 @@ var fsp = fs.promises;
 var crypto = require('crypto');
 var writeFileAtomic = require(path.join(__dirname, '..', 'infra', 'atomic-file')).writeFileAtomic;
 var snapshotModel = require('./snapshot-model');
-var epaperEpf1 = require(path.join(__dirname, '..', 'epaper', 'epf1'));
 
 var ACTIVE_SCHEMA_VERSION = 1;
-var EPF1_FRAME_SIZE = 192010;
 
 function SnapshotIntegrityError(message) {
   this.code = 'SNAPSHOT_INTEGRITY_ERROR';
@@ -22,12 +22,14 @@ function computeSha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
-function validateFrame(frame, expectedLength, expectedSha256) {
+function validateFrameWithFullValidator(frame, expectedLength, expectedSha256) {
   if (frame.length !== expectedLength) {
     throw new SnapshotIntegrityError('frame length mismatch: expected ' + expectedLength + ' got ' + frame.length);
   }
-  if (frame.length < 4 || frame.toString('ascii', 0, 4) !== 'EPF1') {
-    throw new SnapshotIntegrityError('invalid EPF1 magic: ' + (frame.length >= 4 ? frame.toString('ascii', 0, 4) : 'too short'));
+  var { validateFrameBuffer } = require(path.join(__dirname, '..', 'epaper', 'frame-validator'));
+  var validation = validateFrameBuffer(frame);
+  if (!validation.ok) {
+    throw new SnapshotIntegrityError('invalid EPF1 frame: ' + validation.errors.join('; '));
   }
   var actualSha = computeSha256(frame);
   if (actualSha !== expectedSha256) {
@@ -69,22 +71,25 @@ function SnapshotStore(snapshotsDir, publicationDir, logger) {
     }).then(function() {
       return fsp.readFile(framePath(snapshot.snapshotId));
     }).then(function(persistedFrame) {
-      validateFrame(persistedFrame, snapshot.frameLength || snapshot.frame.length, snapshot.frameSha256);
+      validateFrameWithFullValidator(persistedFrame, snapshot.frameLength || snapshot.frame.length, snapshot.frameSha256);
       logger.info('Snapshot saved and verified: ' + snapshot.snapshotId);
       return snapshot.snapshotId;
     });
   }
 
-  // Load a complete snapshot with integrity validation
+  // Load a complete snapshot with full integrity validation
   function load(snapshotId) {
-    var meta, frameBytes;
+    var meta, frameBytes, metaOk = false;
     return fsp.readFile(metaPath(snapshotId), 'utf8').then(function(text) {
       meta = JSON.parse(text);
+      metaOk = true;
       return fsp.readFile(framePath(snapshotId));
     }).then(function(frame) {
       frameBytes = frame;
-      if (!meta.frameSha256) return null;
-      validateFrame(frameBytes, meta.frameLength || frameBytes.length, meta.frameSha256);
+      if (!meta.frameSha256) {
+        throw new SnapshotIntegrityError('missing frameSha256 in metadata for ' + snapshotId);
+      }
+      validateFrameWithFullValidator(frameBytes, meta.frameLength || frameBytes.length, meta.frameSha256);
       return Object.freeze({
         snapshotId: meta.snapshotId,
         frameId: meta.frameId,
@@ -98,8 +103,13 @@ function SnapshotStore(snapshotsDir, publicationDir, logger) {
         schemaVersion: meta.schemaVersion,
       });
     }).catch(function(err) {
-      if (err.code === 'ENOENT') return null;
       if (err instanceof SnapshotIntegrityError) throw err;
+      // meta ENOENT → snapshot genuinely does not exist
+      if (!metaOk && err.code === 'ENOENT') return null;
+      // meta exists but frame ENOENT → integrity error
+      if (metaOk && err.code === 'ENOENT') {
+        throw new SnapshotIntegrityError('frame file missing for ' + snapshotId);
+      }
       throw new SnapshotIntegrityError('load failed for ' + snapshotId + ': ' + (err.message || err));
     });
   }

@@ -4,7 +4,7 @@ var path=require('path'),fs=require('fs'),os=require('os'),crypto=require('crypt
 var ROOT=path.join(__dirname,'..','..');
 var ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
-function mf(s){var b=Buffer.alloc(s||16,0xAA);b.write('EPF1',0,'ascii');return b;}
+function mf(){var b=Buffer.alloc(192010);b.write('EPF1',0,'ascii');b.writeUInt16LE(800,4);b.writeUInt16LE(480,6);b[8]=49;b[9]=1;return b;}
 var sm=require(path.join(ROOT,'src','snapshot','snapshot-model'));
 var SS=require(path.join(ROOT,'src','snapshot','snapshot-store')).SnapshotStore;
 var SC=require(path.join(ROOT,'src','snapshot','snapshot-cache')).SnapshotCache;
@@ -20,7 +20,7 @@ async function run(){
   var s1=SS(path.join(tmp,'snap1'),path.join(tmp,'pub1'),lg);
   await s1.ensureDirs();
   var ps1=PubSvc(s1,SC(),PS(),PL(),{notify:function(){return Promise.reject(new Error('notif down'));},name:'bad'},null,PH(path.join(tmp,'h1.json'),lg),lg);
-  var snap=sm.createSnapshot('news:a',{mode:'news'},mf(16),'news');
+  var snap=sm.createSnapshot('news:a',{mode:'news'},mf(),'news');
   var r=await ps1.publish(snap);
   t('NOTIF_FAIL_RETURNS_SNAPSHOTID',r.snapshotId===snap.snapshotId,r.snapshotId);
   t('NOTIF_FAIL_STATUS',r.notificationStatus==='FAILED',r.notificationStatus);
@@ -37,7 +37,7 @@ async function run(){
   // Try to save empty snapshot should reject
   try{await s2.save(null);t('SAVE_NULL_REJECTED',false,'');}catch(e){t('SAVE_NULL_REJECTED',true,'');}
   // Try to save snapshot with invalid frame (non-Buffer)
-  try{var badSnap=sm.createSnapshot('bad:1',{mode:'news'},mf(16),'news');await s2.save({snapshotId:badSnap.snapshotId,frame:'not-a-buffer'});t('SAVE_BAD_FRAME',false,'');}catch(e){t('SAVE_BAD_FRAME',true,'');}
+  try{var badSnap=sm.createSnapshot('bad:1',{mode:'news'},mf(),'news');await s2.save({snapshotId:badSnap.snapshotId,frame:'not-a-buffer'});t('SAVE_BAD_FRAME',false,'');}catch(e){t('SAVE_BAD_FRAME',true,'');}
 
   // Activate non-existent throws
   try{await s1.activate('nonexistent');t('ACTIVATE_MISSING',false,'');}catch(e){t('ACTIVATE_MISSING',true,'');}

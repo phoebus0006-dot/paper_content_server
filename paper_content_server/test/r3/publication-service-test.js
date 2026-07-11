@@ -15,10 +15,10 @@ var PublicationLock = require(path.join(ROOT, 'src', 'publication', 'publication
 var PublicationHistory = require(path.join(ROOT, 'src', 'publication', 'publication-history')).PublicationHistory;
 var PublicationService = require(path.join(ROOT, 'src', 'publication', 'publication-service')).PublicationService;
 
-function makeFrame(size) {
-  var buf = Buffer.alloc(size, 0xAA);
-  buf.write('EPF1', 0, 'ascii');
-  return buf;
+function makeFrame() {
+  var b = Buffer.alloc(192010);
+  b.write('EPF1', 0, 'ascii'); b.writeUInt16LE(800, 4); b.writeUInt16LE(480, 6); b[8] = 49; b[9] = 1;
+  return b;
 }
 
 var tmpDir = path.join(os.tmpdir(), 'r3_pub_test_' + Date.now());
@@ -44,10 +44,12 @@ var svc = svcData.svc, hist = svcData.hist;
 
 async function run() {
   // 1. Publish a news snapshot
-  var frame = makeFrame(16);
+  var frame = makeFrame();
   var snap = snapshotModel.createSnapshot('news:r3-test:1', { mode: 'news', title: 'R3 Integration Test' }, frame, 'news');
   var result = await svc.publish(snap);
   t('PUBLISH_RETURNS_SNAPSHOTID', result.snapshotId === snap.snapshotId, '');
+  t('PUBLISH_COMMITTED', result.committed === true, '');
+  t('PUBLISH_HISTORY_OK', result.historyStatus === 'OK', result.historyStatus);
   t('PUBLISH_NOTIFICATION_OK', result.notificationStatus === 'OK', result.notificationStatus);
 
   // 2. Get active snapshot
@@ -66,16 +68,18 @@ async function run() {
   t('HISTORY_HAS_ENTRY', entries.length === 1 && entries[0].snapshotId === snap.snapshotId && entries[0].type === 'news', '');
 
   // 5. Publish a photo snapshot
-  var photoFrame = makeFrame(32);
+  var photoFrame = makeFrame();
   var photoSnap = snapshotModel.createSnapshot('photo:r3-test:img', { mode: 'photo', title: 'Sunset' }, photoFrame, 'photo');
   var photoResult = await svc.publish(photoSnap);
-  t('PHOTO_PUBLISH_OK', photoResult.snapshotId === photoSnap.snapshotId && photoResult.notificationStatus === 'OK', '');
+  t('PHOTO_PUBLISH_OK', photoResult.snapshotId === photoSnap.snapshotId && photoResult.committed === true && photoResult.historyStatus === 'OK' && photoResult.notificationStatus === 'OK', '');
   var activePhoto = await svc.getActive();
   t('ACTIVE_PHOTO_MODE', activePhoto.mode === 'photo', '');
 
   // 6. Rollback to first snapshot
-  var rbId = await svc.rollback(snap.snapshotId);
-  t('ROLLBACK_RETURNS_ID', rbId === snap.snapshotId, '');
+  var rbResult = await svc.rollback(snap.snapshotId);
+  t('ROLLBACK_RETURNS_SNAPSHOTID', rbResult.snapshotId === snap.snapshotId, '');
+  t('ROLLBACK_COMMITTED', rbResult.committed === true, '');
+  t('ROLLBACK_HISTORY_OK', rbResult.historyStatus === 'OK', rbResult.historyStatus);
   var activeRb = await svc.getActive();
   t('ROLLBACK_ACTIVE_FRAME_SHA', activeRb.frameSha256 === snap.frameSha256, '');
 
@@ -98,10 +102,11 @@ async function run() {
   // 10. Notification failure does not reject publish
   var notifServices = makeServices();
   notifServices.notif.notify = function() { return Promise.reject(new Error('notif fail')); };
-  var notifSnap = snapshotModel.createSnapshot('news:notif-test', { mode: 'news' }, makeFrame(16), 'news');
+  var notifSnap = snapshotModel.createSnapshot('news:notif-test', { mode: 'news' }, makeFrame(), 'news');
   var notifResult = await notifServices.svc.publish(notifSnap);
-  t('NOTIF_FAIL_STILL_PUBLISHES', notifResult.snapshotId === notifSnap.snapshotId, '');
+  t('NOTIF_FAIL_STILL_PUBLISHES', notifResult.snapshotId === notifSnap.snapshotId && notifResult.committed === true, '');
   t('NOTIF_FAIL_STATUS', notifResult.notificationStatus === 'FAILED', notifResult.notificationStatus);
+  t('NOTIF_FAIL_HISTORY_OK', notifResult.historyStatus === 'OK', notifResult.historyStatus);
   var activeNotif = await notifServices.svc.getActive();
   t('NOTIF_FAIL_ACTIVE_SWITCHED', activeNotif.snapshotId === notifSnap.snapshotId, '');
 

@@ -1,7 +1,8 @@
 // publication-service.js — Unified publish command handler
 // Order: save → activate → cache → history append → notification
-// Notification failure: publication remains successful, returns notificationStatus
-// History failure after activation: logged, active snapshot unchanged
+// save/activate failure: reject, active snapshot unchanged
+// history/notification failure after activation: committed=true, status fields set
+// Returns { snapshotId, committed, historyStatus, notificationStatus }
 
 var LOCK_KEY_PUBLISH = 'publish';
 
@@ -21,11 +22,13 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
   }
 
   function doPublish(snapshot) {
-    var notifStatus = 'OK';
+    var histStatus = 'OK', notifStatus = 'OK';
     return snapshotStore.save(snapshot).then(function() {
       return snapshotStore.activate(snapshot.snapshotId);
     }).then(function() {
       snapshotCache.set(snapshot.snapshotId, snapshot);
+    }).then(function() {
+      // History failure is isolated: does not reject publish, does not undo activation
       return history.append({
         id: Date.now().toString(36),
         type: snapshot.mode,
@@ -33,16 +36,18 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
         snapshotId: snapshot.snapshotId,
         publishedAt: new Date().toISOString(),
         status: 'active',
+      }).catch(function(err) {
+        logger.error('history append failed after activation for ' + snapshot.snapshotId + ': ' + (err.message || err));
+        histStatus = 'FAILED';
       });
     }).then(function() {
-      // Notification after history; failure does not reject publish
       return notificationPort.notify(snapshot.snapshotId).catch(function(err) {
         logger.warn('notification failed for ' + snapshot.snapshotId + ': ' + err.message);
         notifStatus = 'FAILED';
       });
     }).then(function() {
-      logger.info('Published: ' + snapshot.snapshotId + ' (frameId=' + snapshot.frameId + ')');
-      return { snapshotId: snapshot.snapshotId, notificationStatus: notifStatus };
+      logger.info('Published: ' + snapshot.snapshotId + ' (frameId=' + snapshot.frameId + ', hist=' + histStatus + ', notif=' + notifStatus + ')');
+      return { snapshotId: snapshot.snapshotId, committed: true, historyStatus: histStatus, notificationStatus: notifStatus };
     });
   }
 
@@ -68,7 +73,7 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
   }
 
   function doRollback(snapshotId) {
-    var loaded;
+    var loaded, histStatus = 'OK';
     return snapshotStore.load(snapshotId).then(function(snap) {
       if (!snap) throw new Error('Snapshot not found: ' + snapshotId);
       loaded = snap;
@@ -83,9 +88,12 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
         publishedAt: new Date().toISOString(),
         status: 'active',
       });
+    }).catch(function(err) {
+      logger.error('history append failed after rollback activation for ' + snapshotId + ': ' + (err.message || err));
+      histStatus = 'FAILED';
     }).then(function() {
-      logger.info('Rollback to: ' + snapshotId + ' (frameSha=' + loaded.frameSha256.slice(0, 8) + ')');
-      return snapshotId;
+      logger.info('Rollback to: ' + snapshotId + ' (frameSha=' + loaded.frameSha256.slice(0, 8) + ', hist=' + histStatus + ')');
+      return { snapshotId: snapshotId, committed: true, historyStatus: histStatus };
     });
   }
 

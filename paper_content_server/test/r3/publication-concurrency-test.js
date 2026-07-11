@@ -4,7 +4,7 @@ var path=require('path'),fs=require('fs'),os=require('os');
 var ROOT=path.join(__dirname,'..','..');
 var ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
-function mf(s){var b=Buffer.alloc(s||192010,0xAA);b.write('EPF1',0,'ascii');b.writeUInt16LE(800,4);b.writeUInt16LE(480,6);b[8]=49;return b;}
+function mf(){var b=Buffer.alloc(192010);b.write('EPF1',0,'ascii');b.writeUInt16LE(800,4);b.writeUInt16LE(480,6);b[8]=49;b[9]=1;return b;}
 var sm=require(path.join(ROOT,'src','snapshot','snapshot-model'));
 var SS=require(path.join(ROOT,'src','snapshot','snapshot-store')).SnapshotStore;
 var SC=require(path.join(ROOT,'src','snapshot','snapshot-cache')).SnapshotCache;
@@ -20,8 +20,8 @@ async function run(){
   var svc=PubSvc(store,SC(),PS(),PL(),{notify:function(){return new Promise(function(r){setTimeout(r,50);});},name:'slow'},null,PH(path.join(tmp,'h.json'),lg),lg);
   // Two concurrent publishes should be serialized
   var order=[];
-  var p1=svc.publish(sm.createSnapshot('news:1',{mode:'news'},mf(16),'news')).then(function(){order.push(1);});
-  var p2=svc.publish(sm.createSnapshot('news:2',{mode:'news'},mf(16),'news')).then(function(){order.push(2);});
+  var p1=svc.publish(sm.createSnapshot('news:1',{mode:'news'},mf(),'news')).then(function(){order.push(1);});
+  var p2=svc.publish(sm.createSnapshot('news:2',{mode:'news'},mf(),'news')).then(function(){order.push(2);});
   await Promise.all([p1,p2]);
   t('CONCURRENT_SERIALIZED',order.length===2&&order[0]===1&&order[1]===2,'order='+JSON.stringify(order));
   var ids=await store.listSnapshots();

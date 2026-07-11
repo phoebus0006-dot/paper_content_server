@@ -4,7 +4,7 @@ var path=require('path'),fs=require('fs'),os=require('os'),crypto=require('crypt
 var ROOT=path.join(__dirname,'..','..');
 var ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
-function mf(s){var b=Buffer.alloc(s||16,0xAA);b.write('EPF1',0,'ascii');return b;}
+function mf(){var b=Buffer.alloc(192010);b.write('EPF1',0,'ascii');b.writeUInt16LE(800,4);b.writeUInt16LE(480,6);b[8]=49;b[9]=1;return b;}
 var sm=require(path.join(ROOT,'src','snapshot','snapshot-model'));
 var SS=require(path.join(ROOT,'src','snapshot','snapshot-store')).SnapshotStore;
 var SC=require(path.join(ROOT,'src','snapshot','snapshot-cache')).SnapshotCache;
@@ -21,10 +21,10 @@ async function run(){
   var hist=PH(path.join(tmp,'h.json'),lg);
   var svc=PubSvc(store,SC(),PS(),PL(),notif,null,hist,lg);
   // Publish first snapshot (like admin/news)
-  var snap1=sm.createSnapshot('manual-news:abc',{mode:'news',title:'Manual News'},mf(192010),'news');
+  var snap1=sm.createSnapshot('manual-news:abc',{mode:'news',title:'Manual News'},mf(),'news');
   await svc.publish(snap1);
   // Publish second snapshot (like admin/photo)
-  var snap2=sm.createSnapshot('manual-photo:xyz',{mode:'photo',title:'Manual Photo'},mf(192010),'photo');
+  var snap2=sm.createSnapshot('manual-photo:xyz',{mode:'photo',title:'Manual Photo'},mf(),'photo');
   await svc.publish(snap2);
   // Active snapshot is now snap2
   var active=await svc.getActive();

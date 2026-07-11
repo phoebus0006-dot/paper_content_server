@@ -4,7 +4,7 @@ var path=require('path'),fs=require('fs'),os=require('os');
 var ROOT=path.join(__dirname,'..','..');
 var ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
-function mf(s){var b=Buffer.alloc(s||16,0xAA);b.write('EPF1',0,'ascii');return b;}
+function mf(){var b=Buffer.alloc(192010);b.write('EPF1',0,'ascii');b.writeUInt16LE(800,4);b.writeUInt16LE(480,6);b[8]=49;b[9]=1;return b;}
 var sm=require(path.join(ROOT,'src','snapshot','snapshot-model'));
 var SS=require(path.join(ROOT,'src','snapshot','snapshot-store')).SnapshotStore;
 var tmp=path.join(os.tmpdir(),'r3_corrupt_'+Date.now());fs.mkdirSync(tmp,{recursive:true});
@@ -13,7 +13,7 @@ var lg={info:function(){},warn:function(){},error:function(){}};
 async function run(){
   var store=SS(path.join(tmp,'snap'),path.join(tmp,'pub'),lg);await store.ensureDirs();
   // Save valid snapshot
-  var frame=mf(192010);
+  var frame=mf();
   var snap=sm.createSnapshot('news:corrupt-test',{mode:'news'},frame,'news');
   await store.save(snap);
   var sid=snap.snapshotId;
@@ -30,10 +30,10 @@ async function run(){
   var buf=fs.readFileSync(frameP);buf[100]=0xFF;fs.writeFileSync(frameP,buf);
   try{await store.load(sid);t('CORRUPT_FRAME',false,'');}
   catch(e){t('CORRUPT_FRAME',e.code==='SNAPSHOT_INTEGRITY_ERROR',e.code);}
-  // 3. Missing frame file
+  // 3. Missing frame file (meta exists → integrity error)
   fs.unlinkSync(frameP);
-  var loaded=await store.load(sid);
-  t('MISSING_FRAME',loaded===null,'');
+  try{await store.load(sid);t('MISSING_FRAME',false,'');}
+  catch(e){t('MISSING_FRAME',e.code==='SNAPSHOT_INTEGRITY_ERROR'&&e.message.indexOf('frame file missing')>=0,'');}
   // 4. Invalid EPF1 magic
   fs.writeFileSync(frameP,Buffer.alloc(192010,0xFF));
   try{await store.load(sid);t('INVALID_MAGIC',false,'');}
