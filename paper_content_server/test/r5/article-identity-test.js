@@ -19,3 +19,10 @@ t('EXTRACT_TITLE',ident.normalizedTitle==='hello','');
 t('EVENT_KEY_PARTIAL',ident.eventKey==='PARTIAL','');
 console.log('\n=== Summary: '+pass+' passed, '+fail+' failed ===');
 process.exit(ec);
+// Empty URL fallback
+var noUrl=ai.extractArticleIdentity({title:'Test',source:'Src',publishedAt:'2026-07-11T10:00:00Z'});
+t('EMPTY_URL_FALLBACK',noUrl.canonicalUrl.startsWith('fallback://'),'');
+t('EMPTY_URL_ID',noUrl.articleId.startsWith('art_'),'');
+// Different items with no URL get different IDs
+var noUrl2=ai.extractArticleIdentity({title:'Other',source:'Src2',publishedAt:'2026-07-11T11:00:00Z'});
+t('EMPTY_URL_DIFFERENT',noUrl.articleId!==noUrl2.articleId,'');

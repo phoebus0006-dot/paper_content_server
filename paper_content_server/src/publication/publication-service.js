@@ -74,19 +74,20 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
 
   function doRollback(snapshotId) {
     var loaded, histStatus = 'OK';
-    return snapshotStore.load(snapshotId).then(function(snap) {
+    return history.list().then(function(entries) {
+      var entry = entries.filter(function(e) { return e.snapshotId === snapshotId; })[0];
+      if (entry && entry.restorable === false) {
+        throw new Error('Snapshot is not restorable: ' + snapshotId + ' reason=' + (entry.invalidReason || 'unknown'));
+      }
+    }).then(function() {
+      return snapshotStore.load(snapshotId);
+    }).then(function(snap) {
       if (!snap) throw new Error('Snapshot not found: ' + snapshotId);
-      // Check history restorable flag
-      return history.list().then(function(entries) {
-        var entry = entries.filter(function(e) { return e.snapshotId === snapshotId; })[0];
-        if (entry && entry.restorable === false) {
-          throw new Error('Snapshot is not restorable: ' + snapshotId + ' reason=' + (entry.invalidReason || 'unknown'));
-        }
-        loaded = snap;
-        return snapshotStore.activate(snapshotId);
-      });
+      loaded = snap;
+      return snapshotStore.activate(snapshotId);
     }).then(function() {
       snapshotCache.set(snapshotId, loaded);
+      // History append failure is isolated — does not undo activation
       return history.append({
         id: Date.now().toString(36),
         type: 'rollback',
@@ -94,10 +95,10 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
         snapshotId: snapshotId,
         publishedAt: new Date().toISOString(),
         status: 'active',
+      }).catch(function(err) {
+        logger.error('history append failed after rollback activation for ' + snapshotId + ': ' + (err.message || err));
+        histStatus = 'FAILED';
       });
-    }).catch(function(err) {
-      logger.error('history append failed after rollback activation for ' + snapshotId + ': ' + (err.message || err));
-      histStatus = 'FAILED';
     }).then(function() {
       logger.info('Rollback to: ' + snapshotId + ' (frameSha=' + loaded.frameSha256.slice(0, 8) + ', hist=' + histStatus + ')');
       return { snapshotId: snapshotId, committed: true, historyStatus: histStatus };

@@ -18,6 +18,10 @@ var tests=[
   'test/r4/rollback-invalidation-test.js',
   'test/r4/tombstone-test.js',
   'test/r4/delete-failure-atomicity-test.js',
+  'test/r4/real-delete-integration-test.js',
+  'test/r4/active-replacement-integration-test.js',
+  'test/r4/rollback-rejection-integration-test.js',
+  'test/r4/delete-idempotency-test.js',
 ];
 var overallFail=false;
 tests.forEach(function(testFile){
