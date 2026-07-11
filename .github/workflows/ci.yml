@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: paper_content_server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: paper_content_server/package-lock.json
+
+      - run: npm ci
+      - run: node --check server.js
+      - run: npm run docs:check
+      - run: npm run contracts:test
+      - run: npm run r1:test
+      - run: npm run r2:test
+      - run: npm run r3:test
+      - run: npm run r4:test
+      - run: npm run r5:test
+      - run: npm run r6:test
+      - run: npm run r7:test
+      - run: npm run r8:test
+      - run: npm run r9:test
+      - run: npm run r10:test
+      - run: npm run r11:test
+      - run: npm run schedule:test
+      - run: npm run frame:test
+      - run: npm run coherence:test
+      - run: npm run restart:test
+      - run: npm run admin:test
+      - run: npm run rotation:test
+      - run: npm run translation-quality:test
+      - run: npm run news-render-readability:test
+      - run: npm run photo:safety-test
+      - run: npm run storyboard-source:test
+      - run: npm run rss:test
+      - run: node scripts/dependency-selftest.js
