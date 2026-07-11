@@ -1,18 +1,17 @@
-// safety-audit-log.js — Append-only safety audit log
-
+// safety-audit-log.js — Append-only audit with FAILED status support
 var path = require('path');
-var writeFileAtomic = require(path.join(__dirname, '..', 'infra', 'atomic-file')).writeFileAtomic;
 var fsp = require('fs').promises;
 
 function SafetyAuditLog(logFile, logger) {
   logFile = logFile || 'data/safety-audit.log';
-  logger = logger || { info: function() {}, warn: function() {}, error: function() {} };
+  logger = logger || {};
 
   function append(entry) {
     if (!entry || !entry.assetId) return Promise.reject(new Error('audit entry requires assetId'));
-    var line = JSON.stringify({ timestamp: new Date().toISOString(), ...entry }) + '\n';
-    return fsp.appendFile(logFile, line, 'utf8').then(function() {
-      logger.info('Audit: ' + entry.action + ' ' + entry.assetId);
+    var line = JSON.stringify({ timestamp: new Date().toISOString(), status: entry.status || 'SUCCESS', stage: entry.stage || null, error: entry.error || null, ...entry }) + '\n';
+    return fsp.appendFile(logFile, line, 'utf8').catch(function(e) {
+      logger.error && logger.error('audit write failed: ' + e.message);
+      // Audit write failure must not hide original error
     });
   }
 
@@ -22,7 +21,6 @@ function SafetyAuditLog(logFile, logger) {
     }).catch(function(err) { if (err.code === 'ENOENT') return []; throw err; });
   }
 
-  return { append, readAll };
+  return { append: append, readAll: readAll };
 }
-
 module.exports = { SafetyAuditLog: SafetyAuditLog };

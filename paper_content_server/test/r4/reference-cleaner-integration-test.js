@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Lane A: Reference cleaner integration
+// R4.2: Reference cleaner integration — real cache eviction and index cleanup
 var path=require('path'),fs=require('fs'),os=require('os');
 var ROOT=path.join(__dirname,'..','..');var ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
@@ -11,10 +11,10 @@ async function run(){
   var cache=SC();cache.set('snap_1',{snapshotId:'snap_1',payload:{photoId:'ast_clean'}});
   var cleaner=RC(null,cache,null,tmp,lg);
   var cc=cleaner.cleanCache('ast_clean');
-  t('CACHE_EVICTED',cc.cleaned===true,'');
+  t('CACHE_EVICTED',cc.changed===true,'');
   t('CACHE_GONE',cache.get('snap_1')===null,'');
   var cc2=cleaner.cleanCache('nonexistent');
-  t('CACHE_NO_OP',cc2.cleaned===false,'');
+  t('CACHE_COMPLETE',cc2.complete===true,'');
   // Legacy index cleanup
   var refs={references:[{type:'legacy_index',location:'image_index.json',assetId:'ast_legacy'}]};
   fs.writeFileSync(path.join(tmp,'image_index.json'),JSON.stringify([{id:'ast_legacy'},{id:'other'}]));

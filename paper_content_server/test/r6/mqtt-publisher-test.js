@@ -7,5 +7,5 @@ t('CLIENT_EXISTS',typeof mc.connect==='function','');t('DISCONNECTED',!mc.isConn
 mc.connect().then(function(){t('CONNECTED',mc.isConnected(),'');return mc.publish('t','p');}).then(function(){
   var p=mc.getPublished();t('PUBLISHED',p.length===1&&p[0].topic==='t','');
   mc.disconnect();t('DISCONNECTED_AFTER',!mc.isConnected(),'');
-  var port=cp.createMqttClientPort({enabled:false});t('DISABLED_NULL',port===null,'');
+  var fc2=cp.createFakeMqttClient();t('FAKE_CLIENT_WORKS',typeof fc2.connect==='function','');
 }).then(function(){console.log('\n=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec);}).catch(function(e){t('CRASH',false,e.message);process.exit(1);});

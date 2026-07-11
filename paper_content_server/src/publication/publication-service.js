@@ -41,7 +41,7 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
         histStatus = 'FAILED';
       });
     }).then(function() {
-      return notificationPort.notify(snapshot.snapshotId).catch(function(err) {
+      return notificationPort.notify({snapshotId:snapshot.snapshotId,frameId:snapshot.frameId,frameSha256:snapshot.frameSha256,publishedAt:new Date().toISOString()}).catch(function(err) {
         logger.warn('notification failed for ' + snapshot.snapshotId + ': ' + err.message);
         notifStatus = 'FAILED';
       });
