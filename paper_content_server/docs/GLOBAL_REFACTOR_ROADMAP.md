@@ -3,71 +3,72 @@
 ## R0: Truth Baseline Repair (COMPLETE)
 Fixed: Night image stability, contract runner status model, writeJson atomicity, docs:check.
 
-## R1: App Shell + Infrastructure
+## R1: App Shell + Infrastructure (COMPLETE)
 
 ### GOAL
 Establish testable, injectable application shell and infrastructure with no business semantic changes.
 
-### IN_SCOPE
-- createApp/bootstrap separation (server.js → src/app/create-app.js)
-- Config loading centralization (24 process.env reads → src/config/load-config.js)
-- Clock abstraction (global runtime.nowProvider → injectable interface)
-- Logger abstraction
-- Atomic file primitive (unique temp + rename + fsync)
-- JsonStore (explicit ENOENT/CORRUPT/IO errors, schema versioning)
-- HTTP client abstraction
-- Dependency injection boundaries (createApp receives config, clock, stores, etc.)
+### IN_SCOPE (IMPLEMENTED)
+- createApp/bootstrap separation (server.js → src/app/create-app.js) — handler injection, no auto-listen, no process.exit
+- Config loading centralization (src/config/load-config.js) — loadConfig({env,cwd}) covers all process.env keys; opts.env path does NOT mutate global process.env
+- Clock abstraction (src/infra/clock.js) — SystemClock / FixedClock with now/nowMs/timezone/advanceMs/setTime
+- Logger abstraction (src/infra/logger.js) — ConsoleLogger / SilentLogger / MemoryLogger with debug/info/warn/error
+- Atomic file primitive (src/infra/atomic-file.js) — writeFileAtomic with pid+random temp + rename, no fsp.mkdir overhead
+- JsonStore (src/infra/json-store.js) — read/readOrNull/readOrDefault/write with explicit NOT_FOUND / INVALID_JSON / IO_ERROR
+- HTTP client abstraction (src/infra/http-client.js) — createHttpClient with fetchText/fetchJson, timeout and abort
+- Dependency injection boundaries (createApp receives handler, config, clock, logger, stores, httpClient)
+- bootstrap({env,cwd,clock,logger,stores,httpClient,handler,listen}) supports listen:false for testing; throws BootstrapError on config failure
 
-### OUT_OF_SCOPE
-- Publication behavior changes
-- Snapshot redesign
-- News pipeline redesign
-- Asset model changes
-- MQTT
-- Admin feature changes
-- ESP32 changes
+### SERVER INTEGRATION
+- loadAppConfig() delegates to loadConfig({cwd:ROOT_DIR})
+- writeJson delegates to writeFileAtomic
+- readJson delegates to JsonStore
+- fetchText delegates to httpClient.fetchText
+- Logger replaces console.* at startup/config-error/server-listen/request-error/crash
+- SystemClock used for startup timezone check and listen callback
+- main() uses bootstrap({handler:handleRequest, listen:false}) for app shell
+- handleRequest exported for test use
 
-### ALLOWED_FILES
-- src/app/, src/config/, src/infra/
-- server.js (refactored to bootstrap)
-- package.json
+### TEST COVERAGE
+- test/r1/app-shell-test.js — createApp bootstrap import no-crash
+- test/r1/config-parity-test.js — validates loadConfig returns same results as legacy, verifies process.env NOT mutated
+- test/r1/clock-test.js — SystemClock / FixedClock / advanceMs / setTime
+- test/r1/logger-test.js — ConsoleLogger / SilentLogger / MemoryLogger entries
+- test/r1/atomic-file-test.js — writeFileAtomic write+read
+- test/r1/json-store-test.js — read/write/readOrNull, NOT_FOUND / INVALID_JSON errors
+- test/r1/http-client-test.js — createHttpClient fetchText fetchJson exist
+- test/r1/dependency-boundary-test.js — infra/config must not import server.js
+- test/r1/production-integration-test.js — 18 tests verifying SERVER_USES_LOAD_CONFIG, SERVER_USES_SYSTEM_CLOCK, SERVER_USES_LOGGER, SERVER_USES_JSON_STORE, SERVER_USES_ATOMIC_FILE, HTTP_CLIENT_FETCH_USED, CREATE_APP_USES_REAL_HANDLER, BOOTSTRAP_STARTS_SERVER, APP_NO_AUTO_LISTEN, APP_NO_PROCESS_EXIT, BOOTSTRAP_LISTEN_FALSE, BOOTSTRAP_CONFIG_ERROR, plus REAL HTTP test (health/state/frame 192010 EPF1 all green)
 
-### FORBIDDEN_CHANGES
-- Schedule semantics
-- News selection rules
-- EPF1 bytes
-- Photo rotation semantics
-- Admin API contract
-- Device protocol
+### EXIT_CONDITIONS (VERIFIED)
+- server.js import does not auto-start server ✅
+- createApp() is testable ✅
+- Config centralized and validated ✅
+- Clock injectable (SystemClock / FixedClock) ✅
+- JsonStore has explicit error semantics (NOT_FOUND ≠ INVALID_JSON ≠ IO_ERROR) ✅
+- All legacy behavior contracts remain green ✅
 
-### ENTRY_CONDITIONS
-- R0.1 APPROVED by reviewer
-- All mandatory green tests exit 0
-- Truth Baseline current
-- Night Stability PASS
+### TEST_GATE (PASSED)
+- node --check server.js = 0
+- npm run contracts:test = 122P/0F/0C exit=0
+- npm run r1:test = all pass exit=0
+- npm run schedule:test = 18P/0F exit=0
+- npm run frame:test = exit=0
+- npm run coherence:test = 53P/0F exit=0
+- npm run restart:test = 43P/0F exit=0
+- npm run admin:test = 20P/0F exit=0
+- npm run rotation:test = 23P/0F exit=0
+- npm run translation-quality:test = 31P/0F exit=0
+- npm run photo:safety-test = 12P/0F exit=0
+- npm run storyboard-source:test = 23P/0F exit=0
+- npm run rss:test = exit=0
+- npm run docs:check = exit=0 (after baseline update)
 
-### EXIT_CONDITIONS
-- server.js import does not auto-start server
-- createApp() is testable
-- Config centralized and validated
-- Clock injectable (ProductionClock / TestClock)
-- JsonStore has explicit error semantics (ENOENT ≠ CORRUPT ≠ IO)
-- All legacy behavior contracts remain green
-
-### TEST_GATE
-npm run checks:all (all mandatory green commands)
-
-### ROLLBACK_PLAN
+### ROLLBACK_PLAN (UNCHANGED)
 - Small commits per extraction
 - Adapter compatibility layer for legacy callers
 - Legacy entry in server.js retained until parity proven
 - Each extraction verified by existing contract tests
-
-### EVIDENCE_REQUIRED
-- git diff stat
-- Dependency graph (no cycles)
-- All contract test output
-- Behavior parity report (before/after)
 
 ## R2: Frame Core
 

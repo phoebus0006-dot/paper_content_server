@@ -1,17 +1,17 @@
 # Global Architecture Audit
 
-**Date**: 2026-07-10
-AUDITED_CODE_SHA=465cbd6e362fa203453e39623df20d68cdd4e975
+**Date**: 2026-07-11
+AUDITED_CODE_SHA=54260aa20177741b5cdee2c863e5c5ed53ae58d7
 **Branch**: master
 
 ## Domain Risk Matrix
 
 | Domain | Current State | Risk | Keep | Refactor | Redesign |
 |--------|--------------|------|------|----------|----------|
-| Application Shell | Single 3197-line server.js with module-level mutable state | CRITICAL | — | Full extraction | — |
-| Config | 24 process.env reads scattered across server.js | HIGH | — | Centralize | — |
-| Clock | runtime.nowProvider global injection | HIGH | — | Injectable Clock | — |
-| Persistence | 6 direct fs writes, no atomicity guarantee | CRITICAL | — | JsonStore | — |
+| Application Shell | Single 3196-line server.js; bootstrap({listen:false}) + createApp(handler) extracted in R1 | HIGH | — | Partial extraction | — |
+| Config | 24 process.env reads centralized via loadConfig({cwd,env}) in R1 | MEDIUM | — | Centralized | — |
+| Clock | SystemClock / FixedClock injectable abstraction in R1; server startup uses SystemClock | MEDIUM | — | Injectable Clock | — |
+| Persistence | writeJson → writeFileAtomic (pid+random .tmp); readJson → JsonStore (NOT_FOUND/CORRUPT/IO). R1 completed. | MEDIUM | — | JsonStore | — |
 | Runtime State | 33 fields in single runtime object, no domain isolation | CRITICAL | — | Domain stores | — |
 | Schedule | Dedicated lib/schedule.js module | LOW | Keep | — | — |
 | Frame (EPF1) | buildFrameBuffer + imageToFrameBuffer in server.js | MEDIUM | — | Extract to epaper/ | — |
@@ -51,7 +51,7 @@ AUDITED_CODE_SHA=465cbd6e362fa203453e39623df20d68cdd4e975
 1. PUBLICATION_CHAIN: Admin routes bypass publication service. writeFileSync writes override.json + history.json directly. FrameId=Date.now().toString(36). No atomic activation. Rollback rewrites override.json, does NOT restore snapshot.
 2. MULTIPLE_TRUTH_SOURCES: runtime.cachedFrames, runtime.cachedSnapshots, data/*.json, admin_override.json - all inconsistent. No single source of truth.
 3. STATE_CORRUPTION_ON_RESTART: No snapshot persistence. Frame cache lost on restart. Pin store in-memory only.
-4. WRITE_ATOMICITY: writeJson uses fixed .tmp path. Concurrent writes corrupt. No fsync. readJson silently returns fallback on corrupt JSON.
+4. WRITE_ATOMICITY: R1 migrated to writeFileAtomic (pid+random .tmp, no collision). readJson → JsonStore with explicit NOT_FOUND/CORRUPT/IO errors. Fixed .tmp risk RESOLVED. No fsync remains.
 5. SAFETY_DELETION: Single regex. No deletion pipeline. Unsafe content in cache/snapshot/rollback would persist.
 6. TRANSLATION_FIDELITY: "Verified" translations pass only format check (Chinese chars + punctuation).
 7. TEST_OVERCLAIM: translation-quality-test = helper path, not full pipeline.
@@ -73,10 +73,10 @@ AUDITED_CODE_SHA=465cbd6e362fa203453e39623df20d68cdd4e975
 |------|---------|---------|--------|----------|------|
 | admin_override.json | computeSnapshot | admin publish routes | No (writeFileSync) | None | Crash mid-write corrupts override |
 | publish_history.json | readPubHistory, rollback | admin publish routes | No (writeFileSync) | None | Crash mid-write loses history |
-| last_good_news.json | buildNewsSnapshot fallback | buildNewsSnapshot (conditionally) | Partial (writeJson with .tmp.Date.now()) | Fixed .tmp before rename | Same-millisecond collision; no fsync |
-| news_cache.json | translateArticle cache | translateArticle | Partial (writeJson with .tmp.Date.now()) | Fixed .tmp before rename | Same-millisecond collision |
-| library_state.json | updateLibraryStateForPhoto | buildPhotoSnapshot | Partial (writeJson) | Fixed .tmp before rename | Same-millisecond collision |
-| image_index.json | selectPhotoSnapshot, selectStudyPhoto | buildPhotoSnapshot | Partial (writeJson) | Fixed .tmp before rename | Dual representation risk |
+| last_good_news.json | buildNewsSnapshot fallback | buildNewsSnapshot (conditionally) | YES (writeFileAtomic pid+random .tmp) | Atomic rename | RESOLVED in R1 |
+| news_cache.json | translateArticle cache | translateArticle | YES (writeFileAtomic pid+random .tmp) | Atomic rename | RESOLVED in R1 |
+| library_state.json | updateLibraryStateForPhoto | buildPhotoSnapshot | YES (writeFileAtomic pid+random .tmp) | Atomic rename | RESOLVED in R1 |
+| image_index.json | selectPhotoSnapshot, selectStudyPhoto | buildPhotoSnapshot | YES (writeFileAtomic pid+random .tmp) | Atomic rename | Dual representation risk |
 
 
 ## Test Overclaims

@@ -6,12 +6,17 @@
 ## 1. Repository Baseline
 
 branch=master
-AUDITED_CODE_SHA=465cbd6e362fa203453e39623df20d68cdd4e975
-origin/master at audit time=b49d262ff7c5d712c35075c9855f15025d3187c6
+AUDITED_CODE_SHA=54260aa20177741b5cdee2c863e5c5ed53ae58d7
+origin/master at audit time=54260aa20177741b5cdee2c863e5c5ed53ae58d7
 server entrypoint=paper_content_server/server.js
 firmware entrypoint=NewsPhoto_esp32wf/NewsPhoto_esp32wf.ino
 node major=v24.14.1
 package manager=npm 10.x
+r1 app shell=paper_content_server/src/app/create-app.js
+r1 bootstrap=paper_content_server/src/app/bootstrap.js
+r1 config=paper_content_server/src/config/load-config.js
+r1 infra modules=paper_content_server/src/infra/{clock,logger,atomic-file,json-store,http-client}.js
+r1 tests=paper_content_server/test/r1/
 
 ### Audit Scope
 
@@ -19,12 +24,13 @@ AUDIT_SCOPE=paper_content_server/server.js at AUDITED_CODE_SHA
 AUDITED FEATURES: schedule resolver via lib/schedule.js, news pipeline (fetch/parse/translate/select), photo rotation, basic admin override, EPF1 frame format, state/frame coherence
 NOT_IN_SCOPE: ONE_SHOT route, boundary expiry, FOCUS_LOCK, MQTT, learning/custom library, safety delete pipeline
 NAS/ESP32 evidence: NOT VERIFIED / NOT TESTED.
+R1_INTEGRATION_COMPLETE: server.js uses loadConfig, SystemClock, ConsoleLogger, writeFileAtomic, JsonStore, httpClient. bootstrap() provides app shell. See test/r1/production-integration-test.js for 18 passing integration checks.
 
 ## 2. Server Entrypoint
 
-SERVER_JS_PHYSICAL_LINES=3418
+SERVER_JS_PHYSICAL_LINES=3196
 TOP_LEVEL_FUNCTIONS=114
-PROCESS_ENV_READS=24 (scattered across server.js)
+PROCESS_ENV_READS=24 (24 in process.env reads at module scope; now centralized via loadConfig)
 ROUTE_REGISTRATION=handleRequest() at byte 96995
 SHUTDOWN_HOOKS=process.on found (SIGTERM/SIGINT)
 MQTT_MODULE_IMPORT=NOT_FOUND (verified) (confirmed)
