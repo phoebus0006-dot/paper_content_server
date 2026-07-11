@@ -2,6 +2,7 @@
 
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include <PubSubClient.h>
 
 #include <esp_heap_caps.h>
 
@@ -18,6 +19,16 @@ struct StateInfo {
 static String lastFrameId;
 static unsigned long lastPollMs = 0;
 static bool epdReady = false;
+
+// MQTT state
+static WiFiClient mqttWifiClient;
+static PubSubClient mqttClient(mqttWifiClient);
+static bool mqttEnabled = false;
+static bool publicationPending = false;
+static String pendingFrameId;
+static String pendingSnapshotId;
+static String pendingFrameSha256;
+static unsigned long mqttReconnectMs = 0;
 
 String endpoint(const char *path) {
   String url = CONTENT_BASE_URL;
@@ -253,6 +264,121 @@ bool fetchFrameAndDisplay(const StateInfo &state) {
   return ok;
 }
 
+void periodicPoll() {
+  if (millis() - lastPollMs < REFRESH_INTERVAL_MS) return;
+  lastPollMs = millis();
+  if (!connectWiFi()) return;
+
+  StateInfo state;
+  if (fetchState(state) && fetchFrameAndDisplay(state)) {
+    // clear pending on successful poll refresh
+    publicationPending = false;
+    pendingFrameId = String();
+  }
+}
+
+void handleMqttNotification() {
+  if (!publicationPending) return;
+  if (pendingFrameId.isEmpty()) { publicationPending = false; return; }
+  if (pendingFrameId == lastFrameId) { publicationPending = false; pendingFrameId = String(); return; }
+
+  if (!connectWiFi()) return;
+
+  StateInfo state;
+  if (!fetchState(state)) { return; }
+
+  if (state.frameId != pendingFrameId) {
+    // MQTT notification announced a different frameId than current server state
+    // This can happen if multiple notifications arrive; still refresh based on server state
+    Serial.printf("MQTT pending frameId=%s != server frameId=%s, using server\n",
+                  pendingFrameId.c_str(), state.frameId.c_str());
+  }
+
+  if (fetchFrameAndDisplay(state)) {
+    publicationPending = false;
+    pendingFrameId = String();
+    // reset poll timer so next poll is at full interval from now
+    lastPollMs = millis();
+  }
+}
+
+// MQTT callback — MUST be lightweight: no HTTP, no display, no long blocking
+void mqttCallback(char *topic, byte *payload, unsigned int length) {
+  // Validate topic
+  String deviceTopic = "epaper/" + String(MQTT_DEVICE_ID) + "/publication";
+  if (String(topic) != deviceTopic) {
+    Serial.printf("MQTT ignoring wrong topic: %s\n", topic);
+    return;
+  }
+
+  // Validate payload size
+  if (length == 0 || length > 1024) {
+    Serial.printf("MQTT ignoring oversized payload: %u bytes\n", length);
+    return;
+  }
+
+  // Parse JSON manually to avoid dynamic allocation
+  String jsonStr = String((char *)payload, length);
+
+  // Extract schemaVersion
+  String sv = extractJsonString(jsonStr, "schemaVersion");
+  if (sv != "1") {
+    Serial.printf("MQTT ignoring unknown schemaVersion: %s\n", sv.c_str());
+    return;
+  }
+
+  // Extract deviceId
+  String msgDeviceId = extractJsonString(jsonStr, "deviceId");
+  if (msgDeviceId.isEmpty() || msgDeviceId != String(MQTT_DEVICE_ID)) {
+    Serial.printf("MQTT ignoring deviceId mismatch: %s\n", msgDeviceId.c_str());
+    return;
+  }
+
+  String msgFrameId = extractJsonString(jsonStr, "frameId");
+  if (msgFrameId.isEmpty()) {
+    Serial.println("MQTT ignoring empty frameId");
+    return;
+  }
+
+  // Deduplicate in callback: if same frameId already pending or displayed, skip
+  if (msgFrameId == pendingFrameId || msgFrameId == lastFrameId) {
+    Serial.printf("MQTT ignoring duplicate frameId: %s\n", msgFrameId.c_str());
+    return;
+  }
+
+  // Set pending flag — main loop will handle the HTTP fetch
+  pendingFrameId = msgFrameId;
+  pendingSnapshotId = extractJsonString(jsonStr, "snapshotId");
+  pendingFrameSha256 = extractJsonString(jsonStr, "frameSha256");
+  publicationPending = true;
+
+  Serial.printf("MQTT notification received: frameId=%s\n", pendingFrameId.c_str());
+}
+
+void connectMqtt() {
+  if (!mqttEnabled) return;
+  if (mqttClient.connected()) return;
+
+  // Throttle reconnect attempts
+  if (millis() < mqttReconnectMs) return;
+
+  String clientId = String(MQTT_DEVICE_ID) + "_" + String(random(0xFFFF), HEX);
+  Serial.printf("MQTT connecting to %s as %s\n", MQTT_BROKER, clientId.c_str());
+
+  mqttClient.setServer(MQTT_BROKER, 1883);
+  mqttClient.setCallback(mqttCallback);
+
+  if (mqttClient.connect(clientId.c_str())) {
+    Serial.println("MQTT connected");
+    String topic = "epaper/" + String(MQTT_DEVICE_ID) + "/publication";
+    mqttClient.subscribe(topic.c_str());
+    Serial.printf("MQTT subscribed to %s\n", topic.c_str());
+  } else {
+    Serial.printf("MQTT connect failed, state=%d\n", mqttClient.state());
+    mqttReconnectMs = millis() + 30000;
+  }
+}
+
 void refreshOnce() {
   if (!connectWiFi()) return;
 
@@ -267,14 +393,36 @@ void setup() {
   Serial.println();
   Serial.println("NewsPhoto_esp32wf starting");
   Serial.printf("Content server: %s\n", CONTENT_BASE_URL);
+
+  mqttEnabled = String(MQTT_ENABLED).equalsIgnoreCase("true");
+  if (mqttEnabled) {
+    Serial.printf("MQTT enabled, broker=%s deviceId=%s\n", MQTT_BROKER, MQTT_DEVICE_ID);
+  } else {
+    Serial.println("MQTT disabled");
+  }
+
   refreshOnce();
   lastPollMs = millis();
 }
 
 void loop() {
-  if (millis() - lastPollMs >= REFRESH_INTERVAL_MS) {
-    lastPollMs = millis();
-    refreshOnce();
+  // MQTT loop (non-blocking if client not connected)
+  if (mqttEnabled) {
+    if (!mqttClient.connected()) {
+      connectMqtt();
+    }
+    if (mqttClient.connected()) {
+      mqttClient.loop();
+    }
   }
+
+  // Handle MQTT-triggered refresh (no delay, lightweight check)
+  if (publicationPending) {
+    handleMqttNotification();
+  }
+
+  // Periodic HTTP polling (60s interval, preserved even with MQTT)
+  periodicPoll();
+
   delay(50);
 }

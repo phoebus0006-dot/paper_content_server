@@ -10,6 +10,11 @@
 // Replace with your content server LAN IP and port.
 #define CONTENT_BASE_URL "http://YOUR_SERVER_IP:8787"
 
+// MQTT notification (optional, set to "true" to enable)
+#define MQTT_ENABLED "false"
+#define MQTT_BROKER "YOUR_MQTT_BROKER_IP"
+#define MQTT_DEVICE_ID "epaper-01"
+
 // Current working HAT wiring:
 // BUSY=7, RST=8, DC=9, CS=10, DIN/MOSI=11, SCLK=13
 #define PANEL_INDEX 49
