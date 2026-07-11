@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Generate R2 golden .epf1 fixtures from pre-migration production code (R2_BASE_SHA)
-// Uses git worktree to access the real legacy server.js
+// Uses INSTRUMENTED_PRODUCTION_EXPORT: creates a copy of the base SHA's server.js
+// with __r2LegacyImageToFrameBuffer and __r2LegacyBuildFrameBuffer exports appended.
+// No algorithms are reimplemented; only the real legacy functions are called.
 
 var path = require('path');
 var fs = require('fs');
@@ -17,7 +19,20 @@ console.log('Creating worktree at ' + TMP + ' from ' + BASE_SHA);
 cp.execSync('git worktree add ' + TMP + ' ' + BASE_SHA, { cwd: ROOT, stdio: 'pipe' });
 
 try {
-  // Write a small loader script that bridges the worktree server.js
+  // Read legacy server.js from worktree
+  var legacyServerPath = path.join(TMP, 'paper_content_server', 'server.js');
+  var legacyCode = fs.readFileSync(legacyServerPath, 'utf8');
+  var legacySha = crypto.createHash('sha256').update(legacyCode).digest('hex');
+
+  // Create instrumented copy: append exports for the two legacy functions
+  var instrumentedCode = legacyCode + '\n\n// --- R2 golden fixture instrumentation ---\n' +
+    'module.exports.__r2LegacyImageToFrameBuffer = imageToFrameBuffer;\n' +
+    'module.exports.__r2LegacyBuildFrameBuffer = buildFrameBuffer;\n';
+
+  var instrumentedPath = path.join(TMP, 'paper_content_server', 'server_instrumented.js');
+  fs.writeFileSync(instrumentedPath, instrumentedCode);
+
+  // Write loader script that uses the instrumented legacy server
   var loaderScript = path.join(TMP, 'paper_content_server', '_golden_loader.js');
   var loaderBody = `
 var path = require('path');
@@ -25,8 +40,9 @@ var fs = require('fs');
 var crypto = require('crypto');
 var sharp = require('sharp');
 
-// Load legacy production server.js (pre-migration, from the worktree)
-var server = require(path.join(__dirname, 'server.js'));
+// Load INSTRUMENTED legacy production server.js (pre-migration, from the worktree)
+// This gives us both imageToFrameBuffer AND buildFrameBuffer without re-implementing either
+var server = require(path.join(__dirname, 'server_instrumented.js'));
 
 var GOLDEN_DIR = ${JSON.stringify(GOLDEN_DIR)};
 var W = ${W}, H = ${H};
@@ -66,15 +82,6 @@ function makeCheckerboard() {
   }
   return buf;
 }
-function buildFrame(payload) {
-  var h = Buffer.alloc(10);
-  h.write('EPF1', 0, 4, 'ascii');
-  h.writeUInt16LE(W, 4);
-  h.writeUInt16LE(H, 6);
-  h.writeUInt8(49, 8);
-  h.writeUInt8(1, 9);
-  return Buffer.concat([h, payload]);
-}
 
 var manifest = [];
 var fixtures = [
@@ -100,21 +107,35 @@ var fixtures = [
 
   for (var f = 0; f < fixtures.length; f++) {
     var fd = fixtures[f];
-    var payload = server.imageToFrameBuffer(fd.data, W, H, fd.ch);
-    var frame = buildFrame(payload);
+
+    // Call the REAL legacy production functions (no reimplementation)
+    var legacyPayload = server.__r2LegacyImageToFrameBuffer(fd.data, W, H, fd.ch);
+    var legacyFrame = server.__r2LegacyBuildFrameBuffer(legacyPayload);
+
     var inputSha = crypto.createHash('sha256').update(fd.data).digest('hex');
-    var outputSha = crypto.createHash('sha256').update(frame).digest('hex');
+    var payloadSha = crypto.createHash('sha256').update(legacyPayload).digest('hex');
+    var frameSha = crypto.createHash('sha256').update(legacyFrame).digest('hex');
+
+    // Write full frame .epf1
     var filePath = path.join(GOLDEN_DIR, fd.name + '.epf1');
-    fs.writeFileSync(filePath, frame);
+    fs.writeFileSync(filePath, legacyFrame);
+
+    // Write payload-only file for separate verification
+    var payloadPath = path.join(GOLDEN_DIR, fd.name + '.payload');
+    fs.writeFileSync(payloadPath, legacyPayload);
+
     manifest.push({
       generated_by_sha: '${BASE_SHA}',
-      generator_command: 'node paper_content_server/_golden_loader.js',
+      legacy_server_sha256: '${legacySha}',
+      generator_method: 'INSTRUMENTED_PRODUCTION_EXPORT',
       input_name: fd.name,
       input_sha256: inputSha,
-      output_sha256: outputSha,
-      output_length: frame.length,
+      payload_sha256: payloadSha,
+      frame_sha256: frameSha,
+      payload_length: legacyPayload.length,
+      frame_length: legacyFrame.length,
     });
-    console.log('Generated ' + fd.name + '.epf1  len=' + frame.length + '  sha256=' + outputSha);
+    console.log('Generated ' + fd.name + '.epf1  payload=' + legacyPayload.length + '  frame=' + legacyFrame.length + '  sha256=' + frameSha);
   }
 
   fs.writeFileSync(path.join(GOLDEN_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
@@ -123,10 +144,7 @@ var fixtures = [
 `;
   fs.writeFileSync(loaderScript, loaderBody);
 
-  // Run from CURRENT root so node_modules resolves correctly.
-  // The loader script in the worktree requires sharp (finds it via current root's node_modules)
-  // and requires server.js from the worktree (finds it via __dirname relative path).
-  console.log('Running generator (NODE_PATH set for node_modules resolution)...');
+  console.log('Running generator with instrumented legacy server...');
   var nodeModulesPath = path.join(ROOT, 'node_modules');
   var env = Object.assign({}, process.env, {
     NODE_PATH: nodeModulesPath + path.delimiter + (process.env.NODE_PATH || '')
@@ -141,14 +159,24 @@ var fixtures = [
     throw new Error('Generator script exited with code ' + result.status);
   }
 
-  var manifestPath = path.join(GOLDEN_DIR, 'manifest.json');
-  if (fs.existsSync(manifestPath)) {
-    var m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    console.log('\nGolden fixtures generated: ' + m.length + ' files in ' + GOLDEN_DIR);
+  // Verify
+  var verifyPath = path.join(GOLDEN_DIR, 'manifest.json');
+  if (fs.existsSync(verifyPath)) {
+    var m = JSON.parse(fs.readFileSync(verifyPath, 'utf8'));
+    var allOk = true;
+    console.log('\n--- Verification ---');
     m.forEach(function(e) {
-      console.log('  ' + e.input_name + '.epf1  ' + e.output_length + ' bytes  ' + e.output_sha256.slice(0, 16) + '...');
+      var ok = e.payload_length === 192000 && e.frame_length === 192010;
+      console.log((ok ? 'OK' : 'FAIL') + '  ' + e.input_name + '  payload=' + e.payload_length + '  frame=' + e.frame_length + '  sha256=' + e.frame_sha256.slice(0,16) + '...');
+      if (!ok) allOk = false;
     });
+    if (!allOk) throw new Error('Fixture verification failed: payload or frame length mismatch');
+    console.log('\nAll ' + m.length + ' fixtures verified (payload=192000, frame=192010)');
   }
+
+  // Clean up the instrumented file
+  fs.unlinkSync(instrumentedPath);
+  fs.unlinkSync(loaderScript);
 } finally {
   console.log('\nCleaning up worktree...');
   cp.execSync('git worktree remove ' + TMP + ' --force', { cwd: ROOT, stdio: 'pipe' });
