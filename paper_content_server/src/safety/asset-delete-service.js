@@ -1,4 +1,4 @@
-// asset-delete-service.js — Real unsafe asset deletion with explicit context and verified replacement
+// asset-delete-service.js — Fail-closed with per-step cleanup verification
 var path = require('path');
 var fs = require('fs');
 var { assertCanDelete } = require('./safety-decision');
@@ -9,11 +9,10 @@ function AssetDeleteService(assetRepository, referenceIndex, snapshotStore, snap
 
   function deleteUnsafeAsset(opts) {
     var assetId = opts.assetId, reason = opts.reason, decision = opts.decision || 'remove', dryRun = opts.dryRun !== false;
-    var state = { asset: null, references: null, auditId: Date.now().toString(36) };
-    var context = { reason: reason, decision: decision };
+    var state = { asset: null, refs: null, auditId: Date.now().toString(36) }, ctx = { reason: reason, decision: decision };
 
     return assetRepository.get(assetId).then(function(asset) {
-      if (!asset) throw new Error('Asset not found');
+      if (!asset) return fail('NOT_FOUND', 'INIT');
       if (asset.lifecycleStatus === 'TOMBSTONED' || asset.lifecycleStatus === 'DELETED')
         return { assetId: assetId, deleted: true, alreadyDeleted: true, complete: true };
       assertCanDelete(asset, reason); state.asset = asset;
@@ -23,75 +22,91 @@ function AssetDeleteService(assetRepository, referenceIndex, snapshotStore, snap
       return referenceIndex.findReferences(assetId);
     }).then(function(refs) {
       if (refs && refs.alreadyDeleted) return refs;
-      state.references = refs;
-      if (!refs.complete) throw new Error('Reference scan incomplete');
-      var activeRefs = refs.references.filter(function(r) { return r.type === 'active_snapshot'; });
-      state.replacementRequired = activeRefs.length > 0;
-      if (dryRun) return buildDryRun(state);
-      return executeDelete(state, context);
+      state.refs = refs;
+      if (!refs.complete) throw new Error('REFERENCE_SCAN_INCOMPLETE');
+      if (refs.references.filter(function(r){return r.type==='active_snapshot';}).length > 0) state.needsReplacement = true;
+      if (dryRun) return { assetId: assetId, wouldBlock: true, replacementRequired: state.needsReplacement || false, references: refs.references, complete: true, dryRun: true };
+      return execDelete(state, ctx);
     }).then(function(result) {
       if (result && result.alreadyDeleted) return result;
-      return auditLog.append({ assetId: assetId, action: dryRun ? 'dry-run' : 'delete', reason: reason,
-        decision: decision, dryRun: dryRun, result: result }).then(function() { return result; });
+      var status = result && result.complete ? 'SUCCESS' : 'FAILED';
+      return auditLog.append({ assetId: assetId, action: 'delete', status: status, stage: result.stage || 'UNKNOWN', reason: reason, decision: decision, dryRun: dryRun, result: result }).then(function() { return result; });
     });
   }
 
-  function buildDryRun(state) {
-    var activeRefs = state.references.references.filter(function(r) { return r.type === 'active_snapshot'; });
-    return { assetId: state.asset.assetId, wouldBlock: true, references: state.references.references,
-      replacementRequired: activeRefs.length > 0, complete: state.references.complete, dryRun: true };
+  function fail(msg, stage) { return { deleted: false, complete: false, stage: stage, reason: msg }; }
+
+  function execDelete(state, ctx) {
+    return handleReplacement(state).then(function(r) { if (!r) return doClean(state, ctx); return r; });
   }
 
-  function executeDelete(state, context) {
-    if (state.replacementRequired) {
-      if (!findSafeReplacement || !publishReplacement) throw new Error('DELETE_BLOCKED_NO_SAFE_REPLACEMENT');
-      return findSafeReplacement(state.asset).then(function(replacement) {
-        if (!replacement) throw new Error('DELETE_BLOCKED_NO_SAFE_REPLACEMENT');
-        return publishReplacement(replacement);
-      }).then(function() {
-        return snapshotStore.readActive();
-      }).then(function(active) {
-        if (!active) throw new Error('DELETE_BLOCKED_REPLACEMENT_FAILED');
-        return snapshotStore.load(active.activeSnapshotId);
-      }).then(function(snap) {
-        if (snap && snap.payload) {
-          var stillRef = ['assetId','photoId','imageId','legacyId','localPath'].some(function(k) { return snap.payload[k] === state.asset.assetId; });
-          if (stillRef) throw new Error('DELETE_BLOCKED_REPLACEMENT_FAILED');
-        }
-        return referenceIndex.findReferences(state.asset.assetId);
-      }).then(function(rescan) {
-        var activeAfterRescan = rescan.references.filter(function(r) { return r.type === 'active_snapshot'; });
-        if (activeAfterRescan.length > 0) throw new Error('DELETE_BLOCKED_REPLACEMENT_FAILED');
-        state.replacementVerified = true;
-        return doClean(state, context);
-      });
-    }
-    return doClean(state, context);
+  function handleReplacement(state) {
+    if (!state.needsReplacement) return Promise.resolve(null);
+    if (!findSafeReplacement || !publishReplacement) return Promise.resolve(fail('NO_REPLACEMENT_PROVIDER', 'REPLACEMENT'));
+    return findSafeReplacement(state.asset).then(function(r) {
+      if (!r) return fail('NO_SAFE_REPLACEMENT', 'REPLACEMENT');
+      return publishReplacement(r);
+    }).then(function() { return snapshotStore.readActive(); }).then(function(a) {
+      if (!a) return fail('REPLACEMENT_FAILED', 'REPLACEMENT_VERIFY');
+      return snapshotStore.load(a.activeSnapshotId);
+    }).then(function(s) {
+      if (s && s.payload && ['assetId','photoId','imageId','legacyId','localPath'].some(function(k){return s.payload[k]===state.asset.assetId;}))
+        return fail('REPLACEMENT_STILL_REFERENCES', 'REPLACEMENT_VERIFY');
+      return referenceIndex.findReferences(state.asset.assetId);
+    }).then(function(rs) {
+      if (rs.references.filter(function(r){return r.type==='active_snapshot';}).length > 0) return fail('ACTIVE_REF_REMAINS', 'REPLACEMENT_RESCAN');
+      state.replaced = true; return null;
+    });
   }
 
-  function doClean(state, context) {
+  function doClean(state, ctx) {
     var result = { assetId: state.asset.assetId, deleted: false, blocked: true, complete: false };
-    if (state.replacementVerified) result.activeReplaced = true;
-    // History invalidation
-    var histPromises = state.references.references.filter(function(r) { return r.snapshotId; }).map(function(r) {
-      if (publicationHistory) return publicationHistory.update(r.snapshotId, { restorable: false, invalidReason: 'UNSAFE_ASSET_DELETED', invalidatedAt: new Date().toISOString() });
-    });
-    return Promise.all(histPromises).then(function(hResults) {
-      result.historyInvalidated = hResults.length > 0;
-      var cc = referenceCleaner.cleanCache(state.asset.assetId);
-      result.cacheCleaned = cc.cleaned;
-      var ic = referenceCleaner.cleanLegacyIndexes(state.asset.assetId, state.references);
-      result.legacyIndexCleaned = ic.legacyIndexCleaned; result.overrideCleaned = ic.overrideCleaned;
-      if (state.asset.localPath) {
-        try { fs.unlinkSync(state.asset.localPath); result.fileDeleted = true; } catch(e) { logger.error('file delete failed: ' + e.message); result.reason = 'FILE_DELETE_FAILED'; return result; }
+    if (state.replaced) result.activeReplaced = true;
+
+    // History invalidation — only publication_history and active_snapshot types
+    var histSnapshotIds = {};
+    state.refs.references.forEach(function(r) {
+      if ((r.type === 'publication_history' || r.type === 'active_snapshot') && r.snapshotId && !histSnapshotIds[r.snapshotId]) {
+        histSnapshotIds[r.snapshotId] = true;
       }
+    });
+    var histKeys = Object.keys(histSnapshotIds);
+    var histPromises = histKeys.map(function(sid) {
+      if (publicationHistory) return publicationHistory.update(sid, { restorable: false, invalidReason: 'UNSAFE_ASSET_DELETED', invalidatedAt: new Date().toISOString() }).catch(function(e) { result.histErrors = result.histErrors || []; result.histErrors.push(sid + ':' + e.message); });
+    });
+
+    return Promise.all(histPromises).then(function() {
+      if (result.histErrors) return fail('HISTORY_INVALIDATION_FAILED', 'CLEANUP');
+      result.historyInvalidated = true;
+
+      // Cache
+      var cc = referenceCleaner.cleanCache(state.asset.assetId);
+      if (!cc.complete) return fail('CACHE_CLEANUP_FAILED', 'CLEANUP');
+      result.cacheCleaned = cc.changed;
+
+      // Indexes
+      var ic = referenceCleaner.cleanLegacyIndexes(state.asset.assetId, state.refs);
+      if (!ic.complete) return fail('INDEX_CLEANUP_FAILED', 'CLEANUP');
+      result.legacyIndexCleaned = true;
+
+      // Path safety before unlink
+      if (!referenceCleaner.isPathAllowed(state.asset.localPath)) return fail('PATH_NOT_ALLOWED', 'PATH_SAFETY');
+
+      // Unlink
+      if (state.asset.localPath) {
+        try { fs.unlinkSync(state.asset.localPath); result.fileDeleted = true; } catch(e) { return fail('FILE_DELETE:' + e.message, 'UNLINK'); }
+      }
+
+      // Tombstone
       return assetRepository.markTombstoned(state.asset.assetId, 'unsafe asset deleted').then(function() {
-        return tombstoneStore.write({ assetId: state.asset.assetId, reason: context.reason, decision: context.decision,
-          deletedAt: new Date().toISOString(), originalSha256: state.asset.sha256, sourceType: state.asset.sourceType,
-          libraryType: state.asset.libraryType, referencesCleaned: state.references.references.length, auditId: state.auditId });
+        return tombstoneStore.write({ assetId: state.asset.assetId, reason: ctx.reason, decision: ctx.decision,
+          deletedAt: new Date().toISOString(), originalSha256: state.asset.sha256,
+          sourceType: state.asset.sourceType, libraryType: state.asset.libraryType,
+          referencesCleaned: state.refs.references.length, auditId: state.auditId });
       }).then(function() { result.deleted = true; result.tombstoneWritten = true; result.complete = true; return result; });
     });
   }
+
   return { deleteUnsafeAsset: deleteUnsafeAsset };
 }
 module.exports = { AssetDeleteService: AssetDeleteService };
