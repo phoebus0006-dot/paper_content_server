@@ -38,11 +38,27 @@ function PublicationHistory(historyFile, logger) {
     });
   }
 
+  function update(snapshotId, patch) {
+    return store.readOrDefault({ entries: [], schemaVersion: SCHEMA_VERSION }).then(function(data) {
+      var changed = false;
+      data.entries.forEach(function(entry) {
+        if (entry.snapshotId === snapshotId) {
+          Object.keys(patch).forEach(function(k) { entry[k] = patch[k]; });
+          changed = true;
+        }
+      });
+      if (!changed) return;
+      data.schemaVersion = SCHEMA_VERSION;
+      return store.write(data);
+    }).then(function() { logger.info('History updated: ' + snapshotId); });
+  }
+
   return {
     append: append,
     list: list,
     clear: clear,
     latest: latest,
+    update: update,
   };
 }
 

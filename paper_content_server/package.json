@@ -27,7 +27,8 @@
     "r1:test": "node test/r1/app-shell-test.js && node test/r1/config-parity-test.js && node test/r1/clock-test.js && node test/r1/logger-test.js && node test/r1/atomic-file-test.js && node test/r1/json-store-test.js && node test/r1/http-client-test.js && node test/r1/dependency-boundary-test.js && node test/r1/production-integration-test.js",
     "r2:test": "node test/r2/run-r2-tests.js",
     "r3:test": "node test/r3/run-r3-tests.js",
-    "r4:test": "node test/r4/run-r4-tests.js"
+    "r4:test": "node test/r4/run-r4-tests.js",
+    "r5:test": "node test/r5/run-r5-tests.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

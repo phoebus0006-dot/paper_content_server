@@ -76,8 +76,15 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
     var loaded, histStatus = 'OK';
     return snapshotStore.load(snapshotId).then(function(snap) {
       if (!snap) throw new Error('Snapshot not found: ' + snapshotId);
-      loaded = snap;
-      return snapshotStore.activate(snapshotId);
+      // Check history restorable flag
+      return history.list().then(function(entries) {
+        var entry = entries.filter(function(e) { return e.snapshotId === snapshotId; })[0];
+        if (entry && entry.restorable === false) {
+          throw new Error('Snapshot is not restorable: ' + snapshotId + ' reason=' + (entry.invalidReason || 'unknown'));
+        }
+        loaded = snap;
+        return snapshotStore.activate(snapshotId);
+      });
     }).then(function() {
       snapshotCache.set(snapshotId, loaded);
       return history.append({
