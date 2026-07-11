@@ -165,6 +165,7 @@ const PORT = Number(process.env.PORT || APP_CONFIG.port) > 0 ? Number(process.en
 const TIMEZONE = String(process.env.TZ || APP_CONFIG.timezone || DEFAULT_TIMEZONE || 'UTC');
 const ENABLE_DEBUG_ROUTES = String(process.env.ENABLE_DEBUG_ROUTES || '').toLowerCase() === 'true';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+const MQTT_ENABLED = String(process.env.MQTT_ENABLED || 'false').toLowerCase() === 'true';
 
 const DATA_DIR = resolveConfiguredPath(APP_CONFIG.dataDir || 'data');
 const IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.imageRoot || 'images');
@@ -247,12 +248,30 @@ async function main() {
   runtime.publicationLock = R3_PublicationLock();
   runtime.operatingModeService = R3_OperatingModeService();
   runtime.publicationHistory = R3_PublicationHistory(path.join(DATA_DIR, 'publication', 'history.json'), r1Logger);
+  var notificationPort = R3_NoopNotificationPort();
+  var mqttClient = null;
+  if (MQTT_ENABLED) {
+    try {
+      var MqttConfig = require('./src/mqtt/mqtt-config').loadMqttConfig;
+      var mqttConfig = MqttConfig(process.env);
+      var { createMqttClientPort } = require('./src/mqtt/mqtt-client-port');
+      mqttClient = createMqttClientPort(mqttConfig, r1Logger);
+      mqttClient.connect().catch(function(e) {
+        r1Logger.warn('MQTT connect failed: ' + e.message + ' — HTTP continues');
+      });
+      var { createMqttNotificationAdapter } = require('./src/mqtt/mqtt-notification-adapter');
+      notificationPort = createMqttNotificationAdapter(mqttConfig, mqttClient, r1Logger);
+    } catch(e) {
+      r1Logger.warn('MQTT initialization failed: ' + e.message + ' — falling back to noop');
+    }
+  }
+  runtime.mqttClient = mqttClient;
   runtime.publicationService = R3_PublicationService(
     runtime.snapshotStore,
     runtime.snapshotCache,
     runtime.pinStore,
     runtime.publicationLock,
-    R3_NoopNotificationPort(),
+    notificationPort,
     runtime.operatingModeService,
     runtime.publicationHistory,
     r1Logger
@@ -299,6 +318,10 @@ async function main() {
   });
 
   process.on('SIGINT', function() {
+    var closeTasks = [];
+    if (runtime.mqttClient && typeof runtime.mqttClient.disconnect === 'function') {
+      try { runtime.mqttClient.disconnect(); } catch(e) { r1Logger.warn('MQTT disconnect error: ' + e.message); }
+    }
     server.close(function() { process.exit(0); });
   });
 }
@@ -3084,6 +3107,27 @@ async function handleRequest(req, res) {
         }
       }
       respondJson(res, { status: 'ok' });
+      return;
+    }
+
+    if (parsed.pathname === '/health/live') {
+      respondJson(res, { status: 'ok', pid: process.pid, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000) });
+      return;
+    }
+
+    if (parsed.pathname === '/health/ready') {
+      var ready = { status: 'ok' };
+      var issues = [];
+      if (!runtime.snapshotStore) issues.push('SNAPSHOT_STORE_UNAVAILABLE');
+      try {
+        var r = fs.existsSync(path.join(DATA_DIR, 'config.json')) || fs.existsSync(path.join(ROOT_DIR, 'config.json'));
+        if (!r) issues.push('CONFIG_NOT_FOUND');
+      } catch(e) { issues.push('CONFIG_CHECK_FAILED'); }
+      if (issues.length > 0) {
+        ready.status = 'degraded';
+        ready.issues = issues;
+      }
+      respondJson(res, ready);
       return;
     }
 

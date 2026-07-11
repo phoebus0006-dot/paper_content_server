@@ -5,7 +5,10 @@ function createAdminQueryService(snapshotStore, publicationHistory, assetReposit
   function getSystemStatus() {
     var status = { timestamp: new Date().toISOString() };
     return snapshotStore.readActive().then(function(active) {
-      if (active) { status.activeSnapshotId = active.activeSnapshotId; status.activeFrameId = active.activeSnapshotId; }
+      if (active) { status.activeSnapshotId = active.activeSnapshotId; }
+      return snapshotStore.load(active ? active.activeSnapshotId : null);
+    }).then(function(snap) {
+      if (snap) { status.activeFrameId = snap.frameId; }
       return snapshotStore.listSnapshots();
     }).then(function(snapshots) {
       status.snapshotCount = snapshots.length;
@@ -50,10 +53,14 @@ function createAdminQueryService(snapshotStore, publicationHistory, assetReposit
 
   function getFeatureFlags() {
     return Object.freeze({
-      snapshotIntegrity: true, newsPipelineEnabled: true, mqttEnabled: false,
-      mqttConnected: false, learningEnabled: false, customLibraryEnabled: false,
-      advancedRenderEnabled: false, deletePipelineEnabled: false,
-      adminReadOnly: true,
+      newsPipeline: { configured: true, enabled: true, connected: true, ready: true },
+      mqtt: { configured: false, enabled: false, connected: false, ready: false },
+      learning: { configured: false, enabled: false, connected: false, ready: false },
+      customLibrary: { configured: false, enabled: false, connected: false, ready: false },
+      advancedRender: { configured: false, enabled: false, connected: false, ready: false },
+      deletePipeline: { configured: false, enabled: false, connected: false, ready: false },
+      adminReadOnly: { configured: true, enabled: true, connected: true, ready: true },
+      activeFrameId: null,
     });
   }
 
