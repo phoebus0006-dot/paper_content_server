@@ -28,6 +28,17 @@ var epaperImageFrame = require('./src/epaper/image-frame');
 var epaperEpf1 = require('./src/epaper/epf1');
 var epaperFrameValidator = require('./src/epaper/frame-validator');
 
+// R3 Snapshot + Publication Core
+var R3_snapshotModel = require('./src/snapshot/snapshot-model');
+var R3_SnapshotStore = require('./src/snapshot/snapshot-store').SnapshotStore;
+var R3_SnapshotCache = require('./src/snapshot/snapshot-cache').SnapshotCache;
+var R3_PinStore = require('./src/snapshot/pin-store').PinStore;
+var R3_PublicationLock = require('./src/publication/publication-lock').PublicationLock;
+var R3_NoopNotificationPort = require('./src/publication/notification-port').NoopNotificationPort;
+var R3_OperatingModeService = require('./src/publication/operating-mode-service').OperatingModeService;
+var R3_PublicationHistory = require('./src/publication/publication-history').PublicationHistory;
+var R3_PublicationService = require('./src/publication/publication-service').PublicationService;
+
 const ROOT_DIR = __dirname;
 const DEFAULT_PORT = 8787;
 const DEFAULT_PANEL = 49;
@@ -197,6 +208,14 @@ const runtime = {
   renderCount: 0,
   nowProvider: null,
   pinNowProvider: null,
+  // R3 snapshot/publication services
+  snapshotStore: null,
+  snapshotCache: null,
+  pinStore: null,
+  publicationLock: null,
+  publicationService: null,
+  operatingModeService: null,
+  publicationHistory: null,
 };
 
 async function main() {
@@ -219,6 +238,41 @@ async function main() {
   runtime.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
   runtime.imageIndex = await loadImageIndex();
   runtime.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
+
+  // Initialize R3 snapshot/publication services
+  var snapshotsDir = path.join(DATA_DIR, 'snapshots');
+  var publicationDir = path.join(DATA_DIR, 'publication');
+  runtime.snapshotStore = R3_SnapshotStore(snapshotsDir, publicationDir, r1Logger);
+  runtime.snapshotCache = R3_SnapshotCache();
+  runtime.pinStore = R3_PinStore();
+  runtime.publicationLock = R3_PublicationLock();
+  runtime.operatingModeService = R3_OperatingModeService();
+  runtime.publicationHistory = R3_PublicationHistory(path.join(DATA_DIR, 'publication', 'history.json'), r1Logger);
+  runtime.publicationService = R3_PublicationService(
+    runtime.snapshotStore,
+    runtime.snapshotCache,
+    runtime.pinStore,
+    runtime.publicationLock,
+    R3_NoopNotificationPort(),
+    runtime.operatingModeService,
+    runtime.publicationHistory,
+    r1Logger
+  );
+  await runtime.snapshotStore.ensureDirs();
+
+  // R3.8: Preload active snapshot into cache on restart
+  try {
+    var activePtr = await runtime.snapshotStore.readActive();
+    if (activePtr && activePtr.activeSnapshotId) {
+      var activeSnap = await runtime.snapshotStore.load(activePtr.activeSnapshotId);
+      if (activeSnap) {
+        runtime.snapshotCache.set(activeSnap.snapshotId, activeSnap);
+        r1Logger.info('Restored active snapshot from disk: ' + activeSnap.snapshotId);
+      }
+    }
+  } catch(e) {
+    r1Logger.warn('Could not preload active snapshot: ' + e.message);
+  }
 
   var server = http.createServer(boot.app.handler);
 
@@ -2257,6 +2311,19 @@ function computeSnapshot(now) {
   };
 }
 
+// R3.5: Ensure active snapshot matches current schedule; publish if needed
+async function ensureActiveSnapshotForSchedule(now) {
+  if (!runtime.publicationService) return null;
+  var active = await runtime.publicationService.getActive();
+  var schedule = selectPhotoSnapshot(now, runtime.imageIndex || []);
+  var scheduleKey = schedule.mode + ':' + (schedule.slotKey || '');
+  if (active && active.frameId.indexOf(scheduleKey) === 0) return active;
+  var content = await getContentForNow(now);
+  var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
+  await runtime.publicationService.publish(snap);
+  return snap;
+}
+
 async function getContentForNow(now) {
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
   if (snapshot.mode === 'news') {
@@ -2420,9 +2487,6 @@ function serveAdminFile(name) {
   if (fs.existsSync(fp)) return fs.readFileSync(fp);
   return null;
 }
-function readPubHistory(dd) {
-  try { var f = path.join(dd, 'publish_history.json'); if (!fs.existsSync(f)) return []; return JSON.parse(fs.readFileSync(f, 'utf8')); } catch(e) { return []; }
-}
 
 async function handleRequest(req, res) {
   const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -2455,11 +2519,30 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/state.json') {
-      const content = await getContentForNow(now);
       const client = clientKey(req);
-      setPinnedSnapshot(client, content);
+      var activeSnap = await ensureActiveSnapshotForSchedule(now);
+      if (!activeSnap) {
+        // Fallback to legacy computation when publication service not available
+        const content = await getContentForNow(now);
+        setPinnedSnapshot(client, content);
+        const body = Buffer.from(JSON.stringify({
+          ...content.snapshot,
+          panelIndex,
+          frameUrl: `${req.headers.host ? `http://${req.headers.host}` : ''}/api/frame.bin?panel=${panelIndex}`,
+        }, null, 2));
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+        res.end(body);
+        return;
+      }
+      var pinEntry = runtime.pinStore.get(client);
+      if (!pinEntry) {
+        runtime.pinStore.pin(client, activeSnap.snapshotId);
+      }
+      // Legacy pin for frame.bin coherence
+      setPinnedSnapshot(client, { snapshot: activeSnap.payload, frame: activeSnap.frame });
       const body = Buffer.from(JSON.stringify({
-        ...content.snapshot,
+        ...activeSnap.payload,
+        snapshotId: activeSnap.snapshotId,
         panelIndex,
         frameUrl: `${req.headers.host ? `http://${req.headers.host}` : ''}/api/frame.bin?panel=${panelIndex}`,
       }, null, 2));
@@ -2470,6 +2553,7 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/frame.bin') {
       const client = clientKey(req);
+      // Check legacy pinned snapshot first
       const pinned = getPinnedSnapshot(client);
       if (pinned) {
         res.writeHead(200, {
@@ -2484,6 +2568,24 @@ async function handleRequest(req, res) {
         res.end(pinned.frame);
         return;
       }
+      // Try active snapshot (read-only — no auto-publish)
+      var activeSnap = null;
+      if (runtime.publicationService) {
+        activeSnap = await runtime.publicationService.getActive();
+      }
+      if (activeSnap) {
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': activeSnap.frame.length,
+          'X-Frame-Id': activeSnap.frameId,
+          'X-Frame-Hex-Preview': hexPreview(activeSnap.frame),
+          'X-Frame-Mode': activeSnap.mode,
+          'X-Frame-Slot': activeSnap.snapshotId,
+        });
+        res.end(activeSnap.frame);
+        return;
+      }
+      // Fallback to legacy computation
       const content = await getContentForNow(now);
       const frame = content.frame;
       res.writeHead(200, {
@@ -2947,10 +3049,16 @@ async function handleRequest(req, res) {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var fid = 'manual-news:' + Date.now().toString(36);
       fs.writeFileSync(path.join(DATA_DIR, 'admin_override.json'), JSON.stringify({ mode: 'manual-news', createdAt: new Date().toISOString(), expiresAt: null }, null, 2));
-      var hst = readPubHistory(DATA_DIR);
-      hst.unshift({ id: Date.now().toString(36), type: 'news', frameId: fid, publishedAt: new Date().toISOString(), status: 'active' });
-      if (hst.length > 100) hst.length = 100;
-      fs.writeFileSync(path.join(DATA_DIR, 'publish_history.json'), JSON.stringify(hst, null, 2));
+      // R3.9: Publish via PublicationService (handles history via PublicationHistory)
+      if (runtime.publicationService && runtime.snapshotStore) {
+        try {
+          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
+          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
+          await runtime.publicationService.publish(snap);
+        } catch (e) {
+          r1Logger.warn('R3 publish after admin/news failed: ' + e.message);
+        }
+      }
       respondJson(res, { frameId: fid });
       return;
     }
@@ -2965,17 +3073,35 @@ async function handleRequest(req, res) {
       if (!foundPhoto && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
       var fid2 = 'manual-photo:' + Date.now().toString(36);
       fs.writeFileSync(path.join(DATA_DIR, 'admin_override.json'), JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null }, null, 2));
-      var hst2 = readPubHistory(DATA_DIR);
-      hst2.unshift({ id: Date.now().toString(36), type: 'photo', frameId: fid2, publishedAt: new Date().toISOString(), status: 'active' });
-      if (hst2.length > 100) hst2.length = 100;
-      fs.writeFileSync(path.join(DATA_DIR, 'publish_history.json'), JSON.stringify(hst2, null, 2));
+      // R3.9: Publish via PublicationService (handles history via PublicationHistory)
+      if (runtime.publicationService && runtime.snapshotStore) {
+        try {
+          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
+          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
+          await runtime.publicationService.publish(snap);
+        } catch (e) {
+          r1Logger.warn('R3 publish after admin/photo failed: ' + e.message);
+        }
+      }
       respondJson(res, { frameId: fid2 });
       return;
     }
 
-
     if (parsed.pathname === '/api/admin/rollback' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (runtime.publicationService) {
+        try {
+          var rbBody = JSON.parse(await readBody(req));
+          var rbSnapshotId = rbBody && rbBody.snapshotId;
+          if (!rbSnapshotId) { failJson(res, 400, 'snapshotId required'); return; }
+          await runtime.publicationService.rollback(rbSnapshotId);
+          respondJson(res, { status: 'ok', snapshotId: rbSnapshotId });
+          return;
+        } catch (e) {
+          failJson(res, 400, 'rollback failed: ' + e.message);
+          return;
+        }
+      }
       var rbId = Date.now().toString(36);
       respondJson(res, { status: 'ok', frameId: 'rollback:' + rbId });
       return;
@@ -2983,7 +3109,14 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/publish-history') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      respondJson(res, { history: readPubHistory(DATA_DIR) });
+      if (runtime.publicationHistory) {
+        try {
+          var r3History = await runtime.publicationHistory.list();
+          respondJson(res, { history: r3History });
+          return;
+        } catch(e) {}
+      }
+      respondJson(res, { history: [] });
       return;
     }
 
@@ -2999,6 +3132,16 @@ async function handleRequest(req, res) {
     if (parsed.pathname === '/api/admin/override' && req.method === 'DELETE') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
+      // R3.6: Re-publish schedule-based content after clearing override
+      if (runtime.publicationService && runtime.snapshotStore) {
+        try {
+          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
+          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
+          await runtime.publicationService.publish(snap);
+        } catch (e) {
+          r1Logger.warn('R3 publish after override clear failed: ' + e.message);
+        }
+      }
       respondJson(res, { status: 'ok' });
       return;
     }
