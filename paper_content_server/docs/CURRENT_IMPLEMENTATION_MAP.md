@@ -6,8 +6,8 @@
 ## 1. Repository Baseline
 
 branch=master
-AUDITED_CODE_SHA=597e4c4f3c6db9ec338cc49ec4b34cb99bf0e3a7
-origin/master at audit time=597e4c4f3c6db9ec338cc49ec4b34cb99bf0e3a7
+AUDITED_CODE_SHA=569262cea5612a7415329551c0c6a0e0c84c8150
+origin/master at audit time=569262cea5612a7415329551c0c6a0e0c84c8150
 server entrypoint=paper_content_server/server.js
 firmware entrypoint=NewsPhoto_esp32wf/NewsPhoto_esp32wf.ino
 node major=v24.14.1
@@ -17,6 +17,8 @@ r1 bootstrap=paper_content_server/src/app/bootstrap.js
 r1 config=paper_content_server/src/config/load-config.js
 r1 infra modules=paper_content_server/src/infra/{clock,logger,atomic-file,json-store,http-client}.js
 r1 tests=paper_content_server/test/r1/
+r2 frame core=paper_content_server/src/epaper/{palette,quantizer,epf1,frame-validator,image-frame}.js
+r2 tests=paper_content_server/test/r2/
 
 ### Audit Scope
 
@@ -28,7 +30,7 @@ R1_INTEGRATION_COMPLETE: server.js uses loadConfig, SystemClock, ConsoleLogger, 
 
 ## 2. Server Entrypoint
 
-SERVER_JS_PHYSICAL_LINES=3196
+SERVER_JS_PHYSICAL_LINES=3033
 TOP_LEVEL_FUNCTIONS=114
 PROCESS_ENV_READS=24 (24 in process.env reads at module scope; now centralized via loadConfig)
 ROUTE_REGISTRATION=handleRequest() at byte 96995
