@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// R4.2C: Active asset delete — dry-run detects active reference
+// Lane A: Active replacement runtime
 var path=require('path'),fs=require('fs'),os=require('os');
 var ROOT=path.join(__dirname,'..','..');var ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
@@ -18,30 +18,30 @@ var SAL=require(path.join(ROOT,'src','safety','safety-audit-log')).SafetyAuditLo
 var RC=require(path.join(ROOT,'src','safety','reference-cleaner')).ReferenceCleaner;
 var ADS=require(path.join(ROOT,'src','safety','asset-delete-service')).AssetDeleteService;
 function mf(){var b=Buffer.alloc(192010);b.write('EPF1',0,'ascii');b.writeUInt16LE(800,4);b.writeUInt16LE(480,6);b[8]=49;b[9]=1;return b;}
-var tmp=path.join(os.tmpdir(),'r4_actdel_'+Date.now());fs.mkdirSync(tmp,{recursive:true});
+var tmp=path.join(os.tmpdir(),'r4_actrt_'+Date.now());fs.mkdirSync(tmp,{recursive:true});
+var img=path.join(tmp,'bad.png');fs.writeFileSync(img,'bad');
 var lg={info:function(){},warn:function(){},error:function(){}};
 async function run(){
   var repo=AR(path.join(tmp,'repo.json'),lg);
   var store=SS(path.join(tmp,'snap'),path.join(tmp,'pub'),lg);await store.ensureDirs();
-  var refIdx=ARI(tmp,store,null);
-  var toms=TS(path.join(tmp,'tombstones'),lg);var aud=SAL(path.join(tmp,'audit.log'),lg);
-  var cache=SC();var cleaner=RC(store,cache,null,tmp,lg);
-  var hist=PH(path.join(tmp,'h.json'),lg);
-  var assetId='bad_asset_1';
-  var unsafeSnap=PM.createSnapshot('news:unsafe',{mode:'news',photoId:assetId,localPath:'/data/bad.png'},mf(),'news');
+  var cache=SC();var hist=PH(path.join(tmp,'h.json'),lg);
   var pubSvc=PS(store,cache,null,PL(),NP(),null,hist,lg);
+  var refIdx=ARI(tmp,store,hist);var toms=TS(path.join(tmp,'tombstones'),lg);var aud=SAL(path.join(tmp,'audit.log'),lg);
+  var cleaner=RC(store,cache,hist,tmp,lg);
+  var unsafeSnap=PM.createSnapshot('news:unsafe',{mode:'news',photoId:'ast_act_rt'},mf(),'news');
   await pubSvc.publish(unsafeSnap);
-  var active=await pubSvc.getActive();
-  t('ACTIVE_CONTAINS_UNSAFE',active&&active.payload.photoId==='bad_asset_1','');
-  var asset=am.createAsset({assetId:assetId,sourceUrl:'http://bad.img',libraryType:'LEARNING',safetyStatus:'UNSAFE',lifecycleStatus:'DISCOVERED',localPath:'/data/bad.png'});
+  var asset=am.createAsset({assetId:'ast_act_rt',sourceUrl:'http://bad',libraryType:'LEARNING',safetyStatus:'UNSAFE',lifecycleStatus:'DISCOVERED',localPath:img});
   await repo.create(asset);
-  var svc=ADS(repo,refIdx,store,cache,hist,toms,aud,cleaner,lg,null,null);
-  var result=await svc.deleteUnsafeAsset({assetId:asset.assetId,reason:'UNSAFE',decision:'remove',dryRun:true});
-  t('DRY_RUN_DETECTS_ACTIVE',result.replacementRequired===true,'');
-  t('DRY_RUN_HAS_REFERENCES',Array.isArray(result.references),'');
-  t('DRY_RUN_COMPLETE',result.wouldBlock===true,'');
+  var safeSnap=PM.createSnapshot('news:safe',{mode:'news'},mf(),'news');
+  var svc=ADS(repo,refIdx,store,cache,hist,toms,aud,cleaner,lg,
+    function(a){return Promise.resolve(safeSnap);},function(r){return pubSvc.publish(r);});
+  var result=await svc.deleteUnsafeAsset({assetId:'ast_act_rt',reason:'UNSAFE',decision:'remove',dryRun:false});
+  t('REPLACEMENT_COMPLETE',result.complete===true,'');
+  t('REPLACEMENT_ACTIVE',result.activeReplaced===true,'');
+  var active=await pubSvc.getActive();
+  t('ACTIVE_NO_LONGER_REFERENCES',active&&active.payload.photoId!=='ast_act_rt','');
+  t('FILE_REMOVED',result.fileDeleted===true,'');
   try{fs.rmdirSync(tmp,{recursive:true})}catch(e){}
-  console.log('\n=== Summary: '+pass+' passed, '+fail+' failed ===');
-  process.exit(ec);
+  console.log('\n=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec);
 }
 run().catch(function(e){console.log('CRASH: '+e.message);try{fs.rmdirSync(tmp,{recursive:true})}catch(e2){}process.exit(1)});
