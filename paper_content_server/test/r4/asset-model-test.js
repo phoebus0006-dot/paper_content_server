@@ -25,8 +25,10 @@ t('CREATED_AT',/^\d{4}-\d{2}-\d{2}T/.test(asset.createdAt),'');
 // 2. Selectable check
 var selectable=am.createAsset({sourceUrl:'u',libraryType:'LEARNING',safetyStatus:'SAFE',lifecycleStatus:'SELECTABLE'});
 t('SELECTABLE_SAFE',am.isSelectable(selectable),'');
-var unsafe=am.createAsset({sourceUrl:'u',libraryType:'LEARNING',safetyStatus:'UNSAFE',lifecycleStatus:'SELECTABLE'});
-t('UNSAFE_NOT_SELECTABLE',!am.isSelectable(unsafe),'');
+  var unsafeCreated=false;
+  try{am.createAsset({sourceUrl:'u',libraryType:'LEARNING',safetyStatus:'UNSAFE',lifecycleStatus:'SELECTABLE'});}catch(e){unsafeCreated=true;}
+  t('UNSAFE_SELECTABLE_REJECTED',unsafeCreated,'');
+  var blocked=am.createAsset({sourceUrl:'u',libraryType:'LEARNING',safetyStatus:'SAFE',lifecycleStatus:'BLOCKED'});
 var blocked=am.createAsset({sourceUrl:'u',libraryType:'LEARNING',safetyStatus:'SAFE',lifecycleStatus:'BLOCKED'});
 t('BLOCKED_NOT_SELECTABLE',!am.isSelectable(blocked),'');
 

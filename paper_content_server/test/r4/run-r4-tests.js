@@ -9,6 +9,15 @@ var tests=[
   'test/r4/legacy-asset-adapter-test.js',
   'test/r4/asset-reference-index-test.js',
   'test/r4/dependency-boundary-test.js',
+  'test/r4/stable-asset-identity-test.js',
+  'test/r4/reference-accuracy-test.js',
+  'test/r4/reference-error-semantics-test.js',
+  'test/r4/delete-dry-run-test.js',
+  'test/r4/delete-pipeline-test.js',
+  'test/r4/active-asset-delete-test.js',
+  'test/r4/rollback-invalidation-test.js',
+  'test/r4/tombstone-test.js',
+  'test/r4/delete-failure-atomicity-test.js',
 ];
 var overallFail=false;
 tests.forEach(function(testFile){

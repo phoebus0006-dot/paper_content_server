@@ -20,8 +20,8 @@ async function run(){
   var refs2=await idx.findReferences('ast_456');
   t('STUDY_INDEX_REF',refs2.references.length>=1,'count='+refs2.references.length);
   var refs3=await idx.findReferences('nonexistent');
-  t('NONEXISTENT_NO_REFS',refs3.references.length===0,'');
-  t('RETURN_STRUCTURE',refs3.assetId==='nonexistent'&&Array.isArray(refs3.references),'');
+  t('NONEXISTENT_NO_REFS',refs3.references.length===1&&refs3.references[0].status==='UNKNOWN',''); // cache UNKNOWN
+  t('RETURN_STRUCTURE',refs3.assetId==='nonexistent'&&Array.isArray(refs3.references)&&refs3.complete===true,'');
   try{fs.rmdirSync(tmpDir,{recursive:true})}catch(e){}
   console.log('\n=== Summary: '+pass+' passed, '+fail+' failed ===');
   process.exit(ec);

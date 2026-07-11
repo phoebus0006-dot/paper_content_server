@@ -1,12 +1,11 @@
-// asset-repository.js — Asset persistence using R1 JsonStore/AtomicFile
-// Corrupt repository throws, never silently falls back.
-
+// asset-repository.js — Asset persistence with guarded fields and metadata merge
 var path = require('path');
 var JsonStore = require(path.join(__dirname, '..', 'infra', 'json-store')).JsonStore;
-var assetStatus = require('./asset-status');
-var { createAsset } = require('./asset-model');
+var ast = require('./asset-status');
+var { FROZEN_FIELDS } = require('./asset-model');
 
 var SCHEMA_VERSION = 1;
+var GUARDED_FIELDS = ['assetId','schemaVersion','createdAt','libraryType'];
 
 function AssetRepository(storeFile, logger) {
   logger = logger || { info: function() {}, warn: function() {}, error: function() {} };
@@ -19,10 +18,7 @@ function AssetRepository(storeFile, logger) {
       data.assets[id] = asset;
       data.schemaVersion = SCHEMA_VERSION;
       return store.write(data);
-    }).then(function() {
-      logger.info('Asset created: ' + id + ' (' + asset.libraryType + ')');
-      return id;
-    });
+    }).then(function() { logger.info('Asset created: ' + id + ' (' + asset.libraryType + ')'); return id; });
   }
 
   function get(assetId) {
@@ -35,17 +31,29 @@ function AssetRepository(storeFile, logger) {
     return store.readOrDefault({ assets: {}, schemaVersion: SCHEMA_VERSION }).then(function(data) {
       var existing = data.assets[assetId];
       if (!existing) throw new Error('asset not found: ' + assetId);
-      // Validate lifecycle transition if provided
+      // Guard immutable fields
+      GUARDED_FIELDS.forEach(function(f) {
+        if (patch[f] !== undefined && patch[f] !== existing[f]) {
+          throw new Error('Cannot modify guarded field: ' + f);
+        }
+      });
+      // Validate lifecycle transition
       if (patch.lifecycleStatus && patch.lifecycleStatus !== existing.lifecycleStatus) {
-        assetStatus.assertTransition(existing.lifecycleStatus, patch.lifecycleStatus);
+        ast.assertTransition(existing.lifecycleStatus, patch.lifecycleStatus);
       }
-      var updated = Object.assign({}, existing, patch, { updatedAt: new Date().toISOString() });
+      // Merge metadata (don't overwrite)
+      var mergedMeta = {};
+      if (existing.metadata) { Object.keys(existing.metadata).forEach(function(k) { mergedMeta[k] = existing.metadata[k]; }); }
+      if (patch.metadata) { Object.keys(patch.metadata).forEach(function(k) { mergedMeta[k] = patch.metadata[k]; }); }
+      var safePatch = {};
+      Object.keys(patch).forEach(function(k) { safePatch[k] = patch[k]; });
+      safePatch.metadata = mergedMeta;
+      safePatch.updatedAt = new Date().toISOString();
+      var updated = Object.assign({}, existing, safePatch);
       data.assets[assetId] = updated;
       data.schemaVersion = SCHEMA_VERSION;
       return store.write(data);
-    }).then(function() {
-      logger.info('Asset updated: ' + assetId);
-    });
+    }).then(function() { logger.info('Asset updated: ' + assetId); });
   }
 
   function list(filter) {
@@ -53,20 +61,26 @@ function AssetRepository(storeFile, logger) {
       var all = Object.keys(data.assets).map(function(k) { return data.assets[k]; });
       if (!filter) return all;
       return all.filter(function(a) {
-        for (var key in filter) {
-          if (a[key] !== filter[key]) return false;
-        }
+        for (var key in filter) { if (a[key] !== filter[key]) return false; }
         return true;
       });
     });
   }
 
-  function markBlocked(assetId, reason) {
-    return update(assetId, { lifecycleStatus: 'BLOCKED', metadata: { blockReason: reason, blockedAt: new Date().toISOString() } });
+  function markBlocked(assetId, reason, safetyOverride) {
+    var patch = {
+      lifecycleStatus: 'BLOCKED',
+      safetyStatus: safetyOverride || 'UNSAFE',
+      metadata: { blockReason: reason, blockedAt: new Date().toISOString() },
+    };
+    return update(assetId, patch);
   }
 
   function markTombstoned(assetId, reason) {
-    return update(assetId, { lifecycleStatus: 'TOMBSTONED', metadata: { tombstoneReason: reason, tombstonedAt: new Date().toISOString() } });
+    return update(assetId, {
+      lifecycleStatus: 'TOMBSTONED',
+      metadata: { tombstoneReason: reason, tombstonedAt: new Date().toISOString() },
+    });
   }
 
   function count() {
@@ -75,15 +89,7 @@ function AssetRepository(storeFile, logger) {
     });
   }
 
-  return {
-    create: create,
-    get: get,
-    update: update,
-    list: list,
-    markBlocked: markBlocked,
-    markTombstoned: markTombstoned,
-    count: count,
-  };
+  return { create, get, update, list, markBlocked, markTombstoned, count };
 }
 
 module.exports = { AssetRepository: AssetRepository };
