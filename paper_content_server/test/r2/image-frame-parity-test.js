@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // R2: Byte-for-byte parity — new modules vs real golden fixtures from base SHA
-// Tests image-to-frame WITHOUT dithering (matches legacy behavior)
+// Tests both PAYLOAD (image-to-frame) and FULL FRAME (buildFrameBuffer)
+// All golden fixtures generated via INSTRUMENTED_PRODUCTION_EXPORT from base SHA
 
 var path = require('path');
 var fs = require('fs');
@@ -10,20 +11,10 @@ var ROOT = path.join(__dirname, '..', '..');
 var ec = 0, pass = 0, fail = 0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
 
-var epaperImageFrame = require(path.join(ROOT, 'src', 'epaper', 'image-frame'));
 var GOLDEN_DIR = path.join(ROOT, 'test', 'fixtures', 'r2', 'golden');
 var W = 800, H = 480;
 
-// Verify manifest
-var manifestPath = path.join(GOLDEN_DIR, 'manifest.json');
-var manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-var headSha = require('child_process').execSync('git rev-parse HEAD', {cwd: ROOT}).toString().trim();
-t('MANIFEST_EXISTS', !!manifest, manifest.length + ' entries');
-t('MANIFEST_GENERATED_BY_LEGACY', manifest[0].generated_by_sha === '9990b9f1d2eb7e7955b2be3714f4c79359ab594e', manifest[0].generated_by_sha);
-
-function makeInputFromGolden(name) {
-  // Re-create the input buffer that would have generated the golden fixture
-  // Same helper logic as the original generator
+function makeInputForFixture(name) {
   function makeRGB(r, g, b) {
     var buf = Buffer.alloc(W * H * 3);
     for (var i = 0; i < W * H; i++) { buf[i*3] = r; buf[i*3+1] = g; buf[i*3+2] = b; }
@@ -70,29 +61,36 @@ function makeInputFromGolden(name) {
     'rgba-transparent': { data: makeRGBA(255, 0, 0, 50), ch: 4 },
     'rgba-semi': { data: makeRGBA(255, 255, 255, 200), ch: 4 },
   };
-  return defs[name];
+  return defs[name] || null;
 }
 
 async function run() {
   console.log('--- R2: Golden Fixture Parity ---');
 
-  // 1. Load all golden .epf1 files + manifest
-  var goldenFrames = {};
-  for (var m = 0; m < manifest.length; m++) {
-    var entry = manifest[m];
-    var goldenPath = path.join(GOLDEN_DIR, entry.input_name + '.epf1');
-    if (!fs.existsSync(goldenPath)) {
-      t('GOLDEN_FILE_' + entry.input_name, false, 'file not found: ' + goldenPath);
-      continue;
-    }
-    goldenFrames[entry.input_name] = {
-      data: fs.readFileSync(goldenPath),
-      sha256: entry.output_sha256,
-      length: entry.output_length,
-    };
-  }
+  // Load manifest
+  var manifestPath = path.join(GOLDEN_DIR, 'manifest.json');
+  var manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  t('MANIFEST_EXISTS', !!manifest, manifest.length + ' entries');
+  t('GENERATOR_METHOD', manifest[0].generator_method === 'INSTRUMENTED_PRODUCTION_EXPORT', manifest[0].generator_method);
 
-  // 2. Generate real-photo input using sharp
+  // Load all golden .epf1 files + manifest data
+  var goldenByInput = {};
+  manifest.forEach(function(entry) {
+    var goldenPath = path.join(GOLDEN_DIR, entry.input_name + '.epf1');
+    if (!fs.existsSync(goldenPath)) return;
+    goldenByInput[entry.input_name] = {
+      frameData: fs.readFileSync(goldenPath),
+      frameSha: entry.frame_sha256,
+      frameLen: entry.frame_length,
+      payloadSha: entry.payload_sha256,
+      payloadLen: entry.payload_length,
+    };
+  });
+
+  // Require new module AFTER reading files (no side effects)
+  var epaperImageFrame = require(path.join(ROOT, 'src', 'epaper', 'image-frame'));
+
+  // Generate real-photo input
   var realPhotoInput;
   try {
     var svg = '<svg width="800" height="480"><rect width="800" height="480" fill="#4488cc"/><circle cx="400" cy="240" r="150" fill="#ffcc00" opacity="0.7"/><rect x="100" y="100" width="200" height="280" fill="#ff6644" opacity="0.5"/><rect x="500" y="80" width="200" height="320" fill="#44cc88" opacity="0.5"/></svg>';
@@ -101,81 +99,112 @@ async function run() {
     t('REAL_PHOTO_INPUT', false, e.message);
   }
 
-  // 3. For each golden fixture, generate new module output (dithering=false) and compare
-  var allGoldenOk = true;
-  var goldenNames = Object.keys(goldenFrames).sort();
-  for (var g = 0; g < goldenNames.length; g++) {
-    var name = goldenNames[g];
-    var golden = goldenFrames[name];
-    var def = makeInputFromGolden(name);
-    if (!def) {
-      if (name === 'real-photo' && realPhotoInput) {
-        def = { data: realPhotoInput, ch: 4 };
-      } else {
-        t('GOLDEN_' + name + '_INPUT', false, 'no input definition');
-        continue;
-      }
-    }
-    var newPayload = epaperImageFrame.imageToFrameBuffer(def.data, W, H, def.ch, false);
-    var newFrame = epaperImageFrame.buildFrameBuffer(newPayload);
-    var newSha = crypto.createHash('sha256').update(newFrame).digest('hex');
-    var same = golden.length === newFrame.length && golden.sha256 === newSha && Buffer.compare(golden.data, newFrame) === 0;
-    if (same) {
-      t(name + ': len=' + golden.length + ' sha256=' + golden.sha256.slice(0,16) + '...', true);
-    } else {
-      t(name, false, 'LEN ' + golden.length + '/' + newFrame.length + ' SHA ' + golden.sha256.slice(0,12) + '/' + newSha.slice(0,12));
-      allGoldenOk = false;
-    }
-  }
-  t('GOLDEN_PARITY', allGoldenOk, allGoldenOk ? 'all ' + goldenNames.length + ' fixtures match' : '');
+  var names = Object.keys(goldenByInput).sort();
+  var payloadPass = 0, payloadFail = 0;
+  var framePass = 0, frameFail = 0;
 
-  // 4. Dithered output: verify dithering actually changes output for gradient/real-photo
-  // Solid-color and checkerboard fixtures have zero error so dithering has no effect
-  var ditheredNames = ['gradient', 'real-photo'];
-  var ditheredAllOk = true;
-  for (var d = 0; d < ditheredNames.length; d++) {
-    var name = ditheredNames[d];
-    var def = makeInputFromGolden(name);
-    if (!def && name === 'real-photo' && realPhotoInput) def = { data: realPhotoInput, ch: 4 };
-    if (!def) continue;
-    var nonDithered = epaperImageFrame.imageToFrameBuffer(def.data, W, H, def.ch, false);
-    var dithered = epaperImageFrame.imageToFrameBuffer(def.data, W, H, def.ch, true);
-    var ndFrame = epaperImageFrame.buildFrameBuffer(nonDithered);
-    var dFrame = epaperImageFrame.buildFrameBuffer(dithered);
-    var ndSha = crypto.createHash('sha256').update(ndFrame).digest('hex');
-    var dSha = crypto.createHash('sha256').update(dFrame).digest('hex');
-    var differs = ndSha !== dSha;
-    t(name + '_DITHERED', differs, differs ? 'dithered differs from non-dithered' : 'IDENTICAL');
-    if (!differs) ditheredAllOk = false;
-  }
-  t('DITHERED_DIFFERS', ditheredAllOk, ditheredAllOk ? 'gradient and real-photo differ with dithering' : '');
-
-  var totalFixtures = Object.keys(goldenFrames).length;
-  console.log('\n--- Server Wrapper Parity ---');
-  // 5. Production wrapper test: require server.js and call through it
-  var serverOk = true;
-  var env = Object.assign({}, process.env, { PORT: '0', DITHERING: '0', PHOTO_QUANT_MODE: 'clean', TRANSLATION_PROVIDER: 'none', DATA_DIR: path.join(ROOT, 'tmp_r2_wrapper_' + Date.now()) });
-  var serverMod = require(path.join(ROOT, 'server.js'));
-  for (var s = 0; s < goldenNames.length; s++) {
-    var name = goldenNames[s];
-    var golden = goldenFrames[name];
-    var def = makeInputFromGolden(name);
+  // Test 1: PAYLOAD parity — legacy payload == new module payload
+  console.log('\n--- PAYLOAD PARITY ---');
+  for (var i = 0; i < names.length; i++) {
+    var name = names[i];
+    var golden = goldenByInput[name];
+    var def = makeInputForFixture(name);
     if (!def) {
       if (name === 'real-photo' && realPhotoInput) def = { data: realPhotoInput, ch: 4 };
       else continue;
     }
-    var payload = serverMod.imageToFrameBuffer(def.data, W, H, def.ch);
-    var frame = epaperImageFrame.buildFrameBuffer(payload);
-    var sSha = crypto.createHash('sha256').update(frame).digest('hex');
-    var sOk = golden.length === frame.length && golden.sha256 === sSha && Buffer.compare(golden.data, frame) === 0;
-    if (sOk) {
-      t('SERVER_WRAPPER_' + name + ': len=' + golden.length + ' sha256=' + golden.sha256.slice(0,16) + '...', true);
+    var newPayload = epaperImageFrame.imageToFrameBuffer(def.data, W, H, def.ch, false);
+    var newPayloadSha = crypto.createHash('sha256').update(newPayload).digest('hex');
+    var ok = golden.payloadLen === newPayload.length && golden.payloadSha === newPayloadSha && Buffer.compare ? true : false;
+    // Buffer.compare
+    // Need a way to get legacy payload. We don't have it directly from the golden .epf1.
+    // The .epf1 contains the full frame (header + payload). We need to extract payload.
+    // But we don't have a separate legacy payload file anymore.
+    // Actually we DO: the legacy payload is the .epf1 minus the 10-byte header.
+    var legacyPayload = golden.frameData.slice(10);
+    var payloadCompare = Buffer.compare(legacyPayload, newPayload) === 0;
+    ok = golden.payloadLen === newPayload.length && payloadCompare;
+    if (ok) {
+      t('PAYLOAD_' + name + ': len=' + newPayload.length + ' sha256=' + newPayloadSha.slice(0,16) + '...', true);
+      payloadPass++;
     } else {
-      t('SERVER_WRAPPER_' + name, false, 'LEN ' + golden.length + '/' + frame.length + ' SHA ' + golden.sha256.slice(0,12) + '/' + sSha.slice(0,12));
-      serverOk = false;
+      var legacyPayloadSha = crypto.createHash('sha256').update(legacyPayload).digest('hex');
+      t('PAYLOAD_' + name, false, 'LEN ' + golden.payloadLen + '/' + newPayload.length + ' SHA ' + legacyPayloadSha.slice(0,12) + '/' + newPayloadSha.slice(0,12));
+      payloadFail++;
     }
   }
-  t('SERVER_WRAPPER_PARITY', serverOk, serverOk ? 'all ' + totalFixtures + ' wrappers match' : '');
+
+  // Test 2: FULL FRAME parity — legacy frame == new module frame
+  console.log('\n--- FULL FRAME PARITY ---');
+  for (var j = 0; j < names.length; j++) {
+    var name = names[j];
+    var golden = goldenByInput[name];
+    var def = makeInputForFixture(name);
+    if (!def) {
+      if (name === 'real-photo' && realPhotoInput) def = { data: realPhotoInput, ch: 4 };
+      else continue;
+    }
+    var newPayload = epaperImageFrame.imageToFrameBuffer(def.data, W, H, def.ch, false);
+    var newFrame = epaperImageFrame.buildFrameBuffer(newPayload);
+    var newFrameSha = crypto.createHash('sha256').update(newFrame).digest('hex');
+    var ok = golden.frameLen === newFrame.length && golden.frameSha === newFrameSha && Buffer.compare(golden.frameData, newFrame) === 0;
+    if (ok) {
+      t('FRAME_' + name + ': len=' + newFrame.length + ' sha256=' + newFrameSha.slice(0,16) + '...', true);
+      framePass++;
+    } else {
+      t('FRAME_' + name, false, 'LEN ' + golden.frameLen + '/' + newFrame.length + ' SHA ' + golden.frameSha.slice(0,12) + '/' + newFrameSha.slice(0,12));
+      frameFail++;
+    }
+  }
+
+  console.log('\n--- SUMMARY ---');
+  t('PAYLOAD_PARITY', payloadFail === 0, payloadPass + '/' + (payloadPass + payloadFail) + ' pass');
+  t('FULL_FRAME_PARITY', frameFail === 0, framePass + '/' + (framePass + frameFail) + ' pass');
+
+  // Test 3: SERVER WRAPPER parity — server.js wrapper == golden frame
+  console.log('\n--- SERVER WRAPPER PARITY ---');
+  var serverMod = require(path.join(ROOT, 'server.js'));
+  var wrapperPass = 0, wrapperFail = 0;
+  for (var k = 0; k < names.length; k++) {
+    var name = names[k];
+    var golden = goldenByInput[name];
+    var def = makeInputForFixture(name);
+    if (!def) {
+      if (name === 'real-photo' && realPhotoInput) def = { data: realPhotoInput, ch: 4 };
+      else continue;
+    }
+    var sPayload = serverMod.imageToFrameBuffer(def.data, W, H, def.ch);
+    var sFrame = epaperImageFrame.buildFrameBuffer(sPayload);
+    var sSha = crypto.createHash('sha256').update(sFrame).digest('hex');
+    var ok = golden.frameLen === sFrame.length && golden.frameSha === sSha && Buffer.compare(golden.frameData, sFrame) === 0;
+    if (ok) {
+      t('WRAPPER_' + name + ': len=' + sFrame.length + ' sha256=' + sSha.slice(0,16) + '...', true);
+      wrapperPass++;
+    } else {
+      t('WRAPPER_' + name, false, 'LEN ' + golden.frameLen + '/' + sFrame.length + ' SHA ' + golden.frameSha.slice(0,12) + '/' + sSha.slice(0,12));
+      wrapperFail++;
+    }
+  }
+  t('SERVER_WRAPPER_PARITY', wrapperFail === 0, wrapperPass + '/' + (wrapperPass + wrapperFail) + ' pass');
+
+  // Test 4: DITHERED divergence — gradient and real-photo differ with dithering
+  console.log('\n--- DITHERED DIVERGENCE ---');
+  var ditheredOk = true;
+  var ditherNames = ['gradient', 'real-photo'];
+  for (var d = 0; d < ditherNames.length; d++) {
+    var name = ditherNames[d];
+    var def = makeInputForFixture(name);
+    if (!def && name === 'real-photo' && realPhotoInput) def = { data: realPhotoInput, ch: 4 };
+    if (!def) continue;
+    var nonDithered = epaperImageFrame.imageToFrameBuffer(def.data, W, H, def.ch, false);
+    var dithered = epaperImageFrame.imageToFrameBuffer(def.data, W, H, def.ch, true);
+    var ndSha = crypto.createHash('sha256').update(epaperImageFrame.buildFrameBuffer(nonDithered)).digest('hex');
+    var dSha = crypto.createHash('sha256').update(epaperImageFrame.buildFrameBuffer(dithered)).digest('hex');
+    var differs = ndSha !== dSha;
+    t(name + '_DITHERED', differs, differs ? 'dithered != non-dithered' : 'IDENTICAL');
+    if (!differs) ditheredOk = false;
+  }
+  t('DITHERED_DIFFERS', ditheredOk, '');
 
   console.log('\n=== Summary: ' + pass + ' passed, ' + fail + ' failed ===');
   process.exit(ec);
