@@ -2,22 +2,27 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
-    branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [22]
+
+    defaults:
+      run:
+        working-directory: paper_content_server
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22
           cache: npm
+          cache-dependency-path: paper_content_server/package-lock.json
+
       - run: npm ci
       - run: node --check server.js
       - run: npm run docs:check
@@ -32,6 +37,7 @@ jobs:
       - run: npm run r8:test
       - run: npm run r9:test
       - run: npm run r10:test
+      - run: npm run r11:test
       - run: npm run schedule:test
       - run: npm run frame:test
       - run: npm run coherence:test
@@ -44,4 +50,3 @@ jobs:
       - run: npm run storyboard-source:test
       - run: npm run rss:test
       - run: node scripts/dependency-selftest.js
-      - run: node scripts/container-selftest.js

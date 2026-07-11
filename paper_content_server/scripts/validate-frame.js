@@ -20,17 +20,23 @@ try {
 console.log('Frame: ' + path.basename(filePath));
 console.log('Length: ' + frame.length);
 console.log('Magic: ' + frame.slice(0, 4).toString());
+console.log('Width: ' + frame.readUInt16LE(4));
+console.log('Height: ' + frame.readUInt16LE(6));
+console.log('Panel: ' + frame.readUInt8(8));
+console.log('Version: ' + frame.readUInt8(9));
 
 var { validateFrameBuffer } = require(path.join(ROOT, 'src', 'epaper', 'frame-validator'));
 var result = validateFrameBuffer(frame);
 
-if (result.ok) {
+console.log('InvalidCodeCount: ' + (result.invalidCodeCount !== undefined ? result.invalidCodeCount : 'N/A'));
+console.log('Code4Count: ' + (result.code4Count !== undefined ? result.code4Count : frame.readUInt8(9)));
+
+if (result.ok && (result.code4Count === undefined || result.code4Count === 0)) {
   console.log('Validator: PASS');
-  var code4 = frame[9];
-  console.log('Code4: ' + code4 + (code4 === 0 ? ' (OK)' : ' (WARN: non-zero)'));
   process.exit(0);
 } else {
   console.log('Validator: FAIL');
-  console.log('Errors: ' + (result.errors || []).join('; '));
+  if (result.errors) console.log('Errors: ' + result.errors.join('; '));
+  if (result.code4Count !== undefined && result.code4Count > 0) console.log('Non-zero code4 count: ' + result.code4Count);
   process.exit(1);
 }

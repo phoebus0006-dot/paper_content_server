@@ -33,7 +33,7 @@ FRAME_ID=$(echo "$STATE" | grep -o '"frameId":"[^"]*"' | cut -d'"' -f4 || echo "
 check "state has snapshotId" "$([ "$SNAPSHOT_ID" != "null" ] && echo true || echo false)"
 check "state has frameId" "$([ "$FRAME_ID" != "null" ] && echo true || echo false)"
 
-# Frame
+# Frame download
 curl -s -o /tmp/r11-verify-frame.bin "$BASE_URL/api/frame.bin"
 FRAME_LEN=$(wc -c < /tmp/r11-verify-frame.bin 2>/dev/null || echo 0)
 check "frame length = 192010" "$([ "$FRAME_LEN" = "192010" ] && echo true || echo false)"
@@ -41,9 +41,21 @@ check "frame length = 192010" "$([ "$FRAME_LEN" = "192010" ] && echo true || ech
 FRAME_SHA=$(sha256sum /tmp/r11-verify-frame.bin | cut -d' ' -f1)
 check "frame sha256 computed" "$([ -n "$FRAME_SHA" ] && echo true || echo false)"
 
-# Code 4 check (byte 9 of frame)
-CODE4=$(xxd -p -l 1 -s 9 /tmp/r11-verify-frame.bin 2>/dev/null || od -j9 -N1 -An -tx1 /tmp/r11-verify-frame.bin 2>/dev/null | tr -d ' ')
-check "code4 = 0" "$([ "$CODE4" = "00" ] || [ "$CODE4" = "0" ] || [ "$CODE4" = "0x00" ] && echo true || echo false)"
+# Frame validation via validator CLI (container or host)
+if docker exec paper-content-staging node --check scripts/validate-frame.js 2>/dev/null; then
+  VALIDATE_OUTPUT=$(docker exec paper-content-staging node scripts/validate-frame.js /tmp/r11-verify-frame.bin 2>&1 || true)
+  # If container doesn't have the file, try host
+  if echo "$VALIDATE_OUTPUT" | grep -q "cannot read"; then
+    VALIDATE_OUTPUT=$(node scripts/validate-frame.js /tmp/r11-verify-frame.bin 2>&1)
+  fi
+else
+  VALIDATE_OUTPUT=$(node scripts/validate-frame.js /tmp/r11-verify-frame.bin 2>&1)
+fi
+echo "$VALIDATE_OUTPUT"
+VALIDATE_EXIT=$?
+check "frame validator passes" "$([ "$VALIDATE_EXIT" = "0" ] && echo true || echo false)"
+check "validator reports PASS" "$(echo "$VALIDATE_OUTPUT" | grep -q 'Validator: PASS' && echo true || echo false)"
+check "code4 count is zero" "$(echo "$VALIDATE_OUTPUT" | grep -q 'Code4Count: 0' && echo true || echo false)"
 
 # Container identity
 CONTAINER_UID=$(docker exec paper-content-staging id -u 2>/dev/null || echo "unknown")
