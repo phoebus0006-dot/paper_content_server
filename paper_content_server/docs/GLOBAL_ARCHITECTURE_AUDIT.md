@@ -1,6 +1,6 @@
-# Global Architecture Audit
+AUDITED_CODE_SHA=70539996aa7119c86f2dad79f71b3709f71cf26d
 
-Audited at commit: `70539996aa7119c86f2dad79f71b3709f71cf26d`
+# Global Architecture Audit
 
 ## Composition Root
 - `src/app/bootstrap.js` creates R3 services (SnapshotStore, PinStore, etc.)

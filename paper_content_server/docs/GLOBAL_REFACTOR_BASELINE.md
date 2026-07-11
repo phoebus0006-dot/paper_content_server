@@ -1,6 +1,6 @@
-# Global Refactor Baseline
+AUDITED_CODE_SHA=70539996aa7119c86f2dad79f71b3709f71cf26d
 
-Audited at commit: `70539996aa7119c86f2dad79f71b3709f71cf26d`
+# Global Refactor Baseline
 
 ## R4-R10 Closure Status
 - R4 path safety: isInside() replaces indexOf, lstatSync before realpathSync
