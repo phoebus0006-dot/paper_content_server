@@ -2099,7 +2099,6 @@ function layoutNewsCard(item, opts) {
   const sumMax = Math.floor((opts.cardW - 12) / (opts.summaryFont * 0.56));
   const titleText = fitTextWidth(item.zhTitle, titleMax);
   const sumLines = wrapText(item.zhSummary || '', sumMax);
-  while (sumLines.length < 2) sumLines.push('');
   const badgeH = opts.badgeH || 14;
   const titleY = badgeH + 5 + opts.titleFont; // offset from card top
   const sumStartY = titleY + 5;
