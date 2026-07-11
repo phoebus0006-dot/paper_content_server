@@ -96,6 +96,17 @@ var boot2 = bootstrap({
   handler: serverMod.handleRequest,
 });
 
+// Initialize R3 services for state/frame route tests
+var R3_snapshotModel = require(path.join(ROOT, 'src', 'snapshot', 'snapshot-model'));
+var R3_SnapshotStore = require(path.join(ROOT, 'src', 'snapshot', 'snapshot-store')).SnapshotStore;
+var R3_SnapshotCache = require(path.join(ROOT, 'src', 'snapshot', 'snapshot-cache')).SnapshotCache;
+var R3_PinStore = require(path.join(ROOT, 'src', 'snapshot', 'pin-store')).PinStore;
+var R3_PublicationLock = require(path.join(ROOT, 'src', 'publication', 'publication-lock')).PublicationLock;
+var R3_NoopNotificationPort = require(path.join(ROOT, 'src', 'publication', 'notification-port')).NoopNotificationPort;
+var R3_OperatingModeService = require(path.join(ROOT, 'src', 'publication', 'operating-mode-service')).OperatingModeService;
+var R3_PublicationHistory = require(path.join(ROOT, 'src', 'publication', 'publication-history')).PublicationHistory;
+var R3_PublicationService = require(path.join(ROOT, 'src', 'publication', 'publication-service')).PublicationService;
+
 var testServer = http.createServer(boot2.app.handler);
 var serverActive = false;
 
@@ -115,6 +126,30 @@ function httpGet(url) {
 async function runHttpTest() {
   await new Promise(function(resolve) { testServer.listen(testPort, '127.0.0.1', resolve); });
   serverActive = true;
+
+  // Initialize R3 services so state/frame routes don't return 503
+  var testDataDir = path.join(ROOT, 'test_data_r1_' + Date.now());
+  try { require('fs').mkdirSync(testDataDir, { recursive: true }); } catch(e) {}
+  var r1Store = R3_SnapshotStore(path.join(testDataDir, 'snapshots'), path.join(testDataDir, 'publication'));
+  await r1Store.ensureDirs();
+  var r1Cache = R3_SnapshotCache();
+  var r1Pin = R3_PinStore();
+  var r1Lock = R3_PublicationLock();
+  var r1Notif = R3_NoopNotificationPort();
+  var r1Hist = R3_PublicationHistory(path.join(testDataDir, 'history.json'));
+  serverMod.runtime.snapshotStore = r1Store;
+  serverMod.runtime.snapshotCache = r1Cache;
+  serverMod.runtime.pinStore = r1Pin;
+  serverMod.runtime.publicationLock = r1Lock;
+  serverMod.runtime.publicationService = R3_PublicationService(r1Store, r1Cache, r1Pin, r1Lock, r1Notif, null, r1Hist);
+  serverMod.runtime.publicationHistory = r1Hist;
+  // Publish initial content so state/frame routes have a snapshot
+  try {
+    var initNow = new Date();
+    var initContent = await serverMod.getContentForNow(initNow);
+    var initSnap = R3_snapshotModel.createSnapshot(initContent.snapshot.frameId, initContent.snapshot, initContent.frame, initContent.snapshot.mode);
+    await serverMod.runtime.publicationService.publish(initSnap);
+  } catch(e) { console.log('r1 init publish: ' + e.message); }
 
   try {
     var health = await httpGet('http://127.0.0.1:' + testPort + '/api/health.json');

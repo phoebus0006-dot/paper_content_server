@@ -204,7 +204,6 @@ const runtime = {
   refreshPromise: null,
   lastNewsRefreshAt: 0,
   serverStartTime: Date.now(),
-  pinnedSnapshots: new Map(),
   renderCount: 0,
   nowProvider: null,
   pinNowProvider: null,
@@ -244,7 +243,7 @@ async function main() {
   var publicationDir = path.join(DATA_DIR, 'publication');
   runtime.snapshotStore = R3_SnapshotStore(snapshotsDir, publicationDir, r1Logger);
   runtime.snapshotCache = R3_SnapshotCache();
-  runtime.pinStore = R3_PinStore();
+  runtime.pinStore = R3_PinStore({ nowMs: function() { return runtime.pinNowProvider ? runtime.pinNowProvider() : Date.now(); } });
   runtime.publicationLock = R3_PublicationLock();
   runtime.operatingModeService = R3_OperatingModeService();
   runtime.publicationHistory = R3_PublicationHistory(path.join(DATA_DIR, 'publication', 'history.json'), r1Logger);
@@ -1585,7 +1584,7 @@ async function buildNewsSnapshot(now) {
   // Save last-good-news if we have enough items
   if (final.length >= NEWS_MAX_ITEMS) {
     runtime.lastGoodNews = news;
-    writeJson(LAST_GOOD_NEWS_FILE, news).catch(function(e) { console.log('last-good-news write failed: ' + e.message); });
+    try { await writeJson(LAST_GOOD_NEWS_FILE, news); } catch(e) { console.log('last-good-news write failed: ' + e.message); }
   }
 
   // If no items, fall back to last-good-news or built-in placeholder
@@ -2411,7 +2410,7 @@ async function refreshAhead() {
   }
 }
 
-const PIN_TTL_MS = 30000;
+
 
 function nowForRequest(req) {
   if (runtime.nowProvider) return runtime.nowProvider();
@@ -2431,31 +2430,6 @@ function ensureCachedFrame(photo, now) {
   if (runtime.cachedFrames.has(k)) return runtime.cachedFrames.get(k).frame;
   return null;
 }
-
-function getPinnedSnapshot(client) {
-  const entry = runtime.pinnedSnapshots.get(client);
-  if (!entry) return null;
-  const now = runtime.pinNowProvider ? runtime.pinNowProvider() : Date.now();
-  if (now > entry.expiresAt) {
-    runtime.pinnedSnapshots.delete(client);
-    return null;
-  }
-  return entry;
-}
-
-function setPinnedSnapshot(client, content) {
-  const now = runtime.pinNowProvider ? runtime.pinNowProvider() : Date.now();
-  runtime.pinnedSnapshots.set(client, {
-    frameId: content.snapshot.frameId,
-    mode: content.snapshot.mode,
-    slotKey: content.snapshot.slotKey || content.snapshot.frameId,
-    frame: content.frame,
-    snapshot: content.snapshot,
-    expiresAt: now + PIN_TTL_MS,
-  });
-}
-
-
 
 function readBody(req, limit) {
   return new Promise(function(ok, fail) {
@@ -2520,30 +2494,11 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/state.json') {
       const client = clientKey(req);
+      if (!runtime.publicationService) { failJson(res, 503, 'SNAPSHOT_SERVICE_UNAVAILABLE'); return; }
       var activeSnap = await ensureActiveSnapshotForSchedule(now);
-      if (!activeSnap) {
-        // Fallback to legacy computation when publication service not available
-        const content = await getContentForNow(now);
-        setPinnedSnapshot(client, content);
-        const body = Buffer.from(JSON.stringify({
-          ...content.snapshot,
-          panelIndex,
-          frameUrl: `${req.headers.host ? `http://${req.headers.host}` : ''}/api/frame.bin?panel=${panelIndex}`,
-        }, null, 2));
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
-        res.end(body);
-        return;
-      }
-      var pinEntry = runtime.pinStore.get(client);
-      if (!pinEntry) {
-        runtime.pinStore.pin(client, activeSnap.snapshotId);
-      }
-      // Legacy pin for frame.bin coherence
-      setPinnedSnapshot(client, { snapshot: activeSnap.payload, frame: activeSnap.frame });
+      runtime.pinStore.pin(client, activeSnap.snapshotId);
       const body = Buffer.from(JSON.stringify({
-        ...activeSnap.payload,
-        snapshotId: activeSnap.snapshotId,
-        panelIndex,
+        ...activeSnap.payload, snapshotId: activeSnap.snapshotId, panelIndex,
         frameUrl: `${req.headers.host ? `http://${req.headers.host}` : ''}/api/frame.bin?panel=${panelIndex}`,
       }, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
@@ -2553,50 +2508,25 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/frame.bin') {
       const client = clientKey(req);
-      // Check legacy pinned snapshot first
-      const pinned = getPinnedSnapshot(client);
-      if (pinned) {
-        res.writeHead(200, {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': pinned.frame.length,
-          'X-Frame-Id': pinned.frameId,
-          'X-Frame-Hex-Preview': hexPreview(pinned.frame),
-          'X-Pinned': '1',
-          'X-Frame-Mode': pinned.mode,
-          'X-Frame-Slot': pinned.slotKey,
-        });
-        res.end(pinned.frame);
-        return;
+      if (!runtime.publicationService) { res.writeHead(503, { 'Content-Type': 'text/plain' }); res.end('SNAPSHOT_SERVICE_UNAVAILABLE'); return; }
+      var pinnedId = runtime.pinStore.get(client);
+      var frameSnap = null;
+      if (pinnedId) { frameSnap = runtime.snapshotCache.get(pinnedId); if (!frameSnap) frameSnap = await runtime.publicationService.loadSnapshot(pinnedId); }
+      if (frameSnap) {
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': frameSnap.frame.length,
+          'X-Frame-Id': frameSnap.frameId, 'X-Frame-Hex-Preview': hexPreview(frameSnap.frame), 'X-Pinned': '1',
+          'X-Frame-Mode': frameSnap.mode, 'X-Frame-Slot': frameSnap.payload.slotKey || frameSnap.frameId });
+        res.end(frameSnap.frame); return;
       }
-      // Try active snapshot (read-only — no auto-publish)
-      var activeSnap = null;
-      if (runtime.publicationService) {
-        activeSnap = await runtime.publicationService.getActive();
-      }
+      var activeSnap = await runtime.publicationService.getActive();
+      if (!activeSnap) activeSnap = await ensureActiveSnapshotForSchedule(now);
       if (activeSnap) {
-        res.writeHead(200, {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': activeSnap.frame.length,
-          'X-Frame-Id': activeSnap.frameId,
-          'X-Frame-Hex-Preview': hexPreview(activeSnap.frame),
-          'X-Frame-Mode': activeSnap.mode,
-          'X-Frame-Slot': activeSnap.snapshotId,
-        });
-        res.end(activeSnap.frame);
-        return;
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': activeSnap.frame.length,
+          'X-Frame-Id': activeSnap.frameId, 'X-Frame-Hex-Preview': hexPreview(activeSnap.frame),
+          'X-Frame-Mode': activeSnap.mode, 'X-Frame-Slot': activeSnap.payload.slotKey || activeSnap.frameId });
+        res.end(activeSnap.frame); return;
       }
-      // Fallback to legacy computation
-      const content = await getContentForNow(now);
-      const frame = content.frame;
-      res.writeHead(200, {
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': frame.length,
-        'X-Frame-Id': content.snapshot.frameId,
-        'X-Frame-Hex-Preview': hexPreview(frame),
-        'X-Frame-Mode': content.snapshot.mode,
-        'X-Frame-Slot': content.snapshot.slotKey || content.snapshot.frameId,
-      });
-      res.end(frame);
+      res.writeHead(503, { 'Content-Type': 'text/plain' }); res.end('SNAPSHOT_SERVICE_UNAVAILABLE');
       return;
     }
 
@@ -2822,16 +2752,13 @@ async function handleRequest(req, res) {
 
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/pin-state.json') {
       const client = clientKey(req);
-      const pin = runtime.pinnedSnapshots.get(client) || null;
+      var pinnedId = runtime.pinStore ? runtime.pinStore.get(client) : null;
       const body = Buffer.from(JSON.stringify({
         timestamp: now.toISOString(),
         client,
-        hasPin: pin !== null,
-        frameId: pin ? pin.frameId : null,
-        mode: pin ? pin.mode : null,
-        slotKey: pin ? pin.slotKey : null,
-        ttlRemainingMs: pin ? (pin.expiresAt - (runtime.pinNowProvider ? runtime.pinNowProvider() : Date.now())) : 0,
-        totalPins: runtime.pinnedSnapshots.size,
+        hasPin: pinnedId !== null,
+        snapshotId: pinnedId || null,
+        pinStoreSize: runtime.pinStore ? runtime.pinStore.size() : 0,
         renderCount: runtime.renderCount,
         cachedFrames: runtime.cachedFrames.size,
       }, null, 2));
@@ -3048,16 +2975,23 @@ async function handleRequest(req, res) {
     if (parsed.pathname === '/api/admin/publish/news' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var fid = 'manual-news:' + Date.now().toString(36);
-      fs.writeFileSync(path.join(DATA_DIR, 'admin_override.json'), JSON.stringify({ mode: 'manual-news', createdAt: new Date().toISOString(), expiresAt: null }, null, 2));
-      // R3.9: Publish via PublicationService (handles history via PublicationHistory)
-      if (runtime.publicationService && runtime.snapshotStore) {
-        try {
+      var overrideFile = path.join(DATA_DIR, 'admin_override.json');
+      var oldOverride = null;
+      try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
+      var newOverride = JSON.stringify({ mode: 'manual-news', createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
+      fs.writeFileSync(overrideFile, newOverride);
+      try {
+        if (runtime.publicationService && runtime.snapshotStore) {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
           var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
           await runtime.publicationService.publish(snap);
-        } catch (e) {
-          r1Logger.warn('R3 publish after admin/news failed: ' + e.message);
         }
+      } catch(e) {
+        r1Logger.warn('admin/news publish failed, restoring override: ' + e.message);
+        if (oldOverride) fs.writeFileSync(overrideFile, oldOverride);
+        else try { fs.unlinkSync(overrideFile); } catch(e2) {}
+        failJson(res, 500, 'publish failed: ' + e.message);
+        return;
       }
       respondJson(res, { frameId: fid });
       return;
@@ -3072,16 +3006,23 @@ async function handleRequest(req, res) {
       var foundPhoto = imgIdx.some(function(e) { return e.id === photoId; });
       if (!foundPhoto && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
       var fid2 = 'manual-photo:' + Date.now().toString(36);
-      fs.writeFileSync(path.join(DATA_DIR, 'admin_override.json'), JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null }, null, 2));
-      // R3.9: Publish via PublicationService (handles history via PublicationHistory)
-      if (runtime.publicationService && runtime.snapshotStore) {
-        try {
+      var overrideFile = path.join(DATA_DIR, 'admin_override.json');
+      var oldOverride = null;
+      try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
+      var newOverride = JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
+      fs.writeFileSync(overrideFile, newOverride);
+      try {
+        if (runtime.publicationService && runtime.snapshotStore) {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
           var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
           await runtime.publicationService.publish(snap);
-        } catch (e) {
-          r1Logger.warn('R3 publish after admin/photo failed: ' + e.message);
         }
+      } catch(e) {
+        r1Logger.warn('admin/photo publish failed, restoring override: ' + e.message);
+        if (oldOverride) fs.writeFileSync(overrideFile, oldOverride);
+        else try { fs.unlinkSync(overrideFile); } catch(e2) {}
+        failJson(res, 500, 'publish failed: ' + e.message);
+        return;
       }
       respondJson(res, { frameId: fid2 });
       return;
@@ -3207,12 +3148,14 @@ if (require.main === module) {
 module.exports = {
   handleRequest: handleRequest,
   main: main,
+  runtime: runtime,
   PALETTE: epaperPalette.PALETTE,
   extractTag,
   extractItems,
   parseFeedXml,
   parseJsonFeed,
   buildNewsSnapshot,
+  getContentForNow,
   loadAppConfig,
   formatDateTime,
   formatDateTimeWithSeconds,

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// R3.1b: Snapshot store — persist, load, activate, list using R1 infra
+// R3.1b: Snapshot store — persist, load, activate, list, integrity validation
 var path = require('path');
 var fs = require('fs');
 var os = require('os');
@@ -9,6 +9,13 @@ function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++
 
 var snapshotModel = require(path.join(ROOT, 'src', 'snapshot', 'snapshot-model'));
 var SnapshotStore = require(path.join(ROOT, 'src', 'snapshot', 'snapshot-store')).SnapshotStore;
+var SnapshotIntegrityError = require(path.join(ROOT, 'src', 'snapshot', 'snapshot-store')).SnapshotIntegrityError;
+
+function makeFrame(size) {
+  var buf = Buffer.alloc(size, 0xAA);
+  buf.write('EPF1', 0, 'ascii');
+  return buf;
+}
 
 var tmpDir = path.join(os.tmpdir(), 'r3_snap_test_' + Date.now());
 var snapDir = path.join(tmpDir, 'snapshots');
@@ -23,8 +30,8 @@ async function run() {
   await store.ensureDirs();
   t('DIR_CREATED', fs.existsSync(snapDir) && fs.existsSync(pubDir), '');
 
-  // 2. Save a news snapshot
-  var frame = Buffer.alloc(16, 0xAA);
+  // 2. Save a news snapshot (16-byte frame with EPF1 magic)
+  var frame = makeFrame(16);
   var frameId = 'news:2026-07-11:test';
   var payload = { mode: 'news', title: 'R3 Test News', frameId: frameId };
   var snap = snapshotModel.createSnapshot(frameId, payload, frame, 'news');
@@ -35,15 +42,18 @@ async function run() {
   t('META_FILE', fs.existsSync(path.join(snapDir, snap.snapshotId + '.json')), '');
   t('FRAME_FILE', fs.existsSync(path.join(snapDir, snap.snapshotId + '.bin')), '');
 
-  // 4. Load snapshot back
+  // 4. Load snapshot back with integrity validation
   var loaded = await store.load(snap.snapshotId);
   t('LOAD_SNAPSHOTID', loaded.snapshotId === snap.snapshotId, '');
   t('LOAD_FRAMEID', loaded.frameId === frameId, '');
-  t('LOAD_FRAME_CONTENT', loaded.frame[0] === 0xAA && loaded.frame.length === 16, '');
+  t('LOAD_FRAME_CONTENT', loaded.frame[0] === 0x45 && loaded.frame.length === 16, '');
   t('LOAD_PAYLOAD_TITLE', loaded.payload.title === 'R3 Test News', '');
   t('LOAD_MODE', loaded.mode === 'news', '');
   t('LOAD_FROZEN', Object.isFrozen(loaded), '');
-  t('LOAD_SCHEMA_VERSION', loaded.schemaVersion === 1, '');
+  t('LOAD_FRAME_SHA256', loaded.frameSha256 === snap.frameSha256, '');
+  t('LOAD_FRAME_LENGTH', loaded.frameLength === 16, '');
+  t('LOAD_CONTENT_HASH', loaded.contentHash === snap.contentHash, '');
+  t('LOAD_SCHEMA_VERSION', loaded.schemaVersion === 2, '');
 
   // 5. Load non-existent snapshot
   var missing = await store.load('nonexistent');
@@ -54,7 +64,9 @@ async function run() {
   var activeFile = path.join(pubDir, 'active-snapshot.json');
   t('ACTIVE_FILE_EXISTS', fs.existsSync(activeFile), '');
   var activeData = JSON.parse(fs.readFileSync(activeFile, 'utf8'));
-  t('ACTIVE_CONTENT', activeData.activeSnapshotId === snap.snapshotId, '');
+  t('ACTIVE_SNAPSHOT_ID', activeData.activeSnapshotId === snap.snapshotId, '');
+  t('ACTIVE_FRAME_SHA256', activeData.frameSha256 === snap.frameSha256, '');
+  t('ACTIVE_FRAME_LENGTH', activeData.frameLength === 16, '');
   t('ACTIVE_SCHEMA_VERSION', activeData.schemaVersion === 1, '');
   t('ACTIVE_UPDATED_AT', /^\d{4}-\d{2}-\d{2}T/.test(activeData.updatedAt), '');
 
@@ -68,16 +80,36 @@ async function run() {
   t('READ_ACTIVE_EMPTY', noActive === null, '');
 
   // 9. Save photo snapshot
-  var photoFrame = Buffer.alloc(32, 0xBB);
+  var photoFrame = makeFrame(32);
   var photoSnap = snapshotModel.createSnapshot('photo:test:img', { mode: 'photo', title: 'Sunset' }, photoFrame, 'photo');
   await store.save(photoSnap);
   var loadedPhoto = await store.load(photoSnap.snapshotId);
-  t('SAVE_LOAD_PHOTO', loadedPhoto.frame[0] === 0xBB && loadedPhoto.mode === 'photo' && loadedPhoto.payload.title === 'Sunset', '');
+  t('SAVE_LOAD_PHOTO', loadedPhoto.frame[0] === 0x45 && loadedPhoto.mode === 'photo' && loadedPhoto.payload.title === 'Sunset', '');
 
   // 10. List snapshots (should return newest first)
   var ids = await store.listSnapshots();
   t('LIST_CONTAINS_BOTH', ids.indexOf(snap.snapshotId) !== -1 && ids.indexOf(photoSnap.snapshotId) !== -1, '');
   t('LIST_NEWEST_FIRST', ids[0] === photoSnap.snapshotId, '');
+
+  // 11. Load corrupt metadata (wrong SHA256)
+  var metaPath = path.join(snapDir, snap.snapshotId + '.json');
+  var meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  meta.frameSha256 = '0000000000000000000000000000000000000000000000000000000000000000';
+  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
+  try {
+    await store.load(snap.snapshotId);
+    t('CORRUPT_SHA256', false, 'should have thrown');
+  } catch(e) {
+    t('CORRUPT_SHA256', e.code === 'SNAPSHOT_INTEGRITY_ERROR', e.message);
+  }
+
+  // 12. Activate non-existent snapshot
+  try {
+    await store.activate('nonexistent');
+    t('ACTIVATE_NONEXISTENT', false, 'should have thrown');
+  } catch(e) {
+    t('ACTIVATE_NONEXISTENT', true, e.message);
+  }
 
   // Cleanup
   fs.rmdirSync(tmpDir, { recursive: true });

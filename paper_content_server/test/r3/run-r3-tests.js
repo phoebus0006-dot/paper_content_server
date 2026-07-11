@@ -14,6 +14,14 @@ var tests = [
   'test/r3/operating-mode-service-test.js',
   'test/r3/publication-history-test.js',
   'test/r3/publication-service-test.js',
+  'test/r3/publication-atomicity-test.js',
+  'test/r3/publication-concurrency-test.js',
+  'test/r3/state-frame-snapshot-test.js',
+  'test/r3/restart-recovery-test.js',
+  'test/r3/admin-publication-integration-test.js',
+  'test/r3/rollback-integration-test.js',
+  'test/r3/snapshot-corruption-test.js',
+  'test/r3/dependency-boundary-test.js',
 ];
 
 var overallFail = false;
