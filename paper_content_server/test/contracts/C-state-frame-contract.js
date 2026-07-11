@@ -18,6 +18,7 @@ async function main(){
   try{
     var st=await f('/api/state.json');t('STATE_200',st.s===200,'s='+st.s);
     var sj=JSON.parse(st.b);var fid=sj.frameId||'';t('STATE_HAS_FRAMEID',!!fid,'fid='+fid.slice(0,40));
+    var fsha=sj.frameSha256||'';t('STATE_HAS_FRAMESHA256',!!fsha&&fsha.length===64,'sha='+fsha.slice(0,16));
     var fb=await f('/api/frame.bin');t('FRAME_200',fb.s===200,'s='+fb.s);t('FRAME_192010',fb.b.length===192010,'len='+fb.b.length);
     var xid=fb.h['x-frame-id']||'';t('HAS_X_FRAMEID',!!xid,'xid='+xid.slice(0,40));
     t('STATE_FRAME_MATCH',xid===fid,xid.slice(0,20)+' vs '+fid.slice(0,20));
