@@ -23,8 +23,12 @@ if (envSha && envSha !== 'unknown') {
   } catch(e) { manifest.gitSha = 'unknown'; }
 
   try {
-    var tree = cp.execSync('git rev-parse HEAD:',
-      { cwd: ROOT, encoding: 'utf8' }).trim();
+    // On Windows, the caret ^ is an escape character, so use double caret
+    var treeCmd = process.platform === 'win32'
+      ? 'git rev-parse HEAD^^{tree}'
+      : 'git rev-parse HEAD^{tree}';
+    var tree = cp.execSync(treeCmd,
+      { cwd: ROOT, encoding: 'utf8', shell: true }).trim();
     manifest.gitTree = tree;
   } catch(e) { manifest.gitTree = 'unknown'; }
 
@@ -36,6 +40,11 @@ if (envSha && envSha !== 'unknown') {
 
 if (!manifest.gitSha || manifest.gitSha === 'unknown') {
   console.error('BUILD_GIT_SHA is missing or unknown');
+  process.exit(1);
+}
+
+if (!manifest.gitTree || manifest.gitTree === 'unknown') {
+  console.error('BUILD_GIT_TREE is missing or unknown');
   process.exit(1);
 }
 

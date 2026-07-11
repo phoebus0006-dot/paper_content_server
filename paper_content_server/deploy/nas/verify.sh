@@ -41,19 +41,15 @@ check "frame length = 192010" "$([ "$FRAME_LEN" = "192010" ] && echo true || ech
 FRAME_SHA=$(sha256sum /tmp/r11-verify-frame.bin | cut -d' ' -f1)
 check "frame sha256 computed" "$([ -n "$FRAME_SHA" ] && echo true || echo false)"
 
-# Frame validation via validator CLI (container or host)
-if docker exec paper-content-staging node --check scripts/validate-frame.js 2>/dev/null; then
-  VALIDATE_OUTPUT=$(docker exec paper-content-staging node scripts/validate-frame.js /tmp/r11-verify-frame.bin 2>&1 || true)
-  # If container doesn't have the file, try host
-  if echo "$VALIDATE_OUTPUT" | grep -q "cannot read"; then
-    VALIDATE_OUTPUT=$(node scripts/validate-frame.js /tmp/r11-verify-frame.bin 2>&1)
-  fi
-else
-  VALIDATE_OUTPUT=$(node scripts/validate-frame.js /tmp/r11-verify-frame.bin 2>&1)
-fi
-echo "$VALIDATE_OUTPUT"
+# Frame validation via host Node.js validator (option A)
+set +e
+VALIDATE_OUTPUT=$(node scripts/validate-frame.js /tmp/r11-verify-frame.bin 2>&1)
 VALIDATE_EXIT=$?
-check "frame validator passes" "$([ "$VALIDATE_EXIT" = "0" ] && echo true || echo false)"
+set -e
+
+echo "$VALIDATE_OUTPUT"
+
+check "frame validator passes" "$([ "$VALIDATE_EXIT" -eq 0 ] && echo true || echo false)"
 check "validator reports PASS" "$(echo "$VALIDATE_OUTPUT" | grep -q 'Validator: PASS' && echo true || echo false)"
 check "code4 count is zero" "$(echo "$VALIDATE_OUTPUT" | grep -q 'Code4Count: 0' && echo true || echo false)"
 
