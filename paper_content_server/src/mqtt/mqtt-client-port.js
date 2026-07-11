@@ -48,8 +48,9 @@ function createFakeMqttClient() {
   };
 }
 
+// createMqttClientPort — only creates real client, no fake fallback in production
 function createMqttClientPort(config, logger) {
   if (!config || !config.enabled) throw new Error('MQTT disabled');
-  try { return createRealMqttClient(config, logger); } catch(e) { return createFakeMqttClient(); }
+  return createRealMqttClient(config, logger);
 }
 module.exports = { createMqttClientPort: createMqttClientPort, createFakeMqttClient: createFakeMqttClient, createRealMqttClient: createRealMqttClient };

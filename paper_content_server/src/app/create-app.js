@@ -1,6 +1,6 @@
 // create-app.js — Application factory
 // Does NOT auto-start server. Does NOT process.exit.
-// Returns { handler, services } for testability.
+// Returns { app, services, handler } for testability.
 
 function createApp(dependencies) {
   dependencies = dependencies || {};
@@ -16,6 +16,13 @@ function createApp(dependencies) {
     logger: logger,
     stores: stores,
     httpClient: httpClient,
+    newsPipeline: null,
+    publicationService: null,
+    snapshotStore: null,
+    adminQueryService: null,
+    notificationPort: null,
+    mqttClient: null,
+    renderShadow: null,
   };
 
   var realHandler = dependencies.handler || dependencies.legacyHandler;
@@ -30,6 +37,7 @@ function createApp(dependencies) {
   };
 
   return {
+    app: { handler: handler, services: services },
     handler: handler,
     services: services,
   };

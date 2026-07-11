@@ -6,11 +6,20 @@
 var path = require('path');
 var http = require('http');
 var createApp = require('./create-app').createApp;
+var composeServices = require('./compose-services').composeServices;
 var loadConfig = require('../config/load-config').loadConfig;
 var SystemClock = require('../infra/clock').SystemClock;
 var ConsoleLogger = require('../infra/logger').ConsoleLogger;
 var JsonStore = require('../infra/json-store').JsonStore;
 var createHttpClient = require('../infra/http-client').createHttpClient;
+
+var R3_SnapshotStore = require('../snapshot/snapshot-store').SnapshotStore;
+var R3_SnapshotCache = require('../snapshot/snapshot-cache').SnapshotCache;
+var R3_PinStore = require('../snapshot/pin-store').PinStore;
+var R3_PublicationLock = require('../publication/publication-lock').PublicationLock;
+var R3_OperatingModeService = require('../publication/operating-mode-service').OperatingModeService;
+var R3_PublicationHistory = require('../publication/publication-history').PublicationHistory;
+var R3_NoopNotificationPort = require('../publication/notification-port').NoopNotificationPort;
 
 function BootstrapError(message, config) {
   this.message = message;
@@ -42,6 +51,31 @@ function bootstrap(overrides) {
   if (!stores.imageIndex) stores.imageIndex = JsonStore(config.paths.imageIndexFile);
   if (!stores.lastGoodNews) stores.lastGoodNews = JsonStore(config.paths.lastGoodNewsFile);
 
+  var snapshotStore = R3_SnapshotStore(
+    path.join(config.paths.dataDir, 'snapshots'),
+    path.join(config.paths.dataDir, 'publication'),
+    logger
+  );
+  var snapshotCache = R3_SnapshotCache();
+  var pinStore = R3_PinStore({ nowMs: clock.nowMs });
+  var publicationLock = R3_PublicationLock();
+  var operatingModeService = R3_OperatingModeService();
+  var publicationHistory = R3_PublicationHistory(
+    path.join(config.paths.dataDir, 'publication', 'history.json'),
+    logger
+  );
+  var notificationPort = R3_NoopNotificationPort();
+
+  var services = composeServices({
+    config: config, clock: clock, logger: logger,
+    stores: stores, httpClient: httpClient,
+    snapshotStore: snapshotStore, snapshotCache: snapshotCache,
+    pinStore: pinStore, publicationLock: publicationLock,
+    operatingModeService: operatingModeService,
+    publicationHistory: publicationHistory,
+    notificationPort: notificationPort,
+  });
+
   var app = createApp({
     handler: overrides.handler,
     config: config,
@@ -59,11 +93,17 @@ function bootstrap(overrides) {
     });
   }
 
+  function shutdown() {
+    return Promise.resolve();
+  }
+
   return {
     app: app,
     config: config,
     server: server,
-    deps: { clock: clock, logger: logger, stores: stores, httpClient: httpClient },
+    services: services,
+    shutdown: shutdown,
+    deps: { clock: clock, logger: logger, stores: stores, httpClient: httpClient, snapshotStore: snapshotStore, snapshotCache: snapshotCache, pinStore: pinStore, publicationLock: publicationLock, operatingModeService: operatingModeService, publicationHistory: publicationHistory, notificationPort: notificationPort },
   };
 }
 
