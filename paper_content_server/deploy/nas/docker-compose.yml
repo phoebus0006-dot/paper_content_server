@@ -1,0 +1,19 @@
+# R11.2 Staging deployment — immutable tag, no :latest
+# Replace IMAGE_TAG with the actual 12-char commit SHA before deploy.
+services:
+  paper-frame-server:
+    image: paper-content-server:${IMAGE_TAG:-__REPLACE_ME__}
+    container_name: paper-content-staging
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - DELETE_PIPELINE_ENABLED=false
+      - MQTT_ENABLED=false
+      - LEARNING_LIBRARY_ENABLED=false
+      - CUSTOM_LIBRARY_ENABLED=false
+      - R9_ADVANCED_RENDER_ENABLED=false
+      - R9_RENDER_SHADOW_ENABLED=false
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
