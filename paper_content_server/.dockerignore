@@ -1,0 +1,8 @@
+.env
+data/
+token*
+.git/
+node_modules/
+*.md
+.DS_Store
+test/
