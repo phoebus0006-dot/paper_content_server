@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <mbedtls/sha256.h>
 
 #include <esp_heap_caps.h>
 
@@ -14,6 +15,7 @@ struct StateInfo {
   String frameId;
   String nextSwitchAt;
   String title;
+  String frameSha256;
 };
 
 static String lastFrameId;
@@ -106,6 +108,37 @@ String extractJsonString(const String &json, const char *key) {
   return json.substring(start + 1, end);
 }
 
+String sha256Hex(const uint8_t *data, size_t len) {
+  uint8_t digest[32];
+  char hex[65];
+  mbedtls_sha256_context ctx;
+  mbedtls_sha256_init(&ctx);
+  mbedtls_sha256_starts_ret(&ctx, 0);
+  mbedtls_sha256_update_ret(&ctx, data, len);
+  mbedtls_sha256_finish_ret(&ctx, digest);
+  mbedtls_sha256_free(&ctx);
+  for (int i = 0; i < 32; i++) {
+    sprintf(hex + (i * 2), "%02x", digest[i]);
+  }
+  hex[64] = '\0';
+  return String(hex);
+}
+
+bool isValidShaHex(const String &sha) {
+  if (sha.length() != 64) return false;
+  for (unsigned int i = 0; i < 64; i++) {
+    char c = sha.charAt(i);
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
+  }
+  return true;
+}
+
+String normalizeShaHex(const String &sha) {
+  String result = sha;
+  result.toLowerCase();
+  return result;
+}
+
 bool fetchState(StateInfo &state) {
   HTTPClient http;
   http.setTimeout(HTTP_TIMEOUT_MS);
@@ -130,9 +163,11 @@ bool fetchState(StateInfo &state) {
   state.frameId = extractJsonString(body, "frameId");
   state.nextSwitchAt = extractJsonString(body, "nextSwitchLocal");
   state.title = extractJsonString(body, "title");
+  state.frameSha256 = extractJsonString(body, "frameSha256");
 
-  Serial.printf("state mode=%s frameId=%s next=%s title=%s\n",
-                state.mode.c_str(), state.frameId.c_str(), state.nextSwitchAt.c_str(), state.title.c_str());
+  Serial.printf("state mode=%s frameId=%s next=%s title=%s sha256=%s\n",
+                state.mode.c_str(), state.frameId.c_str(), state.nextSwitchAt.c_str(), state.title.c_str(),
+                state.frameSha256.length() > 0 ? state.frameSha256.substring(0, 16).c_str() : "(none)");
   return !state.frameId.isEmpty();
 }
 
@@ -157,7 +192,7 @@ bool displayFrameBuffer(const uint8_t *payload, size_t payloadLen) {
   return true;
 }
 
-bool fetchFrameAndDisplay(const StateInfo &state) {
+bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
   if (state.frameId.isEmpty()) return false;
   if (state.frameId == lastFrameId) {
     Serial.printf("skip refresh, frameId unchanged: %s\n", state.frameId.c_str());
@@ -183,8 +218,6 @@ bool fetchFrameAndDisplay(const StateInfo &state) {
     return false;
   }
 
-  // Verify X-Frame-Id matches state.frameId to ensure consistency
-  // Reject if header missing or mismatched — do not display, do not update lastFrameId
   String serverFrameId = http.header("X-Frame-Id");
   if (serverFrameId.isEmpty() || serverFrameId != state.frameId) {
     Serial.printf("frame X-Frame-Id reject: %s vs expected %s\n",
@@ -254,6 +287,21 @@ bool fetchFrameAndDisplay(const StateInfo &state) {
 
   http.end();
 
+  // SHA256 verification: compute hash of frame payload and compare
+  if (expectedSha.length() == 64) {
+    Serial.printf("SHA256: computing hash of %ld bytes\n", payloadLen);
+    String computedSha = sha256Hex(frame, (size_t)payloadLen);
+    if (computedSha != expectedSha) {
+      Serial.printf("FRAME_SHA256_MISMATCH: computed=%s expected=%s\n",
+                    computedSha.c_str(), expectedSha.c_str());
+      free(frame);
+      return false;
+    }
+    Serial.printf("SHA256 match: %s\n", computedSha.substring(0, 16).c_str());
+  } else {
+    Serial.println("SHA256: no expected hash, skipping verification");
+  }
+
   Serial.printf("frame downloaded bytes=%ld\n", payloadLen);
   bool ok = displayFrameBuffer(frame, payloadLen);
   free(frame);
@@ -270,8 +318,15 @@ void periodicPoll() {
   if (!connectWiFi()) return;
 
   StateInfo state;
-  if (fetchState(state) && fetchFrameAndDisplay(state)) {
-    // clear pending on successful poll refresh
+  if (!fetchState(state)) return;
+
+  // HTTP polling: use frameSha256 from state.json for verification
+  String expectedSha;
+  if (state.frameSha256.length() == 64 && isValidShaHex(state.frameSha256)) {
+    expectedSha = normalizeShaHex(state.frameSha256);
+  }
+
+  if (fetchFrameAndDisplay(state, expectedSha)) {
     publicationPending = false;
     pendingFrameId = String();
   }
@@ -288,17 +343,20 @@ void handleMqttNotification() {
   if (!fetchState(state)) { return; }
 
   if (state.frameId != pendingFrameId) {
-    // MQTT notification announced a different frameId than current server state
-    // This can happen if multiple notifications arrive; still refresh based on server state
     Serial.printf("MQTT pending frameId=%s != server frameId=%s, using server\n",
                   pendingFrameId.c_str(), state.frameId.c_str());
   }
 
-  if (fetchFrameAndDisplay(state)) {
+  // Use pendingFrameSha256 from MQTT notification for verification
+  if (fetchFrameAndDisplay(state, pendingFrameSha256)) {
     publicationPending = false;
     pendingFrameId = String();
-    // reset poll timer so next poll is at full interval from now
     lastPollMs = millis();
+  } else {
+    // On failure (including SHA mismatch), clear pending flag to avoid tight retry
+    // Next notification or periodic poll will retry
+    publicationPending = false;
+    pendingFrameId = String();
   }
 }
 
@@ -320,14 +378,12 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   // Parse JSON manually to avoid dynamic allocation
   String jsonStr = String((char *)payload, length);
 
-  // Extract schemaVersion
   String sv = extractJsonString(jsonStr, "schemaVersion");
   if (sv != "1") {
     Serial.printf("MQTT ignoring unknown schemaVersion: %s\n", sv.c_str());
     return;
   }
 
-  // Extract deviceId
   String msgDeviceId = extractJsonString(jsonStr, "deviceId");
   if (msgDeviceId.isEmpty() || msgDeviceId != String(MQTT_DEVICE_ID)) {
     Serial.printf("MQTT ignoring deviceId mismatch: %s\n", msgDeviceId.c_str());
@@ -340,26 +396,35 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     return;
   }
 
-  // Deduplicate in callback: if same frameId already pending or displayed, skip
   if (msgFrameId == pendingFrameId || msgFrameId == lastFrameId) {
     Serial.printf("MQTT ignoring duplicate frameId: %s\n", msgFrameId.c_str());
     return;
   }
 
-  // Set pending flag — main loop will handle the HTTP fetch
+  // Validate frameSha256 format before accepting notification
+  String msgSha = extractJsonString(jsonStr, "frameSha256");
+  if (msgSha.isEmpty() || !isValidShaHex(msgSha)) {
+    Serial.printf("MQTT ignoring invalid frameSha256: %s\n", msgSha.c_str());
+    return;
+  }
+
+  // Normalize to lowercase
+  msgSha = normalizeShaHex(msgSha);
+
+  // Set pending flag — main loop will handle the HTTP fetch and SHA verification
   pendingFrameId = msgFrameId;
   pendingSnapshotId = extractJsonString(jsonStr, "snapshotId");
-  pendingFrameSha256 = extractJsonString(jsonStr, "frameSha256");
+  pendingFrameSha256 = msgSha;
   publicationPending = true;
 
-  Serial.printf("MQTT notification received: frameId=%s\n", pendingFrameId.c_str());
+  Serial.printf("MQTT notification received: frameId=%s sha256=%s\n",
+                pendingFrameId.c_str(), pendingFrameSha256.substring(0, 16).c_str());
 }
 
 void connectMqtt() {
   if (!mqttEnabled) return;
   if (mqttClient.connected()) return;
 
-  // Throttle reconnect attempts
   if (millis() < mqttReconnectMs) return;
 
   String clientId = String(MQTT_DEVICE_ID) + "_" + String(random(0xFFFF), HEX);
@@ -384,7 +449,8 @@ void refreshOnce() {
 
   StateInfo state;
   if (!fetchState(state)) return;
-  if (!fetchFrameAndDisplay(state)) return;
+  // Cold boot: no expected SHA available, EPF1 validation only
+  if (!fetchFrameAndDisplay(state, String())) return;
 }
 
 void setup() {
@@ -406,7 +472,6 @@ void setup() {
 }
 
 void loop() {
-  // MQTT loop (non-blocking if client not connected)
   if (mqttEnabled) {
     if (!mqttClient.connected()) {
       connectMqtt();
@@ -416,12 +481,10 @@ void loop() {
     }
   }
 
-  // Handle MQTT-triggered refresh (no delay, lightweight check)
   if (publicationPending) {
     handleMqttNotification();
   }
 
-  // Periodic HTTP polling (60s interval, preserved even with MQTT)
   periodicPoll();
 
   delay(50);

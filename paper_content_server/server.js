@@ -2523,6 +2523,8 @@ async function handleRequest(req, res) {
       const body = Buffer.from(JSON.stringify({
         ...activeSnap.payload, snapshotId: activeSnap.snapshotId, panelIndex,
         frameUrl: `${req.headers.host ? `http://${req.headers.host}` : ''}/api/frame.bin?panel=${panelIndex}`,
+        frameSha256: activeSnap.frameSha256,
+        frameLength: activeSnap.frameLength,
       }, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
       res.end(body);
