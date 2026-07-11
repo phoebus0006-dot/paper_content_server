@@ -1,13 +1,17 @@
-// learning-deduplicator.js — Dedup by sha256 or sourceUrl
-function createDeduplicator(assetRepository) {
-  var seen = {};
+// learning-deduplicator.js — Dedup with separate isDuplicate (read-only) and commit (write)
+function createDeduplicator() {
+  var committed = {};
   function isDuplicate(candidate) {
-    if (candidate.sha256 && seen[candidate.sha256]) return true;
-    if (candidate.sourceUrl && seen[candidate.sourceUrl]) return true;
-    if (candidate.sha256) seen[candidate.sha256] = true;
-    if (candidate.sourceUrl) seen[candidate.sourceUrl] = true;
+    if (!candidate) return false;
+    if (candidate.sha256 && committed[candidate.sha256]) return true;
+    if (candidate.sourceUrl && committed[candidate.sourceUrl]) return true;
     return false;
   }
-  return { isDuplicate: isDuplicate };
+  function commit(candidate) {
+    if (!candidate) return;
+    if (candidate.sha256) committed[candidate.sha256] = true;
+    if (candidate.sourceUrl) committed[candidate.sourceUrl] = true;
+  }
+  return { isDuplicate: isDuplicate, commit: commit };
 }
 module.exports = { createDeduplicator: createDeduplicator };

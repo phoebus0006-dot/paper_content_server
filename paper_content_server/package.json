@@ -32,7 +32,8 @@
     "r6:test": "node test/r6/run-r6-tests.js",
     "r7:test": "node test/r7/run-r7-tests.js",
     "r8:test": "node test/r8/run-r8-tests.js",
-    "r9:test": "node test/r9/run-r9-tests.js"
+    "r9:test": "node test/r9/run-r9-tests.js",
+    "r10:test": "node test/r10/run-r10-tests.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
