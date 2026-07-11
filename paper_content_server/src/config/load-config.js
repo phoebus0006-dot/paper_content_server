@@ -2,26 +2,25 @@
 // All process.env reads go through this module.
 
 var path = require('path');
+var fs = require('fs');
 
-function loadDotEnv(filePath) {
+function loadDotEnvFile(filePath) {
   try {
-    var fs = require('fs');
-    var text = fs.readFileSync(filePath, 'utf8');
+    var text = fs.readFileSync(filePath, 'utf8'), result = {};
     text.split('\n').forEach(function(line) {
       var trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) return;
       var eq = trimmed.indexOf('=');
       if (eq < 0) return;
-      var key = trimmed.slice(0, eq).trim();
-      var value = trimmed.slice(eq + 1).trim();
-      if (!process.env[key]) process.env[key] = value;
+      result[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
     });
-  } catch(e) { /* .env is optional */ }
+    return result;
+  } catch(e) { return {}; }
 }
 
 function readJSONConfig(configPath) {
   try {
-    return JSON.parse(require('fs').readFileSync(configPath, 'utf8'));
+    return JSON.parse(fs.readFileSync(configPath, 'utf8'));
   } catch(e) { return {}; }
 }
 
@@ -33,12 +32,26 @@ function resolvePath(configured, defaultPath, cwd) {
 
 function loadConfig(opts) {
   opts = opts || {};
-  var env = opts.env || process.env;
   var cwd = opts.cwd || process.cwd();
 
-  // .env file
-  var dotenvPath = env.CONFIG_DOTENV_PATH || path.join(cwd, '.env');
-  loadDotEnv(dotenvPath);
+  // Build effective env
+  var env;
+
+  if (!opts.env) {
+    // Bootstrap path: start from process.env, load .env into process.env
+    env = {};
+    Object.keys(process.env).forEach(function(k) { env[k] = process.env[k]; });
+    var dotenvPath = env.CONFIG_DOTENV_PATH || path.join(cwd, '.env');
+    var dotenv = loadDotEnvFile(dotenvPath);
+    Object.keys(dotenv).forEach(function(k) {
+      if (!process.env[k]) process.env[k] = dotenv[k];
+      if (!env[k]) env[k] = dotenv[k];
+    });
+  } else {
+    // Test/custom path: use ONLY opts.env, do NOT load .env, do NOT touch process.env
+    env = {};
+    Object.keys(opts.env).forEach(function(k) { env[k] = opts.env[k]; });
+  }
 
   // config.json
   var configPath = env.CONFIG_FILE || path.join(cwd, 'config.json');

@@ -2,36 +2,29 @@
 // Does NOT auto-start server. Does NOT process.exit.
 // Returns { handler, services } for testability.
 
-var http = require('http');
-
 function createApp(dependencies) {
+  dependencies = dependencies || {};
   var config = dependencies.config || {};
   var clock = dependencies.clock;
   var logger = dependencies.logger || console;
   var stores = dependencies.stores || {};
   var httpClient = dependencies.httpClient;
-  var translator = dependencies.translator;
 
-  // Placeholder for future injected services
   var services = {
     config: config,
     clock: clock,
     logger: logger,
     stores: stores,
     httpClient: httpClient,
-    translator: translator,
   };
 
-  // Request handler — delegates to the actual server.js handleRequest
-  // In R1, this wraps the existing server rather than rewriting it.
-  // Full migration happens in later phases.
+  var realHandler = dependencies.handler || dependencies.legacyHandler;
+
   var handler = function(req, res) {
-    // Legacy path: server.js owns the full handler
-    // In R1, we just pass through to the existing server
-    if (typeof dependencies.legacyHandler === 'function') {
-      dependencies.legacyHandler(req, res);
+    if (typeof realHandler === 'function') {
+      realHandler(req, res);
     } else {
-      res.writeHead(500);
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('createApp: no handler configured');
     }
   };

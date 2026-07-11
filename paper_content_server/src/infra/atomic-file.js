@@ -15,9 +15,7 @@ function writeFileAtomic(filePath, data, options) {
   var dir = path.dirname(filePath);
   var tempPath = path.join(dir, path.basename(filePath) + '.tmp.' + process.pid + '.' + randomToken());
 
-  return fsp.mkdir(dir, { recursive: true }).then(function() {
-    return fsp.writeFile(tempPath, data, options.encoding || 'utf8');
-  }).then(function() {
+  return fsp.writeFile(tempPath, data, options.encoding || 'utf8').then(function() {
     return fsp.rename(tempPath, filePath);
   }).catch(function(err) {
     // Attempt cleanup of temp file on failure

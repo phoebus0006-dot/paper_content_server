@@ -8,6 +8,20 @@ const { URL } = require('url');
 
 const sharp = require('sharp');
 
+// R1 bridge — legacy adapter wiring
+var R1_loadConfig = require('./src/config/load-config').loadConfig;
+var R1_SystemClock = require('./src/infra/clock').SystemClock;
+var R1_ConsoleLogger = require('./src/infra/logger').ConsoleLogger;
+var R1_JsonStore = require('./src/infra/json-store').JsonStore;
+var R1_bootstrap = require('./src/app/bootstrap').bootstrap;
+var R1_createApp = require('./src/app/create-app').createApp;
+var R1_writeFileAtomic = require('./src/infra/atomic-file').writeFileAtomic;
+var R1_createHttpClient = require('./src/infra/http-client').createHttpClient;
+
+var r1Clock = R1_SystemClock();
+var r1Logger = R1_ConsoleLogger();
+var r1HttpClient = R1_createHttpClient(20000);
+
 const ROOT_DIR = __dirname;
 const DEFAULT_PORT = 8787;
 const DEFAULT_PANEL = 49;
@@ -191,45 +205,53 @@ const runtime = {
 };
 
 async function main() {
+  r1Logger.info('Starting NewsPhoto content server via R1 bootstrap');
+  var boot = R1_bootstrap({
+    handler: handleRequest,
+    env: process.env,
+    cwd: ROOT_DIR,
+    listen: false,
+  });
+
+  // Ensure data directories exist
   await ensureDir(DATA_DIR);
   await ensureDir(IMAGES_DIR);
-  await ensureDir(RAW_IMAGES_DIR);
-  await ensureDir(PROCESSED_IMAGES_DIR);
-  await ensureDir(IMPORT_IMAGES_DIR);
-  runtime.feeds = await loadFeeds();
+
+  // Load persisted runtime state
+  runtime.feeds = await readJson(FEEDS_FILE, []);
   runtime.newsCache = await readJson(NEWS_CACHE_FILE, { version: 1, updatedAt: null, translations: {} });
   runtime.newsRotation = await readJson(NEWS_ROTATION_FILE, { version: 1, updatedAt: null, shown: [] });
   runtime.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
   runtime.imageIndex = await loadImageIndex();
   runtime.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
-  ensureFallbackStudyFrames().catch(function(e) { console.log('fallback frames init error: ' + e.message); });
-  warmRefreshLoop();
-  const server = http.createServer(handleRequest);
 
-  const effectiveTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  var server = http.createServer(boot.app.handler);
+
+  var effectiveTimeZone = r1Clock.timezone();
   if (effectiveTimeZone !== TIMEZONE) {
-    console.warn(`WARNING: configured timezone is ${TIMEZONE} but Node.js effective timezone is ${effectiveTimeZone}.`);
-    console.warn(`Set TZ=${TIMEZONE} before starting the server, e.g.  $env:TZ="${TIMEZONE}"; node server.js`);
+    r1Logger.warn('configured timezone is ' + TIMEZONE + ' but effective is ' + effectiveTimeZone);
   } else {
-    console.log(`Timezone: ${TIMEZONE}`);
+    r1Logger.info('Timezone: ' + TIMEZONE);
   }
 
-  server.listen(PORT, '0.0.0.0', () => {
-    const bootstrapState = computeSnapshot(new Date());
-    console.log(`NewsPhoto content server listening on port ${PORT}`);
-    console.log(`Panel ${bootstrapState.panelIndex}: ${bootstrapState.panelName}, ${bootstrapState.width}x${bootstrapState.height}`);
-    console.log(`Default frameId=${bootstrapState.frameId}`);
-    console.log(`Content endpoint: http://0.0.0.0:${PORT}/api/state.json`);
-    for (const ip of getLocalIPs()) {
-      console.log(`  http://${ip}:${PORT}/`);
-      console.log(`  http://${ip}:${PORT}/api/state.json`);
-      console.log(`  http://${ip}:${PORT}/api/frame.bin`);
-      console.log(`  http://${ip}:${PORT}/api/news.json`);
-    }
+  var state = computeSnapshot(new Date());
+  r1Logger.info('Panel ' + state.panelIndex + ': ' + state.panelName + ', ' + state.width + 'x' + state.height);
+  r1Logger.info('Default frameId=' + state.frameId);
+  r1Logger.info('Content endpoint: http://0.0.0.0:' + PORT + '/api/state.json');
+  for (var ipi = 0; ipi < getLocalIPs().length; ipi++) {
+    var ip = getLocalIPs()[ipi];
+    r1Logger.info('  http://' + ip + ':' + PORT + '/');
+    r1Logger.info('  http://' + ip + ':' + PORT + '/api/state.json');
+    r1Logger.info('  http://' + ip + ':' + PORT + '/api/frame.bin');
+    r1Logger.info('  http://' + ip + ':' + PORT + '/api/news.json');
+  }
+
+  server.listen(PORT, '0.0.0.0', function() {
+    r1Logger.info('NewsPhoto content server listening on port ' + PORT);
   });
 
-  process.on('SIGINT', () => {
-    server.close(() => process.exit(0));
+  process.on('SIGINT', function() {
+    server.close(function() { process.exit(0); });
   });
 }
 
@@ -261,28 +283,19 @@ function parseArgs(argv, config) {
 }
 
 function loadAppConfig() {
-  const configPath = process.env.CONFIG_FILE || path.join(ROOT_DIR, 'config.json');
-  let fileConfig = {};
-  try {
-    if (fs.existsSync(configPath)) {
-      fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    }
-  } catch (error) {
-    console.log(`config load failed from ${configPath}: ${error.message}`);
-  }
-
+  var result = R1_loadConfig({ cwd: ROOT_DIR });
   return {
-    port: Number(process.env.PORT || fileConfig.port || DEFAULT_PORT),
-    panelIndex: Number(process.env.PANEL_INDEX || fileConfig.panelIndex || DEFAULT_PANEL),
-    imageRoot: process.env.IMAGE_ROOT || fileConfig.imageRoot || 'images',
-    dataDir: process.env.DATA_DIR || fileConfig.dataDir || 'data',
-    feedsFile: process.env.FEEDS_FILE || fileConfig.feedsFile || 'feeds.json',
-    newsCacheFile: process.env.NEWS_CACHE_FILE || fileConfig.newsCacheFile || '',
-    libraryStateFile: process.env.LIBRARY_STATE_FILE || fileConfig.libraryStateFile || '',
-    newsRotationFile: process.env.NEWS_ROTATION_FILE || fileConfig.newsRotationFile || '',
-    translationProvider: String(process.env.TRANSLATION_PROVIDER || fileConfig.translationProvider || DEFAULT_PROVIDER).toLowerCase(),
-    dithering: process.env.DITHERING ?? fileConfig.dithering ?? '0',
-    timezone: process.env.TZ || fileConfig.timezone || DEFAULT_TIMEZONE,
+    port: result.server.port,
+    panelIndex: result.panel.index,
+    imageRoot: result.paths.imagesDir,
+    dataDir: result.paths.dataDir,
+    feedsFile: result.paths.feedsFile,
+    newsCacheFile: result.paths.newsCacheFile,
+    libraryStateFile: result.paths.libraryStateFile,
+    newsRotationFile: result.paths.newsRotationFile,
+    translationProvider: result.translation.provider,
+    dithering: result.photo.quantMode === 'fs' ? '1' : '0',
+    timezone: result.server.timezone,
   };
 }
 
@@ -307,17 +320,15 @@ async function ensureDir(dirPath) {
 
 async function readJson(filePath, fallback) {
   try {
-    const text = await fsp.readFile(filePath, 'utf8');
-    return JSON.parse(text);
+    var store = R1_JsonStore(filePath);
+    return await store.read();
   } catch {
     return fallback;
   }
 }
 
 async function writeJson(filePath, data) {
-  const tempPath = `${filePath}.tmp.${Date.now()}`;
-  await fsp.writeFile(tempPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
-  await fsp.rename(tempPath, filePath);
+  await R1_writeFileAtomic(filePath, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8' });
 }
 
 function readLines(text) {
@@ -655,22 +666,8 @@ function parseJsonFeed(jsonText, feed) {
   });
 }
 
-async function fetchText(url, timeoutMs = 20000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'user-agent': 'NewsPhoto_esp32wf/1.0',
-        accept: 'application/rss+xml, application/xml, text/xml, application/json, text/plain;q=0.9, */*;q=0.8',
-      },
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.text();
-  } finally {
-    clearTimeout(timer);
-  }
+async function fetchText(url, timeoutMs) {
+  return r1HttpClient.fetchText(url, timeoutMs || 20000);
 }
 
 async function loadFeeds() {
@@ -3154,13 +3151,15 @@ function renderIndexHtml(state) {
 }
 
 if (require.main === module) {
-  main().catch((error) => {
-    console.error(error);
+  main().catch(function(error) {
+    r1Logger.error('top-level crash: ' + (error.stack || error.message));
     process.exit(1);
   });
 }
 
 module.exports = {
+  handleRequest: handleRequest,
+  main: main,
   extractTag,
   extractItems,
   parseFeedXml,

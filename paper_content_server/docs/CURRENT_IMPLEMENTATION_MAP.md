@@ -6,8 +6,8 @@
 ## 1. Repository Baseline
 
 branch=master
-AUDITED_CODE_SHA=54260aa20177741b5cdee2c863e5c5ed53ae58d7
-origin/master at audit time=54260aa20177741b5cdee2c863e5c5ed53ae58d7
+AUDITED_CODE_SHA=67c679e41749e38fd8839dfca8372660eb34b0fd
+origin/master at audit time=67c679e41749e38fd8839dfca8372660eb34b0fd
 server entrypoint=paper_content_server/server.js
 firmware entrypoint=NewsPhoto_esp32wf/NewsPhoto_esp32wf.ino
 node major=v24.14.1
