@@ -35,6 +35,8 @@
     "r9:test": "node test/r9/run-r9-tests.js",
     "r10:test": "node test/r10/run-r10-tests.js",
     "r11:test": "node test/r11/run-r11-tests.js",
+    "r12:test": "node test/r12/mqtt-frame-sha256-test.js",
+    "r12:all": "node test/r12/run-r12-tests.js",
     "build:manifest": "node scripts/generate-build-manifest.js",
     "selftest:deps": "node scripts/dependency-selftest.js",
     "selftest:container": "node scripts/container-selftest.js"
