@@ -9,7 +9,7 @@ var SR=require(path.join(ROOT,'src','learning','learning-source-registry'));
 var SP=require(path.join(ROOT,'src','learning','learning-source-port'));
 var validator=V.createValidator();var dedup=D.createDeduplicator();var policy=P.createPolicy();
 var reg=SR.createSourceRegistry();var src=SP.createSourcePort({name:'test',fetchCandidates:function(){return Promise.resolve([]);}});
-reg.register('test',src);var svc=IS.createIngestionService(reg,validator,dedup,policy,null,{});
+reg.register('test',src);var ar={create:function(a){return Promise.resolve(a.assetId);}};var svc=IS.createIngestionService(reg,validator,dedup,policy,ar,{});
 t('SVC_EXISTS',typeof svc.ingestAll==='function','');
 (async function(){var r=await svc.ingestOne({sourceUrl:'http://img2.jpg',source:'test'});t('INGEST_ACCEPTED',r.status==='ACCEPTED','');
 var r2=await svc.ingestOne({sourceUrl:'http://img2.jpg',source:'test'});t('INGEST_DUPLICATE',r2.status==='DUPLICATE','');

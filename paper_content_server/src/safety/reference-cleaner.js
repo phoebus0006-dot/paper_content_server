@@ -2,6 +2,15 @@
 var fs = require('fs');
 var path = require('path');
 
+var DELETE_SYMLINK_NOT_ALLOWED = 'SYMLINK_NOT_ALLOWED';
+
+function isInside(root, target) {
+  var relative = path.relative(root, target);
+  return relative !== '' &&
+    !relative.startsWith('..' + path.sep) &&
+    !path.isAbsolute(relative);
+}
+
 function resultObj(changed, count, errors) {
   return { complete: errors.length === 0, changed: changed, count: count, errors: errors };
 }
@@ -29,14 +38,15 @@ function ReferenceCleaner(snapshotStore, snapshotCache, publicationHistory, data
     if (!filePath || typeof filePath !== 'string') return false;
     try {
       var resolved = path.resolve(filePath);
+      var originalStat = fs.lstatSync(resolved);
+      if (originalStat.isSymbolicLink()) { throw new Error(DELETE_SYMLINK_NOT_ALLOWED); }
       var real = fs.realpathSync(resolved);
       var stat = fs.statSync(real);
       if (stat.isDirectory()) return false;
-      if (stat.isSymbolicLink()) return false;
       // Must be within data/ or images/ roots
       var dataRoot = path.resolve(dataDir);
       var imagesRoot = path.resolve(path.join(dataDir, '..', 'images'));
-      if (real.indexOf(dataRoot) !== 0 && real.indexOf(imagesRoot) !== 0) return false;
+      if (!isInside(dataRoot, real) && !isInside(imagesRoot, real)) return false;
       // Not a config/snapshot/frame file
       var base = path.basename(real);
       if (base === 'server.js' || base.endsWith('.json') || base.endsWith('.bin')) return false;

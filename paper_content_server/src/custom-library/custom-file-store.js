@@ -14,14 +14,21 @@ function createFileStore(quarantineDir, assetsDir, logger) {
     return dest;
   }
 
-  function decodeAndRecompute(quarantinePath) {
+  async function decodeAndRecompute(quarantinePath) {
     var stat = fs.statSync(quarantinePath);
-    var sha256 = crypto.createHash('sha256').update(fs.readFileSync(quarantinePath)).digest('hex');
-    var mimeType = 'image/png';
+    var buf = fs.readFileSync(quarantinePath);
+    var sha256 = crypto.createHash('sha256').update(buf).digest('hex');
     var ext = path.extname(quarantinePath).toLowerCase();
+    var mimeType = 'image/png';
     if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
     else if (ext === '.webp') mimeType = 'image/webp';
-    return { fileSize: stat.size, sha256: sha256, mimeType: mimeType };
+    var width = 0, height = 0;
+    try {
+      var sharp = require('sharp');
+      var meta = await sharp(buf).metadata();
+      if (meta) { mimeType = meta.format ? 'image/' + meta.format : mimeType; width = meta.width || 0; height = meta.height || 0; }
+    } catch(e) { logger.warn && logger.warn('decode metadata failed: ' + e.message); }
+    return { fileSize: stat.size, sha256: sha256, mimeType: mimeType, width: width, height: height };
   }
 
   function moveToAssets(quarantinePath, assetId) {
