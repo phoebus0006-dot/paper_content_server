@@ -38,4 +38,5 @@ jobs:
       - run: npm run r12:all
       - run: npm run admin:test
       - run: npm run lifecycle:test
+      - run: npm run mqtt:port-test
       - run: npm run restart:test
