@@ -1,0 +1,19 @@
+name: CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: paper_content_server
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run docs:check
+      - run: npm run contracts:test
+      - run: npm run r11:test
