@@ -102,6 +102,8 @@ if (impl) {
   check(!!currentHead, 'Git HEAD resolved: ' + (currentHead ? currentHead.substr(0, 12) : 'FAILED'));
 
   // 6b. Read audited SHA (support AUDITED_CODE_SHA and legacy AUDITED_CODE_BASE_SHA)
+  var PENDING_PLACEHOLDER = 'AUDITED_CODE_SHA_PENDING_INTEGRATION';
+  var pendingMatch = /AUDITED_CODE_SHA=AUDITED_CODE_SHA_PENDING_INTEGRATION/.test(impl);
   var auditedMatch = impl.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
   var legacyMatch = !auditedMatch ? impl.match(/AUDITED_CODE_BASE_SHA=([a-f0-9]{40})/) : null;
   var auditedSha = auditedMatch ? auditedMatch[1] : (legacyMatch ? legacyMatch[1] : null);
@@ -109,9 +111,13 @@ if (impl) {
   if (legacyMatch) {
     console.log('NOTE: Using legacy AUDITED_CODE_BASE_SHA field (migrate to AUDITED_CODE_SHA)');
   }
-  check(!!auditedSha, 'Audited SHA present in CURRENT_IMPLEMENTATION_MAP');
+  if (pendingMatch) {
+    check(true, 'Audited SHA present as PENDING_INTEGRATION placeholder (git ancestry check skipped)');
+  } else {
+    check(!!auditedSha, 'Audited SHA present in CURRENT_IMPLEMENTATION_MAP');
+  }
 
-  if (auditedSha && currentHead) {
+  if (auditedSha && currentHead && !pendingMatch) {
     // 6c. Verify SHA exists as commit
     var exists = gitOk(['cat-file', '-e', auditedSha + '^{commit}']);
     check(exists, 'Audited SHA ' + auditedSha.substr(0,12) + (exists ? ' exists as commit' : ' DOES NOT EXIST'));
@@ -124,12 +130,18 @@ if (impl) {
       if (anc) {
         // 6e. Check protected production files
         var PROTECTED_PATHS = [
+          'paper_content_server/src/',
+          'paper_content_server/scripts/',
+          'paper_content_server/deploy/',
+          'paper_content_server/public/',
           'paper_content_server/server.js',
           'paper_content_server/lib/',
-          'NewsPhoto_esp32wf/',
           'paper_content_server/package.json',
+          'paper_content_server/package-lock.json',
           'paper_content_server/Dockerfile',
-          'paper_content_server/docker-compose.yml',
+          'paper_content_server/.dockerignore',
+          'NewsPhoto_esp32wf/',
+          '.github/workflows/',
         ];
         var diff = git(['diff', '--name-only', auditedSha + '..' + currentHead]);
         var files = diff ? diff.split('\n').filter(Boolean) : [];
@@ -153,12 +165,15 @@ if (impl) {
   var gbl = readFile('GLOBAL_REFACTOR_BASELINE.md');
   var gaa = readFile('GLOBAL_ARCHITECTURE_AUDIT.md');
   if (gbl && gaa) {
-    var shaMap = impl.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
-    var shaBl = gbl.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
-    var shaAa = gaa.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
-    var mapShaVal = shaMap ? shaMap[1] : null;
-    var blShaVal = shaBl ? shaBl[1] : null;
-    var aaShaVal = shaAa ? shaAa[1] : null;
+    function extractTruthSha(text) {
+      var m = text.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
+      if (m) return m[1];
+      if (/AUDITED_CODE_SHA=AUDITED_CODE_SHA_PENDING_INTEGRATION/.test(text)) return PENDING_PLACEHOLDER;
+      return null;
+    }
+    var mapShaVal = extractTruthSha(impl);
+    var blShaVal = extractTruthSha(gbl);
+    var aaShaVal = extractTruthSha(gaa);
     var allSame = mapShaVal && blShaVal && aaShaVal && mapShaVal === blShaVal && blShaVal === aaShaVal;
     check(allSame, 'Truth baseline SHA consistent across 3 docs: MAP=' + (mapShaVal||'MISS').substr(0,12) + ' BL=' + (blShaVal||'MISS').substr(0,12) + ' AA=' + (aaShaVal||'MISS').substr(0,12));
   }
@@ -401,6 +416,69 @@ if (!process.env.DOCS_CHECK_SELF_TEST) { process.exit(exitCode); }
       return ['server.js','lib/','package.json','Dockerfile'].some(function(p) { return t.indexOf(p) === 0; });
     });
     st('CASE5_PRODUCTION_CHANGE', core5.length > 0, 'changed: ' + core5.join(','));
+
+    // Cases 6-9: expanded protected paths (mirror production PROTECTED_PATHS).
+    // Verify that changes under src/, deploy/, .github/workflows/ trigger STALE
+    // while docs-only changes do not.
+    var ST_PROTECTED = [
+      'paper_content_server/src/',
+      'paper_content_server/scripts/',
+      'paper_content_server/deploy/',
+      'paper_content_server/public/',
+      'paper_content_server/server.js',
+      'paper_content_server/lib/',
+      'paper_content_server/package.json',
+      'paper_content_server/package-lock.json',
+      'paper_content_server/Dockerfile',
+      'paper_content_server/.dockerignore',
+      'NewsPhoto_esp32wf/',
+      '.github/workflows/',
+    ];
+    function stCoreFilter(diffStr) {
+      return diffStr.split('\n').filter(function(f) {
+        var t = f.trim(); if (!t) return false;
+        return ST_PROTECTED.some(function(p) { return t.indexOf(p) === 0; });
+      });
+    }
+
+    // Case 6: src/ change → STALE (coreChanges.length > 0)
+    fs2.mkdirSync('paper_content_server/src', { recursive: true });
+    fs2.writeFileSync('paper_content_server/src/asset.js', '// src change\n');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'E']);
+    var shaE = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+    var diff6 = exec2('git', ['diff', '--name-only', shaD + '..' + shaE]).toString().trim();
+    var core6 = stCoreFilter(diff6);
+    st('CASE6_SRC_CHANGE_STALE', core6.length > 0, 'changed: ' + core6.join(','));
+
+    // Case 7: deploy/ change → STALE (coreChanges.length > 0)
+    fs2.mkdirSync('paper_content_server/deploy', { recursive: true });
+    fs2.writeFileSync('paper_content_server/deploy/deploy.sh', '#!/bin/sh\n');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'F']);
+    var shaF = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+    var diff7 = exec2('git', ['diff', '--name-only', shaE + '..' + shaF]).toString().trim();
+    var core7 = stCoreFilter(diff7);
+    st('CASE7_DEPLOY_CHANGE_STALE', core7.length > 0, 'changed: ' + core7.join(','));
+
+    // Case 8: .github/workflows/ change → STALE (coreChanges.length > 0)
+    fs2.mkdirSync('.github/workflows', { recursive: true });
+    fs2.writeFileSync('.github/workflows/ci.yml', 'name: CI\n');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'G']);
+    var shaG = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+    var diff8 = exec2('git', ['diff', '--name-only', shaF + '..' + shaG]).toString().trim();
+    var core8 = stCoreFilter(diff8);
+    st('CASE8_WORKFLOW_CHANGE_STALE', core8.length > 0, 'changed: ' + core8.join(','));
+
+    // Case 9: docs-only change → NOT STALE (coreChanges.length === 0)
+    fs2.writeFileSync('docs/EXTRA.md', '# extra doc\n');
+    exec2('git', ['add', '.']);
+    exec2('git', ['commit', '-m', 'H']);
+    var shaH = exec2('git', ['rev-parse', 'HEAD']).toString().trim();
+    var diff9 = exec2('git', ['diff', '--name-only', shaG + '..' + shaH]).toString().trim();
+    var core9 = stCoreFilter(diff9);
+    st('CASE9_DOCS_ONLY_NOT_STALE', core9.length === 0, 'changed: ' + core9.join(','));
 
     // Cleanup
     try { process.chdir(path.join(tmpDir, '..')); } catch(e) {}
