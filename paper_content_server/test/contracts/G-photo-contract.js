@@ -7,6 +7,7 @@ function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++
 var sel=mod.selectStudyPhoto,isSel=mod.isStudySelectable;
 if(!sel){t('SEL_FN',false,'');process.exit(1)}
 var PNG=path.join(__dirname,'..','..','data','processed_images','c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png');
+if(!require('fs').existsSync(PNG)){console.log('SKIP G-photo-contract: fixture PNG not found (gitignored data/processed_images/)');console.log('=== Summary: 0 passed, 0 failed (SKIPPED) ===');process.exit(0)}
 var base={processedPngPath:PNG,epfPath:PNG,width:800,height:480};
 var pool=[
   Object.assign({},base,{id:'study-a',theme:'dialogue',kind:'storyboard',safetyStatus:'approved',poolType:'study_frames'}),
