@@ -20,6 +20,7 @@ var R3_PublicationLock = require('../publication/publication-lock').PublicationL
 var R3_OperatingModeService = require('../publication/operating-mode-service').OperatingModeService;
 var R3_PublicationHistory = require('../publication/publication-history').PublicationHistory;
 var R3_NoopNotificationPort = require('../publication/notification-port').NoopNotificationPort;
+var createMqttClientPort = require('../mqtt/mqtt-client-port').createMqttClientPort;
 
 function BootstrapError(message, config) {
   this.message = message;
@@ -101,8 +102,16 @@ function bootstrap(overrides) {
     },
   });
 
+  // MQTT disconnect port — wraps mqttClient.end(callback) into a Promise that
+  // is idempotent and awaits the broker teardown. When mqttClient is null
+  // (MQTT disabled), disconnect() resolves immediately.
+  var mqttClientPort = createMqttClientPort(mqttClient);
+
   var server = null;
-  if (overrides.listen) {
+  if (overrides.server) {
+    // Testability hook: inject a fake server whose close() can fail/hang.
+    server = overrides.server;
+  } else if (overrides.listen) {
     var listenPort = overrides.port || config.server.port;
     server = http.createServer(app.handler);
     server.listen(listenPort, '0.0.0.0', function() {
@@ -113,36 +122,6 @@ function bootstrap(overrides) {
   // Shared shutdown Promise — concurrent/second calls return the same Promise.
   var shutdownPromise = null;
 
-  function disconnectMqtt(client) {
-    if (!client || typeof client.disconnect !== 'function') {
-      return Promise.resolve();
-    }
-    return new Promise(function(resolve, reject) {
-      var settled = false;
-      function done(err) {
-        if (settled) return;
-        settled = true;
-        if (err) reject(err);
-        else resolve();
-      }
-      try {
-        var result;
-        if (client.disconnect.length >= 1) {
-          result = client.disconnect(done);
-        } else {
-          result = client.disconnect();
-        }
-        if (result && typeof result.then === 'function') {
-          result.then(function() { done(); }, done);
-        } else if (client.disconnect.length < 1) {
-          done();
-        }
-      } catch (error) {
-        done(error);
-      }
-    });
-  }
-
   function performShutdown() {
     var tasks = [];
     if (server) {
@@ -150,21 +129,29 @@ function bootstrap(overrides) {
         server.close(function(err) { if (err) reject(err); else resolve(); });
       }));
     }
-    tasks.push(disconnectMqtt(mqttClient));
+    tasks.push(mqttClientPort.disconnect());
 
     var timeoutMs = (config.lifecycle && config.lifecycle.shutdownTimeoutMs) || Number(process.env.BOOTSTRAP_SHUTDOWN_TIMEOUT_MS) || 10000;
-    var timeout = null;
-    function timeoutReject() {
-      return new Promise(function(resolve, reject) {
-        timeout = setTimeout(function() {
-          reject(new Error('SHUTDOWN_TIMEOUT'));
-        }, timeoutMs);
-      });
+    var timer = null;
+    var timeoutPromise = new Promise(function(resolve, reject) {
+      timer = setTimeout(function() {
+        reject(new Error('SHUTDOWN_TIMEOUT'));
+      }, timeoutMs);
+    });
+
+    // Clear the shutdown timer on BOTH success and failure paths so a late
+    // SHUTDOWN_TIMEOUT rejection never surfaces after the race has settled
+    // (which would otherwise leak as an unhandled rejection).
+    function clearTimer() {
+      if (timer) { clearTimeout(timer); timer = null; }
     }
 
     return Promise.race([
-      Promise.all(tasks).then(function() { if (timeout) clearTimeout(timeout); }),
-      timeoutReject(),
+      Promise.all(tasks).then(
+        function() { clearTimer(); },
+        function(err) { clearTimer(); throw err; }
+      ),
+      timeoutPromise,
     ]);
   }
 
