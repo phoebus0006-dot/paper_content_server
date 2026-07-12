@@ -225,6 +225,11 @@ const runtime = {
   publicationService: null,
   operatingModeService: null,
   publicationHistory: null,
+  // Phase 5+ library/learning/render services
+  customLibraryService: null,
+  safetyGate: null,
+  learningIngestionService: null,
+  learningLastIngestAt: null,
 };
 
 async function main() {
@@ -283,6 +288,9 @@ async function main() {
   runtime.adminQueryService = boot.services.adminQueryService || null;
   runtime.featureFlagView = boot.services.featureFlagView || null;
   runtime.assetRepository = boot.services.assetRepository || null;
+  runtime.customLibraryService = boot.services.customLibraryService || null;
+  runtime.safetyGate = boot.services.safetyGate || null;
+  runtime.learningIngestionService = boot.services.learningIngestionService || null;
   runtime.mqttClient = boot.deps.mqttClient || null;
   await runtime.snapshotStore.ensureDirs();
 
@@ -3413,9 +3421,66 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/library/custom/upload' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      // POST upload requires NSFW safety gate (safety-decision.js gate not yet wired into
-      // customLibraryService). Refusing until safety invariants can be enforced.
-      failJson(res, 503, 'SAFETY_GATE_REQUIRED: custom upload pending safety gate implementation');
+      // POST upload 通过 customLibraryService 走完整 safety gate 链路
+      // (quarantine → decode → NSFW safety gate → dedup → persist)。
+      // 当 customLibraryService 未配置时仍返回 503。
+      if (!runtime.customLibraryService) { failJson(res, 503, 'SAFETY_GATE_REQUIRED: custom library service unavailable'); return; }
+      try {
+        var uploadBody = JSON.parse(await readBody(req) || '{}');
+        // 简化 JSON body: { originalName, mimeType, fileSize, width, height, filePath }
+        // filePath 是临时文件路径(真实环境由 multipart 解析写入)。
+        if (!uploadBody.filePath) { failJson(res, 400, 'filePath required'); return; }
+        var upload = {
+          originalName: uploadBody.originalName || 'upload.bin',
+          mimeType: uploadBody.mimeType || '',
+          fileSize: uploadBody.fileSize || 0,
+          width: uploadBody.width || 0,
+          height: uploadBody.height || 0,
+          filePath: uploadBody.filePath,
+        };
+        var uploadResult = await runtime.customLibraryService.processUpload(upload);
+        if (uploadResult.status === 'ACCEPTED') {
+          res.writeHead(202, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'accepted', assetId: uploadResult.assetId, finalPath: uploadResult.finalPath }));
+        } else if (uploadResult.status === 'REJECTED') {
+          failJson(res, 400, 'upload rejected: ' + (uploadResult.reason || uploadResult.errors && uploadResult.errors.join('; ') || 'unknown'));
+        } else if (uploadResult.status === 'DUPLICATE') {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'duplicate', sha256: uploadResult.sha256 }));
+        } else {
+          failJson(res, 500, 'upload error: ' + (uploadResult.error || uploadResult.status || 'unknown'));
+        }
+      } catch(e) { failJson(res, 500, 'upload failed: ' + e.message); }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/learning/ingest' && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      // 触发 learning 摄取(自动 fetch sources → validate → dedup → persist)
+      if (!runtime.learningIngestionService) { failJson(res, 503, 'learning ingestion service unavailable'); return; }
+      try {
+        var ingestResults = await runtime.learningIngestionService.ingestAll();
+        var accepted = 0, rejected = 0, duplicate = 0, errored = 0;
+        (ingestResults || []).forEach(function(r) {
+          if (!r) return;
+          if (r.status === 'ACCEPTED') accepted++;
+          else if (r.status === 'REJECTED') rejected++;
+          else if (r.status === 'DUPLICATE') duplicate++;
+          else errored++;
+        });
+        runtime.learningLastIngestAt = new Date().toISOString();
+        respondJson(res, { status: 'ok', total: (ingestResults || []).length, accepted: accepted, rejected: rejected, duplicate: duplicate, errored: errored, results: ingestResults });
+      } catch(e) { failJson(res, 500, 'learning ingest failed: ' + e.message); }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/learning/status' && req.method === 'GET') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      // 返回 learning 摄取服务状态(简化为 configured + lastIngestAt)
+      respondJson(res, {
+        configured: !!runtime.learningIngestionService,
+        lastIngestAt: runtime.learningLastIngestAt || null,
+      });
       return;
     }
 
