@@ -1,21 +1,23 @@
 // feature-flag-view.js — Feature flag view (configured vs enabled vs connected)
-// options: { mqttClient, newsPipeline, customLibraryService, renderShadow, activeFrameIdProvider }
+// options: { mqttClient, newsPipeline, customLibraryService, learningIngestionService, renderShadow, activeFrameIdProvider }
 function getFeatureFlags(options) {
   options = options || {};
   var mqttClient = options.mqttClient || null;
   var newsPipeline = options.newsPipeline || null;
   var customLibraryService = options.customLibraryService || null;
+  var learningIngestionService = options.learningIngestionService || null;
   var renderShadow = options.renderShadow || null;
   var activeFrameIdProvider = options.activeFrameIdProvider || function() { return null; };
 
   var mqttConfigured = !!mqttClient;
   var mqttConnected = mqttConfigured && typeof mqttClient.isConnected === 'function' ? !!mqttClient.isConnected() : mqttConfigured;
   var newsConfigured = !!newsPipeline;
+  var learningConfigured = !!learningIngestionService;
 
   return Object.freeze({
     newsPipeline: { configured: newsConfigured, enabled: newsConfigured, connected: newsConfigured, ready: newsConfigured },
     mqtt: { configured: mqttConfigured, enabled: mqttConfigured, connected: mqttConnected, ready: mqttConnected },
-    learning: { configured: false, enabled: false, connected: false, ready: false },
+    learning: { configured: learningConfigured, enabled: learningConfigured, connected: learningConfigured, ready: learningConfigured },
     customLibrary: { configured: !!customLibraryService, enabled: !!customLibraryService, connected: !!customLibraryService, ready: !!customLibraryService },
     advancedRender: { configured: !!renderShadow, enabled: !!renderShadow, connected: !!renderShadow, ready: !!renderShadow },
     deletePipeline: { configured: false, enabled: false, connected: false, ready: false },

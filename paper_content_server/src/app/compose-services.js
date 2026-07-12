@@ -35,9 +35,13 @@ function composeServices(deps) {
   var mqttClient = deps.mqttClient;
 
   var path = require('path');
+  var fs = require('fs');
   var newsPipeline = null;
   var adminQueryService = null;
   var renderShadow = null;
+  var customLibraryService = null;
+  var learningIngestionService = null;
+  var safetyGate = null;
 
   var PublicationService = require('../publication/publication-service').PublicationService;
   var pubService = PublicationService(
@@ -60,21 +64,98 @@ function composeServices(deps) {
     logger.warn('newsPipeline init: ' + e.message);
   }
 
+  // --- assetRepository: asset persistence (shared by library + admin) ---
+  var assetRepository = null;
+  try {
+    var AssetRepository = require('../assets/asset-repository').AssetRepository;
+    assetRepository = AssetRepository(config.paths.dataDir, logger);
+  } catch (e) { logger.warn('assetRepository init: ' + e.message); }
+  // Expose assetRepository to server.js for Library API (GET/PATCH/DELETE)
+  deps.assetRepository = assetRepository;
+
+  // --- safetyGate: NSFW safety gate for custom uploads ---
+  try {
+    var { createNsfwSafetyGate } = require('../safety/nsfw-safety-gate');
+    safetyGate = createNsfwSafetyGate({ logger: logger });
+  } catch (e) { logger.warn('safetyGate init: ' + e.message); }
+
+  // --- customLibraryService: upload + decode + safety + dedup + persist ---
+  try {
+    if (assetRepository && safetyGate) {
+      var { createCustomLibraryService } = require('../custom-library/custom-library-service');
+      var { createFileStore } = require('../custom-library/custom-file-store');
+      var { createValidator: createCustomValidator } = require('../custom-library/custom-validator');
+      var { createDeduplicator: createCustomDeduplicator } = require('../custom-library/custom-deduplicator');
+      var quarantineDir = path.join(config.paths.dataDir, 'custom_uploads', 'quarantine');
+      var customAssetsDir = path.join(config.paths.dataDir, 'custom_uploads', 'assets');
+      try { fs.mkdirSync(quarantineDir, { recursive: true }); } catch (e) {}
+      try { fs.mkdirSync(customAssetsDir, { recursive: true }); } catch (e) {}
+      var customFileStore = createFileStore(quarantineDir, customAssetsDir, logger);
+      var customValidator = createCustomValidator();
+      var customDeduplicator = createCustomDeduplicator(assetRepository);
+      customLibraryService = createCustomLibraryService(
+        customFileStore, customValidator, customDeduplicator, safetyGate, assetRepository, logger
+      );
+    }
+  } catch (e) { logger.warn('customLibraryService init: ' + e.message); }
+
+  // --- learningIngestionService: fetch + validate + dedup + persist ---
+  try {
+    if (assetRepository) {
+      var { createIngestionService } = require('../learning/learning-ingestion-service');
+      var { createPolicy } = require('../learning/learning-policy');
+      var { createSourceRegistry } = require('../learning/learning-source-registry');
+      var { createValidator: createLearningValidator } = require('../learning/learning-validator');
+      var { createDeduplicator: createLearningDeduplicator } = require('../learning/learning-deduplicator');
+      var learningPolicy = createPolicy({});
+      var learningSourceRegistry = createSourceRegistry();
+      var learningValidator = createLearningValidator();
+      var learningDeduplicator = createLearningDeduplicator();
+      learningIngestionService = createIngestionService(
+        learningSourceRegistry, learningValidator, learningDeduplicator,
+        learningPolicy, assetRepository, logger
+      );
+    }
+  } catch (e) { logger.warn('learningIngestionService init: ' + e.message); }
+
+  // --- renderShadow: shadow dual-run for R9 rendering comparison ---
+  try {
+    var { createRenderShadow } = require('../render/render-shadow');
+    var { createAnalysisCardRenderer } = require('../render/analysis-card-renderer');
+    var { createComparisonPairRenderer } = require('../render/comparison-pair-renderer');
+    var { createSequence2x2Renderer } = require('../render/sequence-2x2-renderer');
+    var analysisRenderer = createAnalysisCardRenderer();
+    var comparisonRenderer = createComparisonPairRenderer();
+    var sequenceRenderer = createSequence2x2Renderer();
+    renderShadow = createRenderShadow(
+      function(content, profileId) {
+        // 按优先级顺序尝试渲染器
+        if (analysisRenderer.canRender(content)) return analysisRenderer.render(content, profileId);
+        if (comparisonRenderer.canRender(content)) return comparisonRenderer.render(content, profileId);
+        if (sequenceRenderer.canRender(content)) return sequenceRenderer.render(content, profileId);
+        return Promise.resolve(null);
+      },
+      function(content, profileId) {
+        // 预览渲染
+        if (analysisRenderer.canRender(content)) return analysisRenderer.render(content, profileId);
+        return Promise.resolve(null);
+      },
+      logger
+    );
+  } catch (e) { logger.warn('renderShadow init: ' + e.message); }
+
+  // --- adminQueryService + featureFlagView (references services above) ---
+  var featureFlagView = null;
   try {
     var { createAdminQueryService } = require('../admin/admin-query-service');
-    var assetRepository = null;
-    try {
-      var AssetRepository = require('../assets/asset-repository').AssetRepository;
-      assetRepository = AssetRepository(config.paths.dataDir, logger);
-    } catch (e) {}
-    // Expose assetRepository to server.js for Library API (GET/PATCH/DELETE)
-    deps.assetRepository = assetRepository;
     var { getFeatureFlags } = require('../admin/feature-flag-view');
-    var featureFlagView = {
+    featureFlagView = {
       getFeatureFlags: function() {
         return getFeatureFlags({
           mqttClient: mqttClient,
           newsPipeline: newsPipeline,
+          customLibraryService: customLibraryService,
+          learningIngestionService: learningIngestionService,
           renderShadow: renderShadow,
           activeFrameIdProvider: function() {
             try {
@@ -92,15 +173,6 @@ function composeServices(deps) {
     logger.warn('adminQueryService init: ' + e.message);
   }
 
-  try {
-    var { createRenderShadow } = require('../render/render-shadow');
-    renderShadow = createRenderShadow(
-      function(content, profileId) { return Promise.resolve(null); },
-      function(content, profileId) { return Promise.resolve(null); },
-      logger
-    );
-  } catch (e) {}
-
   return {
     newsPipeline: newsPipeline,
     publicationService: pubService,
@@ -108,6 +180,9 @@ function composeServices(deps) {
     featureFlagView: featureFlagView || null,
     assetRepository: assetRepository,
     renderShadow: renderShadow,
+    customLibraryService: customLibraryService,
+    safetyGate: safetyGate,
+    learningIngestionService: learningIngestionService,
   };
 }
 
