@@ -2,7 +2,7 @@
 
 > 本文件用于记录“当前真实状态”，不是目标架构。每个阶段完成后更新一次。
 
-AUDITED_CODE_SHA=1f2f25b2eeca7fa52c81d16bd8bef096c4b733ee
+AUDITED_CODE_SHA=55e44e054a9e0df0a95d1d09fc4168de6cf6f45a
 ESP32_RUNTIME_STATUS=NOT TESTED
 NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 
