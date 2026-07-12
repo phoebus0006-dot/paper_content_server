@@ -1,73 +1,54 @@
 var passed = 0, failed = 0, exitCode = 0;
 function check(l, c) { if (c) { passed++; console.log('PASS', l) } else { failed++; exitCode = 1; console.log('FAIL', l) } }
 
-function parseCIDR(cidr) {
-  var parts = cidr.split('/'); var ipParts = parts[0].split('.').map(Number);
-  var mask = parseInt(parts[1], 10); if (isNaN(mask)) mask = 32;
-  if (ipParts.length !== 4 || ipParts.some(isNaN) || mask < 0 || mask > 32) return null;
-  var ipNum = ((ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]) >>> 0;
-  if (mask === 0) return { network: 0, mask: 0 };
-  var hostBits = 32 - mask;
-  var maskNum = (~((1 << hostBits) - 1)) >>> 0;
-  return { network: ipNum & maskNum, mask: maskNum };
-}
+var policy = require('../../src/admin/admin-network-policy');
 
-function ipInCIDRs(ip, cidrs) {
-  var ipParts = ip.split('.').map(Number);
-  if (ipParts.length !== 4 || ipParts.some(isNaN)) return false;
-  var ipNum = ((ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]) >>> 0;
-  for (var i = 0; i < cidrs.length; i++) {
-    var c = cidrs[i]; if (c && (ipNum & c.mask) === c.network) return true;
-  }
-  return false;
-}
+console.log('=== Admin CIDR Policy Unit Test (using require) ===');
 
-function isAddressAllowed(remoteAddr, cidrStr) {
-  var ip = remoteAddr; if (ip.startsWith('::ffff:')) ip = ip.slice(7);
-  if (ip === '::1') ip = '127.0.0.1';
-  if (!cidrStr) return true;
-  var cidrList = cidrStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-  var parsed = [];
-  for (var i = 0; i < cidrList.length; i++) { var p = parseCIDR(cidrList[i]); if (p) parsed.push(p); }
-  if (parsed.length === 0) return true;
-  return ipInCIDRs(ip, parsed);
-}
+// parseCIDR validation
+var r1 = policy.parseCIDR('127.0.0.0/8');
+check('parseCIDR 127.0.0.0/8 valid', r1 !== null);
+check('parseCIDR 127.0.0.0/8 mask=8', r1 && r1.mask === 0xFF000000 >>> 0);
 
-console.log('=== Admin CIDR Policy Unit Test ===');
+check('parseCIDR /0 boundary', policy.parseCIDR('0.0.0.0/0') !== null);
+check('parseCIDR /32 boundary', policy.parseCIDR('10.0.0.1/32') !== null);
+check('parseCIDR invalid', policy.parseCIDR('not-an-ip') === null);
+check('parseCIDR /33 invalid', policy.parseCIDR('10.0.0.0/33') === null);
+check('parseCIDR 999 octet invalid', policy.parseCIDR('999.1.1.1/24') === null);
+check('parseCIDR negative invalid', policy.parseCIDR('-1.0.0.0/24') === null);
+check('parseCIDR non-integer invalid', policy.parseCIDR('1.2.3.4.5/24') === null);
 
-// 127.0.0.1 NOT unconditionally allowed
-check('127.0.0.1 in 127.0.0.0/8', isAddressAllowed('127.0.0.1', '127.0.0.0/8') === true);
-check('127.0.0.1 NOT in 10.0.0.0/8', isAddressAllowed('127.0.0.1', '10.0.0.0/8') === false);
-check('10.8.1.2 in 10.0.0.0/8', isAddressAllowed('10.8.1.2', '10.0.0.0/8') === true);
-check('11.0.0.1 NOT in 10.0.0.0/8', isAddressAllowed('11.0.0.1', '10.0.0.0/8') === false);
+// parseCIDRList
+var list1 = policy.parseCIDRList('127.0.0.0/8');
+check('parseCIDRList single valid', list1.valid === true);
 
-// 172.16.0.0/12 boundaries
-check('172.15.1.2 NOT in 172.16.0.0/12', isAddressAllowed('172.15.1.2', '172.16.0.0/12') === false);
-check('172.16.1.2 in 172.16.0.0/12', isAddressAllowed('172.16.1.2', '172.16.0.0/12') === true);
-check('172.31.255.255 in 172.16.0.0/12', isAddressAllowed('172.31.255.255', '172.16.0.0/12') === true);
-check('172.32.0.1 NOT in 172.16.0.0/12', isAddressAllowed('172.32.0.1', '172.16.0.0/12') === false);
+var list2 = policy.parseCIDRList('');
+check('parseCIDRList empty rejected', list2.valid === false && list2.error === 'EMPTY_CIDR_CONFIG');
 
-// 192.168.0.0/16
-check('192.168.1.49 in 192.168.0.0/16', isAddressAllowed('192.168.1.49', '192.168.0.0/16') === true);
-check('192.169.0.1 NOT in 192.168.0.0/16', isAddressAllowed('192.169.0.1', '192.168.0.0/16') === false);
+var list3 = policy.parseCIDRList('999.1.1.1/24');
+check('parseCIDRList all invalid rejected', list3.valid === false && list3.error === 'ALL_INVALID_CIDRS');
 
-// IPv4-mapped IPv6
-check('::ffff:192.168.1.49 normalized', isAddressAllowed('::ffff:192.168.1.49', '192.168.0.0/16') === true);
+var list4 = policy.parseCIDRList('127.0.0.0/8,10.0.0.0/8,192.168.0.0/16');
+check('parseCIDRList multiple valid', list4.valid === true && list4.parsed.length === 3);
 
-// Multiple CIDRs
-check('10.8.1.1 in 10.0.0.0/8,172.16.0.0/12', isAddressAllowed('10.8.1.1', '10.0.0.0/8,172.16.0.0/12') === true);
-check('172.20.1.1 in 10.0.0.0/8,172.16.0.0/12', isAddressAllowed('172.20.1.1', '10.0.0.0/8,172.16.0.0/12') === true);
-check('8.8.8.8 NOT in 10.0.0.0/8,172.16.0.0/12', isAddressAllowed('8.8.8.8', '10.0.0.0/8,172.16.0.0/12') === false);
+// IP normalization
+check('normalize IPv4', policy.normalizeRemoteAddress('192.168.1.1') === '192.168.1.1');
+check('normalize ::ffff: mapping', policy.normalizeRemoteAddress('::ffff:192.168.1.49') === '192.168.1.49');
+check('normalize ::1 mapping', policy.normalizeRemoteAddress('::1') === '127.0.0.1');
+check('normalize null', policy.normalizeRemoteAddress(null) === null);
+check('normalize undefined', policy.normalizeRemoteAddress(undefined) === null);
+check('normalize empty', policy.normalizeRemoteAddress('') === null);
 
-// Edge cases
-check('/0 allows all', isAddressAllowed('8.8.8.8', '0.0.0.0/0') === true);
-check('/32 exact match', isAddressAllowed('10.0.0.1', '10.0.0.1/32') === true);
-check('/32 no match', isAddressAllowed('10.0.0.2', '10.0.0.1/32') === false);
-check('empty CIDR allows all', isAddressAllowed('8.8.8.8', '') === true);
+// isAddressAllowed
+var cidrs = policy.parseCIDRList('127.0.0.0/8').parsed;
+check('127.0.0.1 in 127.0.0.0/8', policy.isAddressAllowed('127.0.0.1', cidrs) === true);
+check('127.0.0.1 NOT in 10.0.0.0/8', policy.isAddressAllowed('127.0.0.1', policy.parseCIDRList('10.0.0.0/8').parsed) === false);
 
-// Invalid CIDR
-check('parseCIDR invalid', parseCIDR('not-an-ip') === null);
-check('parseCIDR /33 invalid', parseCIDR('10.0.0.0/33') === null);
+var cidrs2 = policy.parseCIDRList('172.16.0.0/12').parsed;
+check('172.15.1.2 NOT in 172.16.0.0/12', policy.isAddressAllowed('172.15.1.2', cidrs2) === false);
+check('172.16.1.2 in 172.16.0.0/12', policy.isAddressAllowed('172.16.1.2', cidrs2) === true);
+check('172.31.255.255 in 172.16.0.0/12', policy.isAddressAllowed('172.31.255.255', cidrs2) === true);
+check('172.32.0.1 NOT in 172.16.0.0/12', policy.isAddressAllowed('172.32.0.1', cidrs2) === false);
 
 console.log('=== Summary:', passed, 'passed,', failed, 'failed ===');
 process.exit(exitCode);

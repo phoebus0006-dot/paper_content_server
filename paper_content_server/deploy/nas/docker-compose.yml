@@ -5,12 +5,13 @@ services:
   paper-frame-server:
     image: paper-content-server:${IMAGE_TAG:-__REPLACE_ME__}
     container_name: paper-content-staging
-    network_mode: host
+    ports:
+      - "18080:8787"
     env_file:
       - .env
     environment:
       - ADMIN_ACCESS_MODE=lan
-      - ADMIN_ALLOWED_CIDRS=127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      - ADMIN_ALLOWED_CIDRS=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
       - TRUST_PROXY=false
       - DELETE_PIPELINE_ENABLED=false
       - MQTT_ENABLED=false

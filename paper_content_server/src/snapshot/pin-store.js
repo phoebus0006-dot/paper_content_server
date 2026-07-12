@@ -59,6 +59,10 @@ function PinStore(clock) {
     pins.clear();
   }
 
+  function setClock(newClock) {
+    clock = newClock || { nowMs: function() { return Date.now(); } };
+  }
+
   return {
     pin: pin,
     pinMiss: pinMiss,
@@ -67,6 +71,7 @@ function PinStore(clock) {
     gc: gc,
     size: size,
     clear: clear,
+    setClock: setClock,
   };
 }
 

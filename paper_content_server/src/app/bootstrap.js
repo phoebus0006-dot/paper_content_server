@@ -64,7 +64,8 @@ function bootstrap(overrides) {
     path.join(config.paths.dataDir, 'publication', 'history.json'),
     logger
   );
-  var notificationPort = R3_NoopNotificationPort();
+  var notificationPort = overrides.notificationPort || R3_NoopNotificationPort();
+  var mqttClient = overrides.mqttClient || null;
 
   var services = composeServices({
     config: config, clock: clock, logger: logger,
@@ -74,6 +75,7 @@ function bootstrap(overrides) {
     operatingModeService: operatingModeService,
     publicationHistory: publicationHistory,
     notificationPort: notificationPort,
+    mqttClient: mqttClient,
   });
 
   var app = createApp({
@@ -107,7 +109,17 @@ function bootstrap(overrides) {
   }
 
   function shutdown() {
-    return Promise.resolve();
+    var tasks = [];
+    return new Promise(function(resolve) {
+      if (server) {
+        tasks.push(new Promise(function(ok) { server.close(function() { ok(); }); }));
+      }
+      if (mqttClient && typeof mqttClient.disconnect === 'function') {
+        try { mqttClient.disconnect(); } catch(e) {}
+      }
+      if (tasks.length === 0) { resolve(); return; }
+      Promise.all(tasks).then(function() { resolve(); });
+    });
   }
 
   return {
@@ -116,7 +128,7 @@ function bootstrap(overrides) {
     server: server,
     services: services,
     shutdown: shutdown,
-    deps: { clock: clock, logger: logger, stores: stores, httpClient: httpClient, snapshotStore: snapshotStore, snapshotCache: snapshotCache, pinStore: pinStore, publicationLock: publicationLock, operatingModeService: operatingModeService, publicationHistory: publicationHistory, notificationPort: notificationPort },
+    deps: { clock: clock, logger: logger, stores: stores, httpClient: httpClient, snapshotStore: snapshotStore, snapshotCache: snapshotCache, pinStore: pinStore, publicationLock: publicationLock, operatingModeService: operatingModeService, publicationHistory: publicationHistory, notificationPort: notificationPort, mqttClient: mqttClient },
   };
 }
 

@@ -168,7 +168,15 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 const ADMIN_ACCESS_MODE = String(process.env.ADMIN_ACCESS_MODE || 'token').toLowerCase();
 const ADMIN_ALLOWED_CIDRS_RAW = process.env.ADMIN_ALLOWED_CIDRS || '';
 const TRUST_PROXY = String(process.env.TRUST_PROXY || 'false').toLowerCase() === 'true';
+const TRUSTED_PROXY_CIDRS_RAW = process.env.TRUSTED_PROXY_CIDRS || '';
+const ALLOW_HEADERLESS_WRITE = String(process.env.ALLOW_HEADERLESS_WRITE || 'false').toLowerCase() === 'true';
 const MQTT_ENABLED = String(process.env.MQTT_ENABLED || 'false').toLowerCase() === 'true';
+
+// Admin network policies — single source of truth, also used by tests
+var adminPolicy = require('./src/admin/admin-network-policy');
+var adminCSRF = require('./src/admin/admin-csrf-policy');
+var ADM_PARSED_CIDRS = adminPolicy.parseCIDRList(ADMIN_ALLOWED_CIDRS_RAW);
+var ADM_TRUSTED_PROXY_CIDRS = TRUSTED_PROXY_CIDRS_RAW ? adminPolicy.parseCIDRList(TRUSTED_PROXY_CIDRS_RAW).parsed : [];
 
 const DATA_DIR = resolveConfiguredPath(APP_CONFIG.dataDir || 'data');
 const IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.imageRoot || 'images');
@@ -223,11 +231,33 @@ const runtime = {
 
 async function main() {
   r1Logger.info('Starting NewsPhoto content server via R1 bootstrap');
+
+  // Create MQTT and notification port BEFORE bootstrap — single construction
+  var notificationPort = null;
+  var mqttClient = null;
+  if (MQTT_ENABLED) {
+    try {
+      var MqttConfig = require('./src/mqtt/mqtt-config').loadMqttConfig;
+      var mqttConfig = MqttConfig(process.env);
+      var { createMqttClientPort } = require('./src/mqtt/mqtt-client-port');
+      mqttClient = createMqttClientPort(mqttConfig, r1Logger);
+      mqttClient.connect().catch(function(e) {
+        r1Logger.warn('MQTT connect failed: ' + e.message + ' — HTTP continues');
+      });
+      var { createMqttNotificationAdapter } = require('./src/mqtt/mqtt-notification-adapter');
+      notificationPort = createMqttNotificationAdapter(mqttConfig, mqttClient, r1Logger);
+    } catch(e) {
+      r1Logger.warn('MQTT initialization failed: ' + e.message + ' — falling back to noop');
+    }
+  }
+
   var boot = R1_bootstrap({
     handler: handleRequest,
     env: process.env,
     cwd: ROOT_DIR,
     listen: false,
+    notificationPort: notificationPort || undefined,
+    mqttClient: mqttClient || undefined,
   });
 
   // Ensure data directories exist
@@ -245,36 +275,13 @@ async function main() {
   // Wire R3 snapshot/publication services from single composition root
   runtime.snapshotStore = boot.deps.snapshotStore;
   runtime.snapshotCache = boot.deps.snapshotCache;
-  runtime.pinStore = R3_PinStore({ nowMs: function() { return runtime.pinNowProvider ? runtime.pinNowProvider() : Date.now(); } });
+  runtime.pinStore = boot.deps.pinStore;
   runtime.publicationLock = boot.deps.publicationLock;
   runtime.operatingModeService = boot.deps.operatingModeService;
   runtime.publicationHistory = boot.deps.publicationHistory;
-  var notificationPort = boot.deps.notificationPort;
-  var mqttClient = null;
-  if (MQTT_ENABLED) {
-    try {
-      var MqttConfig = require('./src/mqtt/mqtt-config').loadMqttConfig;
-      var mqttConfig = MqttConfig(process.env);
-      var { createMqttClientPort } = require('./src/mqtt/mqtt-client-port');
-      mqttClient = createMqttClientPort(mqttConfig, r1Logger);
-      mqttClient.connect().catch(function(e) {
-        r1Logger.warn('MQTT connect failed: ' + e.message + ' — HTTP continues');
-      });
-      var { createMqttNotificationAdapter } = require('./src/mqtt/mqtt-notification-adapter');
-      notificationPort = createMqttNotificationAdapter(mqttConfig, mqttClient, r1Logger);
-    } catch(e) {
-      r1Logger.warn('MQTT initialization failed: ' + e.message + ' — falling back to noop');
-    }
-  }
-  runtime.mqttClient = mqttClient;
-  runtime.notificationPort = notificationPort;
-  if (notificationPort !== boot.deps.notificationPort) {
-    runtime.publicationService = R3_PublicationService(runtime.snapshotStore, runtime.snapshotCache, runtime.pinStore, runtime.publicationLock, notificationPort, runtime.operatingModeService, runtime.publicationHistory, r1Logger);
-    boot.app.services.publicationService = runtime.publicationService;
-    boot.services.publicationService = runtime.publicationService;
-  } else {
-    runtime.publicationService = boot.services.publicationService;
-  }
+  runtime.notificationPort = boot.deps.notificationPort;
+  runtime.publicationService = boot.services.publicationService;
+  runtime.mqttClient = boot.deps.mqttClient || null;
   await runtime.snapshotStore.ensureDirs();
 
   // R3.8: Preload active snapshot into cache on restart
@@ -317,11 +324,7 @@ async function main() {
   });
 
   process.on('SIGINT', function() {
-    var closeTasks = [];
-    if (runtime.mqttClient && typeof runtime.mqttClient.disconnect === 'function') {
-      try { runtime.mqttClient.disconnect(); } catch(e) { r1Logger.warn('MQTT disconnect error: ' + e.message); }
-    }
-    server.close(function() { process.exit(0); });
+    boot.shutdown().then(function() { process.exit(0); });
   });
 }
 
@@ -2473,90 +2476,18 @@ function failJson(res, code, msg) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(b);
 }
-function setAdminCORSHeaders(res) {
-  if (ADMIN_ACCESS_MODE === 'lan') {
-    res.setHeader('Access-Control-Allow-Origin', '');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.setHeader('Access-Control-Allow-Credentials', 'false');
-    res.setHeader('Vary', 'Origin');
-  }
-}
-function parseCIDR(cidr) {
-  var parts = cidr.split('/');
-  var ipParts = parts[0].split('.').map(Number);
-  var mask = parseInt(parts[1], 10);
-  if (isNaN(mask)) mask = 32;
-  if (ipParts.length !== 4 || ipParts.some(isNaN) || mask < 0 || mask > 32) return null;
-  var ipNum = ((ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]) >>> 0;
-  if (mask === 0) return { network: 0, mask: 0 };
-  var hostBits = 32 - mask;
-  var maskNum = (~((1 << hostBits) - 1)) >>> 0;
-  return { network: ipNum & maskNum, mask: maskNum };
-}
-
-function ipInCIDRs(ip, cidrs) {
-  var ipParts = ip.split('.').map(Number);
-  if (ipParts.length !== 4 || ipParts.some(isNaN)) return false;
-  var ipNum = ((ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]) >>> 0;
-  for (var i = 0; i < cidrs.length; i++) {
-    var c = cidrs[i];
-    if (c && (ipNum & c.mask) === c.network) return true;
-  }
-  return false;
-}
-
-function getRemoteIP(req) {
-  if (TRUST_PROXY) {
-    var xff = req.headers['x-forwarded-for'];
-    if (xff) return xff.split(',')[0].trim();
-    var xri = req.headers['x-real-ip'];
-    if (xri) return xri.trim();
-  }
-  return req.socket.remoteAddress || '127.0.0.1';
-}
-
 function adminNetworkCheck(req) {
   if (ADMIN_ACCESS_MODE !== 'lan') return true;
-  var raw = ADMIN_ALLOWED_CIDRS_RAW;
-  if (!raw) return true;
-  var cidrList = raw.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-  var parsed = [];
-  for (var i = 0; i < cidrList.length; i++) {
-    var p = parseCIDR(cidrList[i]);
-    if (p) parsed.push(p);
-  }
-  if (parsed.length === 0) return true;
-  var ip = getRemoteIP(req);
-  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
-  if (ip === '::1') ip = '127.0.0.1';
-  return ipInCIDRs(ip, parsed);
+  if (!ADM_PARSED_CIDRS.valid) return false;
+  var ip = adminPolicy.getRemoteIP(req, TRUST_PROXY, ADM_TRUSTED_PROXY_CIDRS);
+  if (!ip) return false;
+  return adminPolicy.isAddressAllowed(ip, ADM_PARSED_CIDRS.parsed);
 }
 
 function adminCSRFCheck(req) {
   if (ADMIN_ACCESS_MODE !== 'lan') return true;
-  var method = req.method;
-  if (method !== 'POST' && method !== 'PUT' && method !== 'PATCH' && method !== 'DELETE') return true;
-  var ct = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-  var allowedCT = ['application/json', 'multipart/form-data'];
-  var ctOk = false;
-  for (var i = 0; i < allowedCT.length; i++) {
-    if (ct === allowedCT[i]) { ctOk = true; break; }
-  }
-  if (!ctOk) return false;
-  var origin = req.headers['origin'];
-  if (origin) {
-    var host = req.headers['host'] || '';
-    var originHost = (new URL(origin)).host;
-    if (originHost !== host) return false;
-  }
-  var referer = req.headers['referer'];
-  if (referer) {
-    var refHost = (new URL(referer)).host;
-    var host2 = req.headers['host'] || '';
-    if (refHost !== host2) return false;
-  }
-  return true;
+  var result = adminCSRF.checkCSRF(req, false);
+  return result.allowed;
 }
 
 function adminAuth(req) {
@@ -2906,6 +2837,9 @@ async function handleRequest(req, res) {
       if (iso) {
         runtime.nowProvider = () => new Date(iso);
         runtime.pinNowProvider = () => new Date(iso).getTime();
+        if (runtime.pinStore && typeof runtime.pinStore.setClock === 'function') {
+          runtime.pinStore.setClock({ nowMs: runtime.pinNowProvider });
+        }
         const r = Buffer.from(JSON.stringify({ set: true, iso }));
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
         res.end(r);
@@ -2914,6 +2848,9 @@ async function handleRequest(req, res) {
       if (parsed.searchParams.get('reset') === '1') {
         runtime.nowProvider = null;
         runtime.pinNowProvider = null;
+        if (runtime.pinStore && typeof runtime.pinStore.setClock === 'function') {
+          runtime.pinStore.setClock(null);
+        }
         const r = Buffer.from(JSON.stringify({ set: false }));
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
         res.end(r);
@@ -3031,7 +2968,6 @@ async function handleRequest(req, res) {
         parsed.pathname.startsWith('/admin/') || parsed.pathname.startsWith('/api/admin/')) {
       if (!adminNetworkCheck(req)) { failJson(res, 403, 'ADMIN_NETWORK_DENIED'); return; }
       if (req.method !== 'GET' && req.method !== 'OPTIONS') {
-        setAdminCORSHeaders(res);
         if (!adminCSRFCheck(req)) { failJson(res, 403, 'ADMIN_CROSS_ORIGIN_DENIED'); return; }
       }
       if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
