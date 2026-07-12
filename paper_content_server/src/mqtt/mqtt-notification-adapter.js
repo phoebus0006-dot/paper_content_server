@@ -7,7 +7,7 @@ function createMqttNotificationAdapter(config, client, logger) {
     notify: function(msg) {
       if (!msg || !msg.snapshotId) return Promise.resolve();
       if (!config.enabled) return Promise.resolve();
-      return publisher.publishSnapshot(msg.snapshotId, msg.frameId, msg.frameSha256);
+      return publisher.publishSnapshot(msg.snapshotId, msg.frameId, msg.frameSha256, msg.reason);
     },
     name: 'mqtt',
   };

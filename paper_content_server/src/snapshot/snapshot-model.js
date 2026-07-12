@@ -19,19 +19,20 @@ function computeContentHash(frameId, payload, mode) {
   return crypto.createHash('sha256').update(frameId + '|' + mode).digest('hex').slice(0, 16);
 }
 
-function createSnapshot(frameId, payload, frame, mode) {
+function createSnapshot(frameId, payload, frame, mode, options) {
   if (!frameId || typeof frameId !== 'string') throw new Error('frameId must be a non-empty string');
   if (!payload || typeof payload !== 'object') throw new Error('payload must be an object');
   if (!Buffer.isBuffer(frame) || frame.length === 0) throw new Error('frame must be a non-empty Buffer');
   if (mode !== 'news' && mode !== 'photo') throw new Error('mode must be "news" or "photo"');
 
+  options = options || {};
   var snapshotId = 'snap_' + Date.now().toString(36) + '_' + crypto.randomBytes(4).toString('hex');
   var createdAt = new Date().toISOString();
   var frameSha256 = computeFrameSha256(frame);
   var frameLength = frame.length;
   var contentHash = computeContentHash(frameId, payload, mode);
 
-  return Object.freeze({
+  var snapshot = {
     snapshotId: snapshotId,
     frameId: frameId,
     payload: payload,
@@ -42,11 +43,16 @@ function createSnapshot(frameId, payload, frame, mode) {
     contentHash: contentHash,
     createdAt: createdAt,
     schemaVersion: SCHEMA_VERSION,
-  });
+  };
+  // Optional publishReason flows through publication-service → mqtt-message.reason
+  if (options.publishReason && typeof options.publishReason === 'string') {
+    snapshot.publishReason = options.publishReason;
+  }
+  return Object.freeze(snapshot);
 }
 
 function serializeMeta(snapshot) {
-  return {
+  var meta = {
     snapshotId: snapshot.snapshotId,
     frameId: snapshot.frameId,
     payload: snapshot.payload,
@@ -57,6 +63,8 @@ function serializeMeta(snapshot) {
     createdAt: snapshot.createdAt,
     schemaVersion: snapshot.schemaVersion,
   };
+  if (snapshot.publishReason) meta.publishReason = snapshot.publishReason;
+  return meta;
 }
 
 module.exports = {

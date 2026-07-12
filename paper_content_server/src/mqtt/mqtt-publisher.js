@@ -3,9 +3,9 @@ var { createPublicationMessage } = require('./mqtt-message');
 var { publicationTopic } = require('./mqtt-topic');
 function createMqttPublisher(client, config, logger) {
   logger = logger || {};
-  function publishSnapshot(snapshotId, frameId, frameSha256) {
+  function publishSnapshot(snapshotId, frameId, frameSha256, reason) {
     if (!client || !config.enabled) return Promise.resolve('MQTT_DISABLED');
-    var msg = createPublicationMessage(config.deviceId, snapshotId, frameId, frameSha256);
+    var msg = createPublicationMessage(config.deviceId, snapshotId, frameId, frameSha256, reason);
     return client.publish(publicationTopic(config.deviceId), JSON.stringify(msg));
   }
   return { publishSnapshot: publishSnapshot };
