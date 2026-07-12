@@ -1,4 +1,4 @@
-AUDITED_CODE_SHA=6f3f0e3c8328fad2fcb98f3beac50bb628a5fe47
+AUDITED_CODE_SHA=1f2f25b2eeca7fa52c81d16bd8bef096c4b733ee
 
 # Global Architecture Audit
 

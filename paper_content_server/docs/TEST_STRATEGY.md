@@ -66,7 +66,15 @@ single / analysis / comparison / 2×2 sequence。
 
 ### Frame
 
-192010 / code4=0 / state-frame coherence。
+192010 / code4=0 / state-frame coherence.
+
+### Lifecycle
+
+`lifecycle:test` (`node test/app/graceful-shutdown-test.js`) — SIGINT / SIGTERM / MQTT / concurrent-shutdown / timeout。
+
+### Admin Config
+
+`admin-config-validation-test.js` — lan / token / trust-proxy validation failures。
 
 ## 5. 测试纪律
 

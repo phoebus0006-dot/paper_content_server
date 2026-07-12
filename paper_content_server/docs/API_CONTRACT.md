@@ -37,6 +37,8 @@
 
 ### POST /api/admin/publish/one-shot
 
+> Status: `TARGET_NOT_IMPLEMENTED` — 尚未在 server.js 实现（R4/R5 计划能力）。
+
 示例：
 
 ```json
@@ -64,6 +66,8 @@ expiresAt：
 ## 4. Focus Lock
 
 ### PUT /api/admin/focus-lock
+
+> Status: `TARGET_NOT_IMPLEMENTED` — 尚未在 server.js 实现（R5/R6 计划能力）。
 
 示例：
 
@@ -93,6 +97,8 @@ expiresAt：
 
 ## 5. Library
 
+> Status: `TARGET_NOT_IMPLEMENTED` — library 相关端点尚未在 server.js 实现（R4/R6 计划能力）。
+
 ### GET /api/admin/library?libraryType=learning
 
 ### GET /api/admin/library?libraryType=custom
@@ -114,3 +120,5 @@ expiresAt：
 - `/api/admin/override`
 
 并在代码阶段明确兼容期和弃用策略。
+
+> Status: `CURRENT_COMPATIBILITY` — `/api/admin/publish/news`、`/api/admin/publish/photo`、`/api/admin/override` 当前作为兼容期处理保留。

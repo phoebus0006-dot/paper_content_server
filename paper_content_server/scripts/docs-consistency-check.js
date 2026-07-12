@@ -245,6 +245,75 @@ if (impl) {
   check(deployOk, 'Data/Deployment: all 4 key fields present (' + deployFields.filter(function(f) {{ return impl.indexOf(f + '=') < 0 && impl.indexOf('| ' + f) < 0; }}).join(', ') + ' missing)');
 }
 
+// 11. Enhanced docs consistency checks
+var REPO_ROOT = path.join(__dirname, '..'); // paper_content_server/
+var WORKSPACE_ROOT = path.join(REPO_ROOT, '..'); // workspace root (contains .github/)
+function readRepoFile(relPath) {
+  try { return fs.readFileSync(path.join(REPO_ROOT, relPath), 'utf8'); } catch(e) { return null; }
+}
+function readWorkspaceFile(relPath) {
+  try { return fs.readFileSync(path.join(WORKSPACE_ROOT, relPath), 'utf8'); } catch(e) { return null; }
+}
+
+var pkgJson = {};
+try { pkgJson = JSON.parse(readRepoFile('package.json') || '{}'); } catch(e) {}
+var serverSrc = readRepoFile('server.js') || '';
+var apiContract = readFile('API_CONTRACT.md') || '';
+
+// 11a. CURRENT admin routes documented in API_CONTRACT must exist in server.js
+//      OR be explicitly marked TARGET_NOT_IMPLEMENTED in the doc.
+if (apiContract) {
+  var adminRouteMatches = apiContract.match(/\/api\/admin\/[a-zA-Z0-9_\-\/:?]+/g) || [];
+  var seen = {};
+  var routeInfos = [];
+  adminRouteMatches.forEach(function(raw) {
+    if (seen[raw]) return;
+    seen[raw] = true;
+    var clean = raw.replace(/\/:[a-zA-Z][a-zA-Z0-9_]*/g, '').replace(/[?]libraryType=[a-z]+/g, '').replace(/\/+$/, '');
+    routeInfos.push({ raw: raw, clean: clean });
+  });
+  var missingRoutes = [];
+  routeInfos.forEach(function(info) {
+    if (serverSrc.indexOf(info.clean) >= 0) return;
+    // Allow documented-but-not-implemented routes when marked TARGET_NOT_IMPLEMENTED.
+    var idx = apiContract.indexOf(info.raw);
+    if (idx < 0) { missingRoutes.push(info.clean); return; }
+    var ctx = apiContract.slice(Math.max(0, idx - 400), idx + 400);
+    if (ctx.indexOf('TARGET_NOT_IMPLEMENTED') < 0) missingRoutes.push(info.clean);
+  });
+  check(missingRoutes.length === 0, 'API_CONTRACT admin routes exist in server.js or marked TARGET_NOT_IMPLEMENTED (missing: ' + missingRoutes.join(', ') + ')');
+}
+
+// 11b. Package scripts referenced by CI must exist
+var ciScripts = ['docs:check','contracts:test','r1:test','r2:test','r3:test','r4:test','r5:test','r6:test','r7:test','r8:test','r9:test','r10:test','r11:test','r12:all','admin:test','lifecycle:test','restart:test'];
+var missingScripts = ciScripts.filter(function(s) { return !pkgJson.scripts || !pkgJson.scripts[s]; });
+check(missingScripts.length === 0, 'Package scripts present (missing: ' + missingScripts.join(', ') + ')');
+
+// 11c. Root CI workflow must exist
+var rootCi = readWorkspaceFile('.github/workflows/ci.yml');
+check(!!rootCi, 'Root CI workflow .github/workflows/ci.yml exists');
+if (rootCi) {
+  check(rootCi.indexOf('lifecycle:test') >= 0, 'Root CI workflow includes lifecycle:test');
+  check(rootCi.indexOf('r12:all') >= 0, 'Root CI workflow includes r12:all');
+  check(rootCi.indexOf('admin:test') >= 0, 'Root CI workflow includes admin:test');
+  check(rootCi.indexOf('restart:test') >= 0, 'Root CI workflow includes restart:test');
+  check(rootCi.indexOf('working-directory: paper_content_server') >= 0, 'Root CI uses paper_content_server working directory');
+}
+
+// 11d. ESP32 must NOT be marked as PASS/verified in docs
+var runbook = readFile('DEPLOYMENT_RUNBOOK.md') || '';
+var baseline = readFile('CURRENT_STATE_BASELINE.md') || '';
+check(!/ESP32[^=]*=(\s*)PASS/i.test(runbook), 'DEPLOYMENT_RUNBOOK: ESP32 not marked PASS');
+check(!/ESP32[^=]*=(\s*)PASS/i.test(baseline), 'CURRENT_STATE_BASELINE: ESP32 not marked PASS');
+
+// 11e. NAS port consistency (18080:8787)
+var nasCompose = readRepoFile('deploy/nas/docker-compose.yml') || '';
+var nasHasPort = nasCompose.indexOf('18080:8787') >= 0;
+check(nasHasPort, 'NAS docker-compose port 18080:8787 present');
+if (runbook) {
+  check(runbook.indexOf('18080') >= 0, 'DEPLOYMENT_RUNBOOK documents NAS port 18080');
+}
+
 console.log('\n=== exitCode=' + exitCode + ' ===');
 if (!process.env.DOCS_CHECK_SELF_TEST) { process.exit(exitCode); }
 

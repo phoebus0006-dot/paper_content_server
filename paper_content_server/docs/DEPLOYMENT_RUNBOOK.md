@@ -8,6 +8,8 @@ NAS：
 - IP: 192.168.1.49
 - 已有 public key SSH
 - 禁止索取、输出或覆盖私钥和密码
+- NAS staging port: `18080:8787` (host 18080 → container 8787)
+- Admin URL: `http://192.168.1.49:18080/admin`
 
 ## 2. 部署前
 

@@ -220,3 +220,5 @@ createApp({
   repositories
 })
 ```
+
+> HTTP 生命周期（signal handling、process exit、graceful shutdown）由 `src/app/bootstrap.js`（shutdown tasks）与 `server.js`（signal handlers 调用 `boot.shutdown`）负责；Admin 配置集中在 `src/config/load-config.js`（`APP_CONFIG.admin`）。

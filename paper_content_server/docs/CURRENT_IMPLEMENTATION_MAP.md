@@ -1,4 +1,4 @@
-AUDITED_CODE_SHA=6f3f0e3c8328fad2fcb98f3beac50bb628a5fe47
+AUDITED_CODE_SHA=1f2f25b2eeca7fa52c81d16bd8bef096c4b733ee
 
 ## 1. Route Map
 
@@ -13,12 +13,12 @@ AUDITED_CODE_SHA=6f3f0e3c8328fad2fcb98f3beac50bb628a5fe47
 | GET | /api/review.json | Review snapshot | server.js |
 | GET | /health/live | Liveness probe | server.js |
 | GET | /health/ready | Readiness probe | server.js |
-| GET | /admin/api/system/status | Admin system status | admin-query-service.js |
-| GET | /admin/api/publications | Admin publication list | admin-query-service.js |
-| GET | /admin/api/publications/:snapshotId | Admin publication detail | admin-query-service.js |
-| GET | /admin/api/assets | Admin asset list | admin-query-service.js |
-| GET | /admin/api/assets/:assetId | Admin asset detail | admin-query-service.js |
-| GET | /admin/api/features | Admin feature flags | feature-flag-view.js |
+| GET | /api/admin/system/status | Admin system status | admin-query-service.js |
+| GET | /api/admin/publications | Admin publication list | admin-query-service.js |
+| GET | /api/admin/publications/:snapshotId | Admin publication detail | admin-query-service.js |
+| GET | /api/admin/assets | Admin asset list | admin-query-service.js |
+| GET | /api/admin/assets/:assetId | Admin asset detail | admin-query-service.js |
+| GET | /api/admin/features | Admin feature flags | feature-flag-view.js |
 
 ## 2. Runtime State Map
 

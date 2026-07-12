@@ -41,6 +41,12 @@ paper_content_server/test_diag_*/
 paper_content_server/test_restart_tmp_*/
 paper_content_server/test_rotation_data_*/
 paper_content_server/test_data_r1_*/
+paper_content_server/test_cntr_*/
+paper_content_server/test_lg_*/
+paper_content_server/test_night_*/
+paper_content_server/test_shutdown_*/
+# Audit checkpoints
+audit-checkpoint/
 # Editor swap files
 #
 D

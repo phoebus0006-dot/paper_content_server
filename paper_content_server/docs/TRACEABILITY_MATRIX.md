@@ -36,3 +36,5 @@
 | ESP32 frame validation (short, oversize, wrong ID, code4) | firmware + epaper/validator | frame contract | serial audit | Required | Existing/Verify |
 | Admin publication (production-path render, validate, snapshot) | admin/admin-service.js | admin contract | admin publish + smoke | Required | Planned |
 | Rollback (restore real snapshot) | publication/publication-service.js | rollback contract | admin live | Required | Planned |
+| Lifecycle graceful shutdown (shared shutdown promise, MQTT disconnect awaited, timeout rejects) | src/app/bootstrap.js + server.js | lifecycle:test (graceful-shutdown-test.js) | NAS shutdown smoke | N/A | Implemented/Verify |
+| Admin config centralization (load-config owns admin, no direct env reads in server.js) | src/config/load-config.js | admin-config-validation-test.js | config audit | N/A | Implemented/Verify |
