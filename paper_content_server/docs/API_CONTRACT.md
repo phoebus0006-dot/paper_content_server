@@ -115,9 +115,9 @@ expiresAt：
 
 > Status: `TARGET_NOT_IMPLEMENTED` — 需 NSFW safety gate 接入 `customLibraryService` 后开放。当前路由返回 503 `SAFETY_GATE_REQUIRED`。
 
-### PATCH /api/admin/library/:id/metadata
+### PATCH /api/admin/library/:id
 
-> Status: `IMPLEMENTED` — 走 `assetRepository.update(id, {metadata: patch})`。GUARDED_FIELDS(assetId/schemaVersion/createdAt/libraryType)由 repository 强制保护,metadata 字段会合并而非覆盖。
+> Status: `IMPLEMENTED` — 走 `assetRepository.update(id, {metadata: patch})`。路由把 `/api/admin/library/:id` 中 `:id` 之后整段作为 assetId(URL-decoded);仅 metadata 可 patch,GUARDED_FIELDS(assetId/schemaVersion/createdAt/libraryType)由 repository 强制保护,metadata 字段会合并而非覆盖。
 
 ### DELETE /api/admin/library/:id
 
