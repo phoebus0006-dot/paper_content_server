@@ -242,16 +242,14 @@ async function main() {
   runtime.imageIndex = await loadImageIndex();
   runtime.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
 
-  // Initialize R3 snapshot/publication services
-  var snapshotsDir = path.join(DATA_DIR, 'snapshots');
-  var publicationDir = path.join(DATA_DIR, 'publication');
-  runtime.snapshotStore = R3_SnapshotStore(snapshotsDir, publicationDir, r1Logger);
-  runtime.snapshotCache = R3_SnapshotCache();
+  // Wire R3 snapshot/publication services from single composition root
+  runtime.snapshotStore = boot.deps.snapshotStore;
+  runtime.snapshotCache = boot.deps.snapshotCache;
   runtime.pinStore = R3_PinStore({ nowMs: function() { return runtime.pinNowProvider ? runtime.pinNowProvider() : Date.now(); } });
-  runtime.publicationLock = R3_PublicationLock();
-  runtime.operatingModeService = R3_OperatingModeService();
-  runtime.publicationHistory = R3_PublicationHistory(path.join(DATA_DIR, 'publication', 'history.json'), r1Logger);
-  var notificationPort = R3_NoopNotificationPort();
+  runtime.publicationLock = boot.deps.publicationLock;
+  runtime.operatingModeService = boot.deps.operatingModeService;
+  runtime.publicationHistory = boot.deps.publicationHistory;
+  var notificationPort = boot.deps.notificationPort;
   var mqttClient = null;
   if (MQTT_ENABLED) {
     try {
@@ -269,16 +267,14 @@ async function main() {
     }
   }
   runtime.mqttClient = mqttClient;
-  runtime.publicationService = R3_PublicationService(
-    runtime.snapshotStore,
-    runtime.snapshotCache,
-    runtime.pinStore,
-    runtime.publicationLock,
-    notificationPort,
-    runtime.operatingModeService,
-    runtime.publicationHistory,
-    r1Logger
-  );
+  runtime.notificationPort = notificationPort;
+  if (notificationPort !== boot.deps.notificationPort) {
+    runtime.publicationService = R3_PublicationService(runtime.snapshotStore, runtime.snapshotCache, runtime.pinStore, runtime.publicationLock, notificationPort, runtime.operatingModeService, runtime.publicationHistory, r1Logger);
+    boot.app.services.publicationService = runtime.publicationService;
+    boot.services.publicationService = runtime.publicationService;
+  } else {
+    runtime.publicationService = boot.services.publicationService;
+  }
   await runtime.snapshotStore.ensureDirs();
 
   // R3.8: Preload active snapshot into cache on restart
@@ -2489,7 +2485,8 @@ function setAdminCORSHeaders(res) {
 function parseCIDR(cidr) {
   var parts = cidr.split('/');
   var ipParts = parts[0].split('.').map(Number);
-  var mask = parseInt(parts[1], 10) || 32;
+  var mask = parseInt(parts[1], 10);
+  if (isNaN(mask)) mask = 32;
   if (ipParts.length !== 4 || ipParts.some(isNaN) || mask < 0 || mask > 32) return null;
   var ipNum = ((ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]) >>> 0;
   if (mask === 0) return { network: 0, mask: 0 };
@@ -2532,7 +2529,7 @@ function adminNetworkCheck(req) {
   if (parsed.length === 0) return true;
   var ip = getRemoteIP(req);
   if (ip.startsWith('::ffff:')) ip = ip.slice(7);
-  if (ip === '::1' || ip === '127.0.0.1') return true;
+  if (ip === '::1') ip = '127.0.0.1';
   return ipInCIDRs(ip, parsed);
 }
 

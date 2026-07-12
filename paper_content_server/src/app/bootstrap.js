@@ -83,6 +83,19 @@ function bootstrap(overrides) {
     logger: logger,
     stores: stores,
     httpClient: httpClient,
+    services: {
+      snapshotStore: snapshotStore,
+      snapshotCache: snapshotCache,
+      pinStore: pinStore,
+      publicationLock: publicationLock,
+      operatingModeService: operatingModeService,
+      publicationHistory: publicationHistory,
+      notificationPort: notificationPort,
+      publicationService: services.publicationService,
+      newsPipeline: services.newsPipeline,
+      adminQueryService: services.adminQueryService,
+      renderShadow: services.renderShadow,
+    },
   });
 
   var server = null;
