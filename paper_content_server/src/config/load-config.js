@@ -115,14 +115,38 @@ function loadConfig(opts) {
     fontStack: '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif',
   };
 
-  // Admin
+  // Admin — single source of truth for admin access configuration.
+  // server.js and production code read only APP_CONFIG.admin (no direct env reads).
+  var adminPolicy = require('../admin/admin-network-policy');
+  var adminAccessMode = String(env.ADMIN_ACCESS_MODE || 'token').toLowerCase();
+  var adminAllowedCidrsRaw = env.ADMIN_ALLOWED_CIDRS || '';
+  var trustProxy = String(env.TRUST_PROXY || 'false').toLowerCase() === 'true';
+  var trustedProxyCidrsRaw = env.TRUSTED_PROXY_CIDRS || '';
+  var allowHeaderlessWrite = String(env.ADMIN_ALLOW_HEADERLESS_WRITE || env.ALLOW_HEADERLESS_WRITE || 'false').toLowerCase() === 'true';
+
+  var adminAllowedCidrs = adminPolicy.parseCIDRList(adminAllowedCidrsRaw);
+  var adminTrustedProxyCidrs = trustedProxyCidrsRaw ? adminPolicy.parseCIDRList(trustedProxyCidrsRaw) : { parsed: [], valid: true, error: null, invalidEntries: [] };
+
   config.admin = {
+    accessMode: adminAccessMode,
     token: env.ADMIN_TOKEN || '',
+    allowedCidrsRaw: adminAllowedCidrsRaw,
+    allowedCidrs: adminAllowedCidrs,
+    trustProxy: trustProxy,
+    trustedProxyCidrsRaw: trustedProxyCidrsRaw,
+    trustedProxyCidrs: adminTrustedProxyCidrs,
+    allowHeaderlessWrite: allowHeaderlessWrite,
   };
 
   // Debug
   config.debug = {
     enabled: config.server.enableDebugRoutes,
+  };
+
+  // Lifecycle timeouts (ms). Unified across bootstrap and server.js.
+  config.lifecycle = {
+    shutdownTimeoutMs: Number(env.BOOTSTRAP_SHUTDOWN_TIMEOUT_MS) || 10000,
+    forceExitTimeoutMs: Number(env.PROCESS_FORCE_EXIT_TIMEOUT_MS) || 12000,
   };
 
   // Validate
@@ -132,6 +156,25 @@ function loadConfig(opts) {
   }
   if (!config.server.port || config.server.port < 1) {
     errors.push('PORT must be a positive number');
+  }
+  // Admin validation
+  if (adminAccessMode !== 'lan' && adminAccessMode !== 'token') {
+    errors.push('ADMIN_ACCESS_MODE must be lan or token (got "' + adminAccessMode + '")');
+  }
+  if (adminAccessMode === 'lan') {
+    if (!adminAllowedCidrs.valid) {
+      errors.push('ADMIN_ACCESS_MODE=lan requires ADMIN_ALLOWED_CIDRS to be all valid (invalid: ' + adminAllowedCidrs.invalidEntries.join(', ') + ')');
+    }
+  }
+  if (adminAccessMode === 'token' && !config.admin.token) {
+    errors.push('ADMIN_ACCESS_MODE=token requires ADMIN_TOKEN to be set');
+  }
+  if (trustProxy) {
+    if (!trustedProxyCidrsRaw) {
+      errors.push('TRUST_PROXY=true requires TRUSTED_PROXY_CIDRS to be set');
+    } else if (!adminTrustedProxyCidrs.valid) {
+      errors.push('TRUST_PROXY=true requires TRUSTED_PROXY_CIDRS to be all valid (invalid: ' + adminTrustedProxyCidrs.invalidEntries.join(', ') + ')');
+    }
   }
   config.errors = errors;
   config.isValid = errors.length === 0;
