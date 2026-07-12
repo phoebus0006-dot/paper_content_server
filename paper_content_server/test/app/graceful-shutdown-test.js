@@ -1,10 +1,18 @@
 // graceful-shutdown-test.js — real lifecycle verification.
 // Covers:
-//   SIGINT / SIGTERM closes HTTP, exits 0, port can rebind
-//   MQTT disconnect: sync, Promise, callback, rejection propagates, throw propagates
-//   Shutdown timeout rejects and yields exit code 1
-//   Concurrent shutdown calls return the SAME Promise
-// No boolean idempotency — uses shared Promise identity.
+//   Port contract (createMqttClientPort(client).disconnect):
+//     REAL_PORT_DISCONNECT_RETURNS_PROMISE
+//     REAL_PORT_DISCONNECT_WAITS_FOR_END_CALLBACK
+//     END_CALLBACK_ERROR_REJECTS
+//     SECOND_DISCONNECT_IDEMPOTENT
+//   Bootstrap integration:
+//     CONCURRENT_SHUTDOWN_RETURNS_SAME_PROMISE
+//     MQTT_CALLBACK_END_AWAITED, MQTT_REJECTION_PROPAGATED, MQTT_THROW_PROPAGATED
+//     MQTT_REJECTION_CLEARS_TIMER, HTTP_REJECTION_CLEARS_TIMER
+//     SHUTDOWN_TIMEOUT_CAUSES_FAILURE
+//   Real subprocess:
+//     SIGINT / SIGTERM close HTTP, port can rebind (PORT_REBIND)
+// No boolean idempotency — uses shared Promise identity and clearTimeout spy.
 var http = require('http');
 var net = require('net');
 var path = require('path');
@@ -12,145 +20,170 @@ var fs = require('fs');
 var { spawn } = require('child_process');
 var ROOT = path.join(__dirname, '..', '..');
 var passed = 0, failed = 0, exitCode = 0;
-function check(l, c) { if (c) { passed++; console.log('PASS', l) } else { failed++; exitCode = 1; console.log('FAIL', l) } }
+function check(l, c, d) { if (c) { passed++; console.log('PASS', l + (d ? ' :: ' + d : '')); } else { failed++; exitCode = 1; console.log('FAIL', l + (d ? ' :: ' + d : '')); } }
 function getPort() { return new Promise(function(ok) { var s = net.createServer(); s.listen(0, function() { var p = s.address().port; s.close(function() { ok(p); }); }); }); }
 function rmDir(p) { try { var e = fs.readdirSync(p); e.forEach(function(f) { var fp = path.join(p, f); if (fs.statSync(fp).isDirectory()) rmDir(fp); else fs.unlinkSync(fp); }); fs.rmdirSync(p); } catch(e) {} }
-
-// ---------------------------------------------------------------------------
-// Part A — Unit tests against bootstrap.shutdown() directly (in-process).
-// Uses overrides to inject a fake HTTP server and fake MQTT clients.
-// ---------------------------------------------------------------------------
-var { bootstrap } = require('../../src/app/bootstrap');
-
-function makeFakeHttpServer() {
-  // Minimal HTTP server stub: close() accepts callback.
-  var closed = false;
-  var closeCbs = [];
-  return {
-    onclose: null,
-    close: function(cb) {
-      if (closed) { if (cb) setImmediate(cb); return; }
-      closed = true;
-      closeCbs.push(cb);
-      // Simulate async close on next tick.
-      setImmediate(function() {
-        closeCbs.forEach(function(c) { if (c) c(); });
-        closeCbs = [];
-      });
-    },
-    isClosed: function() { return closed; },
-  };
-}
 
 function fakeLogger() {
   return { info: function() {}, warn: function() {}, error: function() {}, debug: function() {} };
 }
 
-async function runUnitTests() {
-  console.log('=== Part A: shutdown unit tests (in-process) ===');
+function baseEnv(extra) {
+  return Object.assign({ PORT: '8799', TRANSLATION_PROVIDER: 'none', TZ: 'UTC', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' }, extra || {});
+}
+
+// ---------------------------------------------------------------------------
+// Part A — unit tests against the disconnect port and bootstrap.shutdown().
+// ---------------------------------------------------------------------------
+var { bootstrap } = require('../../src/app/bootstrap');
+var { createMqttClientPort } = require('../../src/mqtt/mqtt-client-port');
+
+// Track setTimeout/clearTimeout so we can assert the shutdown timer is cleared
+// on both success and failure paths. Returns { install(), counts(), uninstall() }.
+function timerSpy() {
+  var origClear = global.clearTimeout;
+  var clearCalls = 0;
+  function install() { global.clearTimeout = function() { clearCalls++; return origClear.apply(this, arguments); }; }
+  function uninstall() { global.clearTimeout = origClear; }
+  function counts() { return clearCalls; }
+  return { install: install, uninstall: uninstall, counts: counts };
+}
+
+async function runPortUnitTests() {
+  console.log('=== Part A.1: disconnect port unit tests ===');
+
+  // REAL_PORT_DISCONNECT_RETURNS_PROMISE
+  await (async function() {
+    var port = createMqttClientPort({ end: function(cb) { setImmediate(cb); } });
+    var p = port.disconnect();
+    check('REAL_PORT_DISCONNECT_RETURNS_PROMISE', p && typeof p.then === 'function');
+    await p;
+  })();
+
+  // REAL_PORT_DISCONNECT_WAITS_FOR_END_CALLBACK
+  await (async function() {
+    var endCalled = false;
+    var port = createMqttClientPort({ end: function(cb) { setImmediate(function() { endCalled = true; cb(); }); } });
+    await port.disconnect();
+    check('REAL_PORT_DISCONNECT_WAITS_FOR_END_CALLBACK', endCalled);
+  })();
+
+  // END_CALLBACK_ERROR_REJECTS
+  await (async function() {
+    var port = createMqttClientPort({ end: function(cb) { setImmediate(function() { cb(new Error('END_FAIL')); }); } });
+    var err = null;
+    try { await port.disconnect(); } catch(e) { err = e; }
+    check('END_CALLBACK_ERROR_REJECTS', !!err && /END_FAIL/.test(err.message));
+  })();
+
+  // SECOND_DISCONNECT_IDEMPOTENT — second call returns same Promise and end() runs once
+  await (async function() {
+    var endCalls = 0;
+    var port = createMqttClientPort({ end: function(cb) { endCalls++; setImmediate(cb); } });
+    var p1 = port.disconnect();
+    var p2 = port.disconnect();
+    check('SECOND_DISCONNECT_IDEMPOTENT', p1 === p2);
+    await p1;
+    check('SECOND_DISCONNECT_IDEMPOTENT_END_ONCE', endCalls === 1, 'endCalls=' + endCalls);
+  })();
+
+  // SYNC_END_SUPPORTED — end() with no callback resolves immediately
+  await (async function() {
+    var called = false;
+    var port = createMqttClientPort({ end: function() { called = true; } }); // end.length === 0
+    await port.disconnect();
+    check('SYNC_END_SUPPORTED', called);
+  })();
+
+  // NULL_CLIENT_NOOP — createMqttClientPort(null).disconnect() resolves
+  await (async function() {
+    var port = createMqttClientPort(null);
+    var ok = true;
+    try { await port.disconnect(); } catch(e) { ok = false; }
+    check('NULL_CLIENT_NOOP', ok);
+  })();
+}
+
+async function runBootstrapUnitTests() {
+  console.log('\n=== Part A.2: bootstrap shutdown integration tests ===');
 
   // CONCURRENT_SHUTDOWN_RETURNS_SAME_PROMISE
-  (function() {
-    var srv = makeFakeHttpServer();
-    var boot = bootstrap({
-      env: { PORT: '8799', TRANSLATION_PROVIDER: 'none', TZ: 'UTC', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' },
-      cwd: ROOT,
-      listen: false,
-      logger: fakeLogger(),
-    });
-    // Inject the fake server by overriding via deps — but bootstrap only creates
-    // its own server when listen:true. With listen:false, server is null, so
-    // shutdown only runs disconnectMqtt(null) → resolves immediately.
+  await (async function() {
+    var boot = bootstrap({ env: baseEnv(), cwd: ROOT, listen: false, logger: fakeLogger() });
     var p1 = boot.shutdown();
     var p2 = boot.shutdown();
     check('CONCURRENT_SHUTDOWN_RETURNS_SAME_PROMISE', p1 === p2);
-    return p1;
+    await p1;
   })();
 
-  // MQTT_SYNC_DISCONNECT_SUPPORTED — sync disconnect() (no callback, no Promise)
+  // MQTT_CALLBACK_END_AWAITED — bootstrap awaits end(cb) via the port
   await (async function() {
-    var called = false;
-    var mqttSync = { disconnect: function() { called = true; } }; // length=0
-    var boot = bootstrap({
-      env: { PORT: '8799', TRANSLATION_PROVIDER: 'none', TZ: 'UTC', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' },
-      cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttSync,
-    });
+    var endCalled = false;
+    var mqttCallback = { end: function(cb) { setImmediate(function() { endCalled = true; cb(); }); } };
+    var boot = bootstrap({ env: baseEnv(), cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttCallback });
     await boot.shutdown();
-    check('MQTT_SYNC_DISCONNECT_SUPPORTED', called);
+    check('MQTT_CALLBACK_END_AWAITED', endCalled);
   })();
 
-  // MQTT_PROMISE_DISCONNECT_AWAITED — disconnect() returns a Promise resolved after a tick
+  // MQTT_REJECTION_PROPAGATED — end callback error → shutdown rejects
   await (async function() {
-    var resolved = false;
-    var mqttPromise = {
-      disconnect: function() {
-        return new Promise(function(r) { setImmediate(function() { resolved = true; r(); }); });
-      },
-    };
-    var boot = bootstrap({
-      env: { PORT: '8799', TRANSLATION_PROVIDER: 'none', TZ: 'UTC', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' },
-      cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttPromise,
-    });
-    await boot.shutdown();
-    check('MQTT_PROMISE_DISCONNECT_AWAITED', resolved);
+    var mqttReject = { end: function(cb) { setImmediate(function() { cb(new Error('MQTT_END_FAIL')); }); } };
+    var boot = bootstrap({ env: baseEnv(), cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttReject });
+    var err = null;
+    try { await boot.shutdown(); } catch(e) { err = e; }
+    check('MQTT_REJECTION_PROPAGATED', !!err && /MQTT_END_FAIL/.test(err.message));
   })();
 
-  // MQTT_CALLBACK_DISCONNECT_AWAITED — disconnect(done) calls done()
+  // MQTT_THROW_PROPAGATED — end() throws synchronously → shutdown rejects
   await (async function() {
-    var cbCalled = false;
-    var mqttCallback = {
-      disconnect: function(done) { setImmediate(function() { cbCalled = true; done(); }); },
-    };
-    var boot = bootstrap({
-      env: { PORT: '8799', TRANSLATION_PROVIDER: 'none', TZ: 'UTC', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' },
-      cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttCallback,
-    });
-    await boot.shutdown();
-    check('MQTT_CALLBACK_DISCONNECT_AWAITED', cbCalled);
+    var mqttThrow = { end: function() { throw new Error('THROW'); } };
+    var boot = bootstrap({ env: baseEnv(), cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttThrow });
+    var err = null;
+    try { await boot.shutdown(); } catch(e) { err = e; }
+    check('MQTT_THROW_PROPAGATED', !!err && /THROW/.test(err.message));
   })();
 
-  // MQTT_REJECTION_PROPAGATED — disconnect() Promise rejects → shutdown rejects
+  // MQTT_REJECTION_CLEARS_TIMER — when mqtt end rejects, the shutdown timer
+  // must be cleared (no leaked SHUTDOWN_TIMEOUT). Asserted via clearTimeout spy.
   await (async function() {
-    var mqttReject = {
-      disconnect: function() { return Promise.reject(new Error('MQTT_FAIL')); },
-    };
-    var boot = bootstrap({
-      env: { PORT: '8799', TRANSLATION_PROVIDER: 'none', TZ: 'UTC', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' },
-      cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttReject,
-    });
-    var threw = false;
-    try { await boot.shutdown(); } catch(e) { threw = true; }
-    check('MQTT_REJECTION_PROPAGATED', threw);
+    var spy = timerSpy();
+    var mqttReject = { end: function(cb) { setImmediate(function() { cb(new Error('MQTT_END_FAIL')); }); } };
+    var boot = bootstrap({ env: baseEnv({ BOOTSTRAP_SHUTDOWN_TIMEOUT_MS: '50' }), cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttReject });
+    var err = null;
+    spy.install();
+    try { try { await boot.shutdown(); } catch(e) { err = e; } }
+    finally { spy.uninstall(); }
+    check('MQTT_REJECTION_CLEARS_TIMER', !!err && /MQTT_END_FAIL/.test(err.message) && spy.counts() >= 1, 'clearCalls=' + spy.counts());
+    // Wait beyond the timeout window; ensure no late SHUTDOWN_TIMEOUT surfaces.
+    await new Promise(function(r) { setTimeout(r, 180); });
   })();
 
-  // MQTT_THROW_PROPAGATED — disconnect() throws synchronously → shutdown rejects
+  // HTTP_REJECTION_CLEARS_TIMER — when server.close rejects, the shutdown
+  // timer must be cleared. Uses overrides.server to inject a failing server.
   await (async function() {
-    var mqttThrow = {
-      disconnect: function() { throw new Error('THROW'); },
+    var spy = timerSpy();
+    var failingServer = {
+      close: function(cb) { setImmediate(function() { cb(new Error('HTTP_CLOSE_FAIL')); }); },
     };
-    var boot = bootstrap({
-      env: { PORT: '8799', TRANSLATION_PROVIDER: 'none', TZ: 'UTC', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' },
-      cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttThrow,
-    });
-    var threw = false;
-    try { await boot.shutdown(); } catch(e) { threw = true; }
-    check('MQTT_THROW_PROPAGATED', threw);
+    var mqttOk = { end: function(cb) { setImmediate(cb); } };
+    var boot = bootstrap({ env: baseEnv({ BOOTSTRAP_SHUTDOWN_TIMEOUT_MS: '50' }), cwd: ROOT, listen: false, logger: fakeLogger(), server: failingServer, mqttClient: mqttOk });
+    var err = null;
+    spy.install();
+    try { try { await boot.shutdown(); } catch(e) { err = e; } }
+    finally { spy.uninstall(); }
+    check('HTTP_REJECTION_CLEARS_TIMER', !!err && /HTTP_CLOSE_FAIL/.test(err.message) && spy.counts() >= 1, 'clearCalls=' + spy.counts());
+    await new Promise(function(r) { setTimeout(r, 180); });
   })();
 
-  // SHUTDOWN_TIMEOUT_CAUSES_FAILURE — server.close never resolves → timeout rejects
+  // SHUTDOWN_TIMEOUT_CAUSES_FAILURE — end(cb) never resolves → timeout rejects
   await (async function() {
-    var mqttHang = {
-      disconnect: function() { return new Promise(function() { /* never resolves */ }); },
-    };
-    var boot2 = bootstrap({
-      env: { PORT: '8799', TRANSLATION_PROVIDER: 'none', TZ: 'UTC', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8', BOOTSTRAP_SHUTDOWN_TIMEOUT_MS: '100' },
-      cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttHang,
-    });
+    var mqttHang = { end: function(cb) { /* never calls cb */ } };
+    var boot = bootstrap({ env: baseEnv({ BOOTSTRAP_SHUTDOWN_TIMEOUT_MS: '100' }), cwd: ROOT, listen: false, logger: fakeLogger(), mqttClient: mqttHang });
     var timedOut = false;
     var start = Date.now();
-    try { await boot2.shutdown(); } catch(e) { timedOut = /SHUTDOWN_TIMEOUT/.test(e.message); }
+    try { await boot.shutdown(); } catch(e) { timedOut = /SHUTDOWN_TIMEOUT/.test(e.message); }
     var elapsed = Date.now() - start;
-    check('SHUTDOWN_TIMEOUT_CAUSES_FAILURE', timedOut && elapsed >= 90 && elapsed < 2000);
+    check('SHUTDOWN_TIMEOUT_CAUSES_FAILURE', timedOut && elapsed >= 90 && elapsed < 2000, 'elapsed=' + elapsed);
   })();
 }
 
@@ -186,11 +219,10 @@ function signalTest(signal, label) {
     check(label + '_SERVER_STARTED', ready);
     if (!ready) { try { child.kill('SIGKILL'); } catch(e) {} rmDir(TMPDIR); resolve(); return; }
 
-    // Send the signal. On Linux/CI this delivers a real POSIX signal that
-    // triggers process.on('SIGINT'/'SIGTERM') in server.js. On Windows,
-    // child.kill(signal) terminates the process directly (no signal handler),
-    // so exit-code-0 cannot be asserted locally — the in-process unit tests
-    // (Part A) cover the shutdown handler behaviour instead.
+    // On Linux/CI this delivers a real POSIX signal that triggers process.on
+    // ('SIGINT'/'SIGTERM') in server.js. On Windows, child.kill(signal)
+    // terminates the process directly (no signal handler), so exit-code-0
+    // cannot be asserted locally — Part A unit tests cover the handler path.
     var isWindows = process.platform === 'win32';
     child.kill(signal);
 
@@ -209,16 +241,13 @@ function signalTest(signal, label) {
       check(label + '_EXIT_CODE_0', exitCode === 0, 'exitCode=' + exitCode);
       check(label + '_NO_SIGNAL_KILL', exitSignal === null || exitSignal === signal);
     } else {
-      // Windows: signal delivery does not invoke the Node signal handler.
-      // Verify the process exited and the port was released (shutdown path
-      // covered by Part A unit tests). Record the platform limitation.
       console.log('  [' + label + '] Windows: exitCode=' + exitCode + ' signal=' + exitSignal + ' (signal-handler exit-code asserted on Linux CI only)');
       check(label + '_PROCESS_EXITED', exited);
     }
 
     if (!exited) { try { child.kill('SIGKILL'); } catch(e) {} }
 
-    // Verify port can be rebound after shutdown.
+    // Verify port can be rebound after shutdown (PORT_REBIND).
     var errorOnRebind = false;
     try {
       await new Promise(function(ok, fail) {
@@ -241,7 +270,8 @@ async function runSignalTests() {
 }
 
 (async function() {
-  await runUnitTests();
+  await runPortUnitTests();
+  await runBootstrapUnitTests();
   await runSignalTests();
   console.log('\n=== Summary:', passed, 'passed,', failed, 'failed ===');
   process.exit(exitCode);
