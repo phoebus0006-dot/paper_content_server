@@ -101,24 +101,29 @@ function bootstrap(overrides) {
   });
 
   var server = null;
-  if (overrides.listen !== false) {
+  if (overrides.listen) {
+    var listenPort = overrides.port || config.server.port;
     server = http.createServer(app.handler);
-    server.listen(config.server.port, '0.0.0.0', function() {
-      logger.info('NewsPhoto content server listening on port ' + config.server.port);
+    server.listen(listenPort, '0.0.0.0', function() {
+      logger.info('NewsPhoto content server listening on port ' + listenPort);
     });
   }
 
+  var shutDown = false;
   function shutdown() {
+    if (shutDown) return Promise.resolve();
+    shutDown = true;
     var tasks = [];
     return new Promise(function(resolve) {
+      var timeout = setTimeout(function() { resolve(); }, 10000);
       if (server) {
         tasks.push(new Promise(function(ok) { server.close(function() { ok(); }); }));
       }
       if (mqttClient && typeof mqttClient.disconnect === 'function') {
         try { mqttClient.disconnect(); } catch(e) {}
       }
-      if (tasks.length === 0) { resolve(); return; }
-      Promise.all(tasks).then(function() { resolve(); });
+      if (tasks.length === 0) { clearTimeout(timeout); resolve(); return; }
+      Promise.all(tasks).then(function() { clearTimeout(timeout); resolve(); });
     });
   }
 

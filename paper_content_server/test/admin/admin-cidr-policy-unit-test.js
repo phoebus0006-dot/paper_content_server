@@ -17,6 +17,12 @@ check('parseCIDR /33 invalid', policy.parseCIDR('10.0.0.0/33') === null);
 check('parseCIDR 999 octet invalid', policy.parseCIDR('999.1.1.1/24') === null);
 check('parseCIDR negative invalid', policy.parseCIDR('-1.0.0.0/24') === null);
 check('parseCIDR non-integer invalid', policy.parseCIDR('1.2.3.4.5/24') === null);
+check('parseCIDR 192.168..1/24 invalid', policy.parseCIDR('192.168..1/24') === null);
+check('parseCIDR 1e2.1.1.1/24 invalid', policy.parseCIDR('1e2.1.1.1/24') === null);
+check('parseCIDR trailing garbage', policy.parseCIDR('192.168.1.1/24abc') === null);
+check('parseCIDR no mask', policy.parseCIDR('192.168.1.1') === null);
+check('parseCIDR mask decimal', policy.parseCIDR('192.168.1.1/24.0') === null);
+check('parseCIDR mixed list rejected', policy.parseCIDRList('127.0.0.0/8,999.1.1.1/24').valid === false);
 
 // parseCIDRList
 var list1 = policy.parseCIDRList('127.0.0.0/8');
@@ -26,7 +32,7 @@ var list2 = policy.parseCIDRList('');
 check('parseCIDRList empty rejected', list2.valid === false && list2.error === 'EMPTY_CIDR_CONFIG');
 
 var list3 = policy.parseCIDRList('999.1.1.1/24');
-check('parseCIDRList all invalid rejected', list3.valid === false && list3.error === 'ALL_INVALID_CIDRS');
+check('parseCIDRList all invalid rejected', list3.valid === false && list3.error === 'MIXED_INVALID_CIDRS' && list3.invalidEntries.length > 0);
 
 var list4 = policy.parseCIDRList('127.0.0.0/8,10.0.0.0/8,192.168.0.0/16');
 check('parseCIDRList multiple valid', list4.valid === true && list4.parsed.length === 3);

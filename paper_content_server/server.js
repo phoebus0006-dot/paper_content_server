@@ -169,7 +169,7 @@ const ADMIN_ACCESS_MODE = String(process.env.ADMIN_ACCESS_MODE || 'token').toLow
 const ADMIN_ALLOWED_CIDRS_RAW = process.env.ADMIN_ALLOWED_CIDRS || '';
 const TRUST_PROXY = String(process.env.TRUST_PROXY || 'false').toLowerCase() === 'true';
 const TRUSTED_PROXY_CIDRS_RAW = process.env.TRUSTED_PROXY_CIDRS || '';
-const ALLOW_HEADERLESS_WRITE = String(process.env.ALLOW_HEADERLESS_WRITE || 'false').toLowerCase() === 'true';
+const ADMIN_ALLOW_HEADERLESS_WRITE = String(process.env.ADMIN_ALLOW_HEADERLESS_WRITE || process.env.ALLOW_HEADERLESS_WRITE || 'false').toLowerCase() === 'true';
 const MQTT_ENABLED = String(process.env.MQTT_ENABLED || 'false').toLowerCase() === 'true';
 
 // Admin network policies — single source of truth, also used by tests
@@ -255,7 +255,8 @@ async function main() {
     handler: handleRequest,
     env: process.env,
     cwd: ROOT_DIR,
-    listen: false,
+    listen: true,
+    port: PORT,
     notificationPort: notificationPort || undefined,
     mqttClient: mqttClient || undefined,
   });
@@ -298,7 +299,7 @@ async function main() {
     r1Logger.warn('Could not preload active snapshot: ' + e.message);
   }
 
-  var server = http.createServer(boot.app.handler);
+  var server = boot.server;
 
   var effectiveTimeZone = r1Clock.timezone();
   if (effectiveTimeZone !== TIMEZONE) {
@@ -319,13 +320,14 @@ async function main() {
     r1Logger.info('  http://' + ip + ':' + PORT + '/api/news.json');
   }
 
-  server.listen(PORT, '0.0.0.0', function() {
-    r1Logger.info('NewsPhoto content server listening on port ' + PORT);
-  });
+  function gracefulShutdown(signal) {
+    r1Logger.info('Received ' + signal + ', shutting down...');
+    var timeout = setTimeout(function() { r1Logger.warn('Shutdown timed out'); process.exitCode = 1; process.exit(1); }, 15000);
+    boot.shutdown().then(function() { clearTimeout(timeout); process.exit(0); }).catch(function(e) { r1Logger.error('Shutdown failed: ' + e.message); process.exitCode = 1; clearTimeout(timeout); process.exit(1); });
+  }
 
-  process.on('SIGINT', function() {
-    boot.shutdown().then(function() { process.exit(0); });
-  });
+  process.on('SIGINT', function() { gracefulShutdown('SIGINT'); });
+  process.on('SIGTERM', function() { gracefulShutdown('SIGTERM'); });
 }
 
 function parseArgs(argv, config) {
@@ -2486,7 +2488,7 @@ function adminNetworkCheck(req) {
 
 function adminCSRFCheck(req) {
   if (ADMIN_ACCESS_MODE !== 'lan') return true;
-  var result = adminCSRF.checkCSRF(req, false);
+  var result = adminCSRF.checkCSRF(req, ADMIN_ALLOW_HEADERLESS_WRITE);
   return result.allowed;
 }
 
