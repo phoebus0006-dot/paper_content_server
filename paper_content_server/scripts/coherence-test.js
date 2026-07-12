@@ -139,6 +139,7 @@ async function main() {
     TRANSLATION_PROVIDER: 'none',
     PHOTO_QUANT_MODE: 'clean',
     ENABLE_DEBUG_ROUTES: 'true',
+    ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8',
     DATA_DIR: TMPDIR,
     NEWS_CACHE_FILE: path.join(TMPDIR, 'news_cache.json'),
     LIBRARY_STATE_FILE: path.join(TMPDIR, 'library_state.json'),

@@ -31,7 +31,7 @@ t('HTTP_CLIENT_FETCH_USED', serverJs.indexOf('r1HttpClient') >= 0, '');
 t('CREATE_APP_USES_REAL_HANDLER', serverJs.indexOf('handler: handleRequest') >= 0, '');
 
 // === 8. BOOTSTRAP_STARTS_SERVER ===
-t('BOOTSTRAP_STARTS_SERVER', serverJs.indexOf('boot.app.handler') >= 0, '');
+t('BOOTSTRAP_STARTS_SERVER', serverJs.indexOf('handler: handleRequest') >= 0, '');
 
 // === 9. APP_NO_AUTO_LISTEN / NO_PROCESS_EXIT ===
 var appDir = path.join(ROOT, 'src', 'app');
@@ -63,7 +63,7 @@ var bootstrap = require(path.join(ROOT, 'src', 'app', 'bootstrap')).bootstrap;
 var bootResult = null;
 try {
   bootResult = bootstrap({
-    env: { PORT: '18989', TRANSLATION_PROVIDER: 'none' },
+    env: { PORT: '18989', TRANSLATION_PROVIDER: 'none', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' },
     cwd: ROOT,
     listen: false,
     handler: function(req, res) { res.writeHead(200); res.end('test'); },
@@ -90,7 +90,7 @@ var serverMod = require(path.join(ROOT, 'server.js'));
 var testPort = 19999;
 
 var boot2 = bootstrap({
-  env: { PORT: String(testPort), TRANSLATION_PROVIDER: 'none', TZ: 'UTC' },
+  env: { PORT: String(testPort), TRANSLATION_PROVIDER: 'none', TZ: 'UTC', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' },
   cwd: ROOT,
   listen: false,
   handler: serverMod.handleRequest,

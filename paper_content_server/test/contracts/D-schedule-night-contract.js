@@ -13,7 +13,7 @@ function fetch(method,p,body){
   });
 }
 fs.mkdirSync(TMPDIR,{recursive:true});
-var env=Object.assign({},process.env,{PORT:String(PORT),TZ:'Europe/Paris',TRANSLATION_PROVIDER:'none',DATA_DIR:TMPDIR,ENABLE_DEBUG_ROUTES:'true'});
+var env=Object.assign({},process.env,{PORT:String(PORT),TZ:'Europe/Paris',TRANSLATION_PROVIDER:'none',DATA_DIR:TMPDIR,ENABLE_DEBUG_ROUTES:'true',ADMIN_ACCESS_MODE:'lan',ADMIN_ALLOWED_CIDRS:'127.0.0.0/8'});
 var cp=require('child_process');
 var srv=cp.spawn(process.execPath,[path.join(ROOT,'server.js')],{env:env,cwd:ROOT,stdio:['ignore','pipe','pipe']});
 async function main(){

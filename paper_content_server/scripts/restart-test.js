@@ -21,7 +21,8 @@ function check(label, ok, detail) {
 function makeEnv(extra) {
   return Object.assign({}, process.env, {
     TZ: 'Europe/Paris', TRANSLATION_PROVIDER: 'none',
-    PHOTO_QUANT_MODE: 'clean', ENABLE_DEBUG_ROUTES: 'true'
+    PHOTO_QUANT_MODE: 'clean', ENABLE_DEBUG_ROUTES: 'true',
+    ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8'
   }, extra);
 }
 

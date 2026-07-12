@@ -6,7 +6,7 @@ var TMPDIR=path.join(ROOT,'test_cntr_c_'+Date.now()),ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
 function f(p,to){return new Promise(function(r,e){var q=http.get(BASE+p,function(s){var d=[];s.on('data',function(c){d.push(c)});s.on('end',function(){r({s:s.statusCode,b:Buffer.concat(d),h:s.headers})})});q.on('error',e);q.setTimeout(to||15000,function(){q.destroy();e(new Error('timeout'))})})}
 fs.mkdirSync(TMPDIR,{recursive:true});
-var env=Object.assign({},process.env,{PORT:String(PORT),TZ:'Europe/Paris',TRANSLATION_PROVIDER:'none',DATA_DIR:TMPDIR});
+var env=Object.assign({},process.env,{PORT:String(PORT),TZ:'Europe/Paris',TRANSLATION_PROVIDER:'none',DATA_DIR:TMPDIR,ADMIN_ACCESS_MODE:'lan',ADMIN_ALLOWED_CIDRS:'127.0.0.0/8'});
 var cp=require('child_process');
 var srv=cp.spawn(process.execPath,[path.join(ROOT,'server.js')],{env:env,cwd:ROOT,stdio:['ignore','pipe','pipe']});
 async function main(){

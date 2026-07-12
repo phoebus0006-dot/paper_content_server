@@ -19,7 +19,7 @@ var FEED_PORT=8989,LG_FILE=path.join(TMPDIR,'last_good_news.json');
 
 function startSrv(feedsData){
   return new Promise(function(res){
-    var env=Object.assign({},process.env,{PORT:String(PORT),TZ:'Europe/Paris',TRANSLATION_PROVIDER:'none',DATA_DIR:TMPDIR,FEEDS_FILE:path.join(TMPDIR,'feeds.json'),LAST_GOOD_NEWS_FILE:LG_FILE,NEWS_CACHE_FILE:path.join(TMPDIR,'news_cache.json'),NEWS_ROTATION_FILE:path.join(TMPDIR,'news_rotation_state.json'),IMAGE_INDEX_FILE:path.join(TMPDIR,'image_index.json'),LIBRARY_STATE_FILE:path.join(TMPDIR,'library_state.json')});
+    var env=Object.assign({},process.env,{PORT:String(PORT),TZ:'Europe/Paris',TRANSLATION_PROVIDER:'none',DATA_DIR:TMPDIR,FEEDS_FILE:path.join(TMPDIR,'feeds.json'),LAST_GOOD_NEWS_FILE:LG_FILE,NEWS_CACHE_FILE:path.join(TMPDIR,'news_cache.json'),NEWS_ROTATION_FILE:path.join(TMPDIR,'news_rotation_state.json'),IMAGE_INDEX_FILE:path.join(TMPDIR,'image_index.json'),LIBRARY_STATE_FILE:path.join(TMPDIR,'library_state.json'),ADMIN_ACCESS_MODE:'lan',ADMIN_ALLOWED_CIDRS:'127.0.0.0/8'});
     fs.writeFileSync(path.join(TMPDIR,'feeds.json'),JSON.stringify(feedsData));
     var cp=require('child_process');
     var srv=cp.spawn(process.execPath,[path.join(ROOT,'server.js')],{env:env,cwd:ROOT,stdio:['ignore','pipe','pipe']});

@@ -44,7 +44,7 @@ async function main() {
 
   // Start server
   var server = spawn(process.execPath, [SRV], {
-    env: Object.assign({}, process.env, { PORT: String(PORT), TZ: 'Europe/Paris', TRANSLATION_PROVIDER: 'none', PHOTO_QUANT_MODE: 'clean' }),
+    env: Object.assign({}, process.env, { PORT: String(PORT), TZ: 'Europe/Paris', TRANSLATION_PROVIDER: 'none', PHOTO_QUANT_MODE: 'clean', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' }),
     cwd: CWD, stdio: ['ignore', 'pipe', 'pipe']
   });
 

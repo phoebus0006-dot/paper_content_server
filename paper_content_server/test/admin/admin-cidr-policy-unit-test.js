@@ -5,6 +5,21 @@ var policy = require('../../src/admin/admin-network-policy');
 
 console.log('=== Admin CIDR Policy Unit Test (using require) ===');
 
+// parseIPv4 — strict IPv4 parser (single source for all IP parsing)
+check('parseIPv4 valid 127.0.0.1', policy.parseIPv4('127.0.0.1') !== null);
+check('parseIPv4 valid 0.0.0.0', policy.parseIPv4('0.0.0.0') !== null);
+check('parseIPv4 valid 255.255.255.255', policy.parseIPv4('255.255.255.255') !== null);
+check('parseIPv4 rejects 999.1.1.1', policy.parseIPv4('999.1.1.1') === null);
+check('parseIPv4 rejects 256.0.0.1', policy.parseIPv4('256.0.0.1') === null);
+check('parseIPv4 rejects 1.2.3', policy.parseIPv4('1.2.3') === null);
+check('parseIPv4 rejects 1.2.3.4.5', policy.parseIPv4('1.2.3.4.5') === null);
+check('parseIPv4 rejects 01e2.1.1.1', policy.parseIPv4('01e2.1.1.1') === null);
+check('parseIPv4 rejects 1.2.3.-1', policy.parseIPv4('1.2.3.-1') === null);
+check('parseIPv4 rejects 192.168..1', policy.parseIPv4('192.168..1') === null);
+check('parseIPv4 rejects empty', policy.parseIPv4('') === null);
+check('parseIPv4 rejects null', policy.parseIPv4(null) === null);
+check('parseIPv4 rejects leading zero 01', policy.parseIPv4('01.2.3.4') === null);
+
 // parseCIDR validation
 var r1 = policy.parseCIDR('127.0.0.0/8');
 check('parseCIDR 127.0.0.0/8 valid', r1 !== null);

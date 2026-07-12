@@ -79,6 +79,7 @@ fs.writeFileSync(path.join(TMPDIR, 'image_index.json'), JSON.stringify([]), 'utf
 var env = Object.assign({}, process.env, {
   PORT: String(PORT), TZ: 'Europe/Paris',
   TRANSLATION_PROVIDER: 'none',
+  ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8',
   DATA_DIR: TMPDIR,
   FEEDS_FILE: path.join(TMPDIR, 'empty_feeds.json'),
 });

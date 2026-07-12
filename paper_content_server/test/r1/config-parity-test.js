@@ -8,8 +8,8 @@ function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++
 var loadConfig = require(path.join(ROOT, 'src', 'config', 'load-config')).loadConfig;
 t('LOAD_CONFIG_EXISTS', typeof loadConfig === 'function', '');
 
-// Default config
-var cfg = loadConfig({ env: {}, cwd: ROOT });
+// Default config — LAN mode with local CIDR (valid baseline)
+var cfg = loadConfig({ env: { ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' }, cwd: ROOT });
 t('DEFAULT_PORT', cfg.server.port === 8787, 'port=' + cfg.server.port);
 t('DEFAULT_PANEL', cfg.panel.index === 49, 'panel=' + cfg.panel.index);
 t('DEFAULT_PROVIDER', cfg.translation.provider === 'none', 'provider=' + cfg.translation.provider);
@@ -17,7 +17,7 @@ t('DEFAULT_DATA_DIR', cfg.paths.dataDir.indexOf('data') >= 0, 'dataDir=' + cfg.p
 t('CONFIG_IS_VALID', cfg.isValid === true, '');
 
 // Env override
-var cfg2 = loadConfig({ env: { PORT: '9000', TRANSLATION_PROVIDER: 'openai', OPENAI_API_KEY: 'sk-test' }, cwd: ROOT });
+var cfg2 = loadConfig({ env: { PORT: '9000', TRANSLATION_PROVIDER: 'openai', OPENAI_API_KEY: 'sk-test', ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8' }, cwd: ROOT });
 t('ENV_PORT', cfg2.server.port === 9000, 'port=' + cfg2.server.port);
 t('ENV_PROVIDER', cfg2.translation.provider === 'openai', 'provider=' + cfg2.translation.provider);
 

@@ -117,6 +117,7 @@ async function main() {
     var env = Object.assign({}, process.env, {
       PORT: String(PORT), TZ: 'Europe/Paris', TRANSLATION_PROVIDER: 'none',
       PHOTO_QUANT_MODE: 'clean', ENABLE_DEBUG_ROUTES: 'true',
+      ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8',
       DATA_DIR: TMPDIR, FEEDS_FILE: path.join(TMPDIR, 'feeds.json'),
       IMAGE_INDEX_FILE: path.join(TMPDIR, 'image_index.json'),
       NEWS_CACHE_FILE: path.join(TMPDIR, 'news_cache.json'),
