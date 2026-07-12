@@ -1,8 +1,7 @@
-.env
+node_modules/
 data/
-token*
-.git/
-# node_modules/ — pre-installed, included in context
-*.md
-.DS_Store
 test/
+.env
+config.h
+audit-checkpoint/
+.git/
