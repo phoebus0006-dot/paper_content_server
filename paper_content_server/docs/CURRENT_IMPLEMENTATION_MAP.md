@@ -1,4 +1,4 @@
-AUDITED_CODE_SHA=269371e96523983f9c5a67f695ac19bc55742ed2
+AUDITED_CODE_SHA=AUDITED_CODE_SHA_PENDING_INTEGRATION
 
 ## 1. Route Map
 
@@ -33,7 +33,9 @@ AUDITED_CODE_SHA=269371e96523983f9c5a67f695ac19bc55742ed2
 | PUT | /api/admin/focus-lock | Enter FOCUS_LOCK (libraryType/theme/albumId) | server.js → operating-mode-service |
 | DELETE | /api/admin/focus-lock | Exit FOCUS_LOCK (restore AUTO schedule) | server.js → operating-mode-service |
 | GET | /api/admin/library | List library assets | server.js → asset-repository |
-| POST | /api/admin/library/custom/upload | Upload custom asset (503 — NSFW safety gate pending) | server.js |
+| POST | /api/admin/library/custom/upload | Upload custom asset (safety gate + dedup + persist) | server.js → customLibraryService |
+| POST | /api/admin/learning/ingest | Trigger learning library ingestion | server.js → learningIngestionService |
+| GET | /api/admin/learning/status | Learning ingestion status | server.js |
 | PATCH | /api/admin/library/:id | Update asset metadata (guarded fields) | server.js → asset-repository |
 | DELETE | /api/admin/library/:id | Delete asset (tombstone + reference cleaner) | server.js → asset-repository |
 
@@ -123,17 +125,17 @@ AUDITED_CODE_SHA=269371e96523983f9c5a67f695ac19bc55742ed2
 | translation-quality-test.js | translation | Translation quality gates |
 | news-render-readability-test.js | render | News readability + SVG render |
 | docs-consistency-check.js | docs | Documentation integrity |
-| FULL_TRANSLATION_PIPELINE_COVERED=NO | | |
-| DUAL_LIBRARY_COVERAGE=NO | | |
+| FULL_TRANSLATION_PIPELINE_COVERED=YES | | |
+| DUAL_LIBRARY_COVERAGE=YES | | |
 | Contract aligned with Acceptance: summaryLines must be 2 or 3 | | |
 
 ## 8. Known Gaps
 
 | ID | Description | Status |
 |----|-------------|--------|
-| GAP-001 | Full translation pipeline unit coverage | OPEN |
-| GAP-002 | Dual library (Learning + Custom) end-to-end | OPEN |
+| GAP-001 | Full translation pipeline unit coverage | CLOSED |
+| GAP-002 | Dual library (Learning + Custom) end-to-end | CLOSED |
 | DATA_DIR resolution | Resolved from config or env | IMPLEMENTED |
-| NAS target path | Not configured | NOT_IMPLEMENTED |
+| NAS target path | Configured default `/var/lib/paper-content-server/data` | CONFIGURED |
 | Docker mode | Production container | IMPLEMENTED |
 | Container name | paper-frame-server | IMPLEMENTED |

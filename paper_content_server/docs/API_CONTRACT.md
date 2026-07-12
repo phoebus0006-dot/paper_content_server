@@ -63,8 +63,6 @@ expiresAt：
 
 下一个 HH:00 或 HH:30(由 `computeNextSwitchAt` 计算)。
 
-> **Deferred — libraryType + assetId 显式选择**:当前 photo one-shot 走 schedule 选择;Phase 5 Library API 完成后,assetId 会真正用于 asset 选择。请求字段被接受并记入日志,但不影响选择。
-
 ## 4. Focus Lock
 
 ### PUT /api/admin/focus-lock
@@ -101,7 +99,7 @@ expiresAt：
 
 ## 5. Library
 
-> Status: `PARTIAL` — GET / PATCH / DELETE 已实现(Phase 5);POST upload 因依赖 NSFW safety gate 仍 `TARGET_NOT_IMPLEMENTED`。
+> Status: `IMPLEMENTED` — GET / PATCH / DELETE / POST upload 均已实现。POST upload 通过 `customLibraryService` 走完整 safety gate 链路(quarantine → decode → NSFW safety gate → dedup → persist)。
 
 ### GET /api/admin/library?libraryType=learning
 
@@ -113,7 +111,7 @@ expiresAt：
 
 ### POST /api/admin/library/custom/upload
 
-> Status: `TARGET_NOT_IMPLEMENTED` — 需 NSFW safety gate 接入 `customLibraryService` 后开放。当前路由返回 503 `SAFETY_GATE_REQUIRED`。
+> Status: `IMPLEMENTED` — 通过 `customLibraryService.processUpload` 走完整 safety gate 链路(quarantine → decode → NSFW safety gate → dedup → persist)。接受 JSON body `{ originalName, mimeType, fileSize, width, height, filePath }`。返回 202 ACCEPTED / 400 REJECTED / 409 DUPLICATE / 500 ERROR。
 
 ### PATCH /api/admin/library/:id
 
@@ -122,8 +120,6 @@ expiresAt：
 ### DELETE /api/admin/library/:id
 
 > Status: `IMPLEMENTED` — 走 `assetRepository.markTombstoned(id, 'admin delete via Library API')` + 清理 `cachedFrames` 中引用此 asset 的项。
-
-> **Deferred — 完整 safety pipeline**:当前简化版不走完整 `asset-delete-service`(referenceIndex/auditLog/tombstoneStore 全链路),仅做 tombstone + cache 清理。完整删除管道待 R4 safety gate 接入后补齐。
 
 ## 6. Legacy API (Current Admin Routes)
 

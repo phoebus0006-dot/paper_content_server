@@ -17,6 +17,6 @@ t('APPROVED_SEL',isSel(approve),'');
 });
 // Status characterizations (not test PASS/FAIL)
 s('SafetySelectorFiltering','IMPLEMENTED','isStudySelectable correctly filters safetyStatus');
-s('SafetyDeletionChain','NOT_IMPLEMENTED','no delete pipeline, no tombstone store');
-s('DualLibrarySafety','NOT_IMPLEMENTED','single image_index.json, no libraryType field');
+s('SafetyDeletionChain','PARTIAL','asset-delete-service.js exists with referenceIndex/auditLog/tombstoneStore wiring; full pipeline not yet wired into server.js DELETE route');
+s('DualLibrarySafety','IMPLEMENTED','asset-repository + asset-model support libraryType (LEARNING/CUSTOM) field');
 console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec);

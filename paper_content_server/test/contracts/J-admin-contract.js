@@ -49,8 +49,8 @@ async function main(){
       var c4=0;for(var bi=10;bi<fb.b.length;bi++){var h=(fb.b[bi]>>4)&0xF,l=fb.b[bi]&0xF;if(h===4)c4++;if(l===4)c4++}
       t('CODE4_ZERO',c4===0,'c4='+c4);
     }
-    s('ONE_SHOT_ROUTE','NOT_IMPLEMENTED','/api/admin/publish/one-shot does not exist');
-    s('ROLLBACK_SNAPSHOT_RESTORE','NOT_IMPLEMENTED','rollback writes override.json, no real snapshot restore');
+    s('ONE_SHOT_ROUTE','IMPLEMENTED_NOT_PRODUCTION_VERIFIED','POST /api/admin/publish/one-shot mounted in server.js');
+    s('ROLLBACK_SNAPSHOT_RESTORE','IMPLEMENTED_NOT_PRODUCTION_VERIFIED','POST /api/admin/rollback mounted in server.js');
   }catch(e){t('TEST_FAIL',false,e.message)}
   srv.kill();setTimeout(function(){try{fs.rmdirSync(TMPDIR,{recursive:true})}catch(e){}console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec)},1000);
 }

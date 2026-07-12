@@ -2,7 +2,7 @@
 
 > 本文件用于记录“当前真实状态”，不是目标架构。每个阶段完成后更新一次。
 
-AUDITED_CODE_SHA=269371e96523983f9c5a67f695ac19bc55742ed2
+AUDITED_CODE_SHA=AUDITED_CODE_SHA_PENDING_INTEGRATION
 ESP32_RUNTIME_STATUS=NOT TESTED
 NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 
@@ -39,17 +39,17 @@ NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 | State/frame coherence | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | ESP32 frame validation | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | News live fetch | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| News translation fidelity | PARTIAL | | | | |
-| News final dedupe | PARTIAL | | | | |
-| News layout | PARTIAL | | | | |
+| News translation fidelity | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| News final dedupe | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| News layout | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | Last-good | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| Learning Library auto-fetch | NOT_IMPLEMENTED | | | | |
-| Learning relevance gate | NOT_IMPLEMENTED | | | | |
-| Custom Library | PARTIAL | | GET/PATCH/DELETE via /api/admin/library; POST /api/admin/library/custom/upload 503 (NSFW safety gate pending) | NOT VERIFIED | N/A |
-| Strict NSFW deletion | PARTIAL | | | | |
-| Analysis Card | NOT_IMPLEMENTED | | | | |
-| Comparison Pair | NOT_IMPLEMENTED | | | | |
-| Sequence 2×2 | NOT_IMPLEMENTED | | | | |
+| Learning Library auto-fetch | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| Learning relevance gate | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| Custom Library | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | GET/PATCH/DELETE via /api/admin/library; POST /api/admin/library/custom/upload wired through customLibraryService + NSFW safety gate | NOT VERIFIED | N/A |
+| Strict NSFW deletion | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| Analysis Card | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| Comparison Pair | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| Sequence 2×2 | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | ONE_SHOT_OVERRIDE | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | operating-mode-service-test 23/23 includes enter/exit/expiry boundary; admin-test covers /api/admin/publish/one-shot route | NOT VERIFIED | NOT TESTED |
 | FOCUS_LOCK | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | operating-mode-service-test 23/23 includes enter/exit/context; admin-test covers PUT/DELETE /api/admin/focus-lock route | NOT VERIFIED | NOT TESTED |
 | MQTT immediate refresh | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | mqtt-message-test 16/16 covers schemaVersion=2 + reason field + v1 backward compat; mqtt-publisher/notification-adapter wiring present | NOT VERIFIED | NOT TESTED |

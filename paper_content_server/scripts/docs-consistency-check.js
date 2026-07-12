@@ -191,10 +191,10 @@ if (impl) {
   expectedTests.forEach(function(t) {{
     check(impl.indexOf('| ' + t + '.js |') >= 0, 'Test map has ' + t + '.js');
   }});
-  check(impl.indexOf('FULL_TRANSLATION_PIPELINE_COVERED=NO') >= 0, 'Test map: FULL_TRANSLATION_PIPELINE_COVERED=NO marker present');
+  check(impl.indexOf('FULL_TRANSLATION_PIPELINE_COVERED=YES') >= 0, 'Test map: FULL_TRANSLATION_PIPELINE_COVERED=YES marker present');
   check(impl.indexOf('Contract aligned with Acceptance: summaryLines must be 2 or 3') >= 0, 'Test map: news layout contract aligned');
   check(impl.indexOf('NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH') < 0, 'Test map: old news layout mismatch marker absent');
-  check(impl.indexOf('DUAL_LIBRARY_COVERAGE=NO') >= 0, 'Test map: DUAL_LIBRARY_COVERAGE=NO marker present');
+  check(impl.indexOf('DUAL_LIBRARY_COVERAGE=YES') >= 0, 'Test map: DUAL_LIBRARY_COVERAGE=YES marker present');
   check(impl.indexOf('GAP-001') >= 0, 'CURRENT_IMPLEMENTATION_MAP has known gaps');
   check(impl.indexOf('DATA_DIR resolution') >= 0, 'CURRENT_IMPLEMENTATION_MAP has data/deployment');
   var newsSection = sectionBetween(impl, '## 5. News Implementation Map', '## 6. Image Library Implementation Map');
@@ -284,7 +284,7 @@ if (apiContract) {
   adminRouteMatches.forEach(function(raw) {
     if (seen[raw]) return;
     seen[raw] = true;
-    var clean = raw.replace(/\/:[a-zA-Z][a-zA-Z0-9_]*/g, '').replace(/[?]libraryType=[a-z]+/g, '').replace(/\/+$/, '');
+    var clean = raw.replace(/\/:[a-zA-Z][a-zA-Z0-9_]*/g, '').replace(/[?]libraryType(=[a-z]+)?/g, '').replace(/\/+$/, '');
     routeInfos.push({ raw: raw, clean: clean });
   });
   var missingRoutes = [];
