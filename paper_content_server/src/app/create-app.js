@@ -28,6 +28,7 @@ function createApp(dependencies) {
     operatingModeService: injection.operatingModeService || null,
     publicationHistory: injection.publicationHistory || null,
     adminQueryService: injection.adminQueryService || null,
+    featureFlagView: injection.featureFlagView || null,
     notificationPort: injection.notificationPort || null,
     mqttClient: injection.mqttClient || null,
     renderShadow: injection.renderShadow || null,

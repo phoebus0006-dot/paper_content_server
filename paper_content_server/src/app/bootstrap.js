@@ -96,6 +96,7 @@ function bootstrap(overrides) {
       publicationService: services.publicationService,
       newsPipeline: services.newsPipeline,
       adminQueryService: services.adminQueryService,
+      featureFlagView: services.featureFlagView,
       renderShadow: services.renderShadow,
     },
   });

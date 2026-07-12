@@ -280,6 +280,9 @@ async function main() {
   runtime.publicationHistory = boot.deps.publicationHistory;
   runtime.notificationPort = boot.deps.notificationPort;
   runtime.publicationService = boot.services.publicationService;
+  runtime.adminQueryService = boot.services.adminQueryService || null;
+  runtime.featureFlagView = boot.services.featureFlagView || null;
+  runtime.assetRepository = boot.services.assetRepository || null;
   runtime.mqttClient = boot.deps.mqttClient || null;
   await runtime.snapshotStore.ensureDirs();
 
@@ -2358,16 +2361,35 @@ function computeSnapshot(now) {
 }
 
 // R3.5: Ensure active snapshot matches current schedule; publish if needed
+// R3.7: ONE_SHOT_OVERRIDE — keep pinned snapshot until boundary expiry
 async function ensureActiveSnapshotForSchedule(now) {
   if (!runtime.publicationService) return null;
+  // R3.7: If operating mode is ONE_SHOT, check expiry first
+  if (runtime.operatingModeService) {
+    var osMode = runtime.operatingModeService.getMode();
+    if (osMode === 'ONE_SHOT_OVERRIDE') {
+      if (runtime.operatingModeService.checkExpiry(now)) {
+        // BOUNDARY_EXPIRY: exit ONE_SHOT, clear override file, fall through to schedule publish
+        runtime.operatingModeService.exitOneShot();
+        try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
+        r1Logger.info('ONE_SHOT expired at boundary, restoring AUTO schedule');
+      } else {
+        // ONE_SHOT still active — keep current snapshot, no republish
+        return await runtime.publicationService.getActive();
+      }
+    } else if (osMode === 'FOCUS_LOCK') {
+      // FOCUS_LOCK persists until explicit DELETE — keep current snapshot
+      return await runtime.publicationService.getActive();
+    }
+  }
   var active = await runtime.publicationService.getActive();
   var schedule = selectPhotoSnapshot(now, runtime.imageIndex || []);
   var scheduleKey = schedule.mode + ':' + (schedule.slotKey || '');
   if (active && active.frameId.indexOf(scheduleKey) === 0) return active;
   var content = await getContentForNow(now);
-  var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
-  await runtime.publicationService.publish(snap);
-  return snap;
+    var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'schedule' });
+    await runtime.publicationService.publish(snap);
+    return snap;
 }
 
 async function getContentForNow(now) {
@@ -3071,7 +3093,7 @@ async function handleRequest(req, res) {
       try {
         if (runtime.publicationService && runtime.snapshotStore) {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
+          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_news' });
           await runtime.publicationService.publish(snap);
         }
       } catch(e) {
@@ -3102,7 +3124,7 @@ async function handleRequest(req, res) {
       try {
         if (runtime.publicationService && runtime.snapshotStore) {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
+          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_photo' });
           await runtime.publicationService.publish(snap);
         }
       } catch(e) {
@@ -3113,6 +3135,124 @@ async function handleRequest(req, res) {
         return;
       }
       respondJson(res, { frameId: fid2 });
+      return;
+    }
+
+    // R3.7: ONE_SHOT publication — pin a snapshot until next HH:00/HH:30 boundary
+    if (parsed.pathname === '/api/admin/publish/one-shot' && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.operatingModeService || !runtime.publicationService) {
+        failJson(res, 503, 'operating mode service unavailable'); return;
+      }
+      try {
+        var osBody = JSON.parse(await readBody(req) || '{}');
+        var contentType = String(osBody.contentType || 'photo').toLowerCase();
+        var libraryType = String(osBody.libraryType || 'custom').toLowerCase();
+        var assetId = osBody.assetId || '';
+        if (contentType !== 'photo' && contentType !== 'news') {
+          failJson(res, 400, 'contentType must be "photo" or "news", got: ' + contentType); return;
+        }
+        var osNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
+        var osExpiresAt = computeNextSwitchAt(osNow);
+        var osContent;
+        if (contentType === 'news') {
+          osContent = await buildNewsSnapshot(osNow);
+        } else {
+          // Photo: libraryType + assetId support deferred to Phase 5 (Library API)
+          // For now, build schedule-based photo snapshot; libraryType logged for future use
+          r1Logger.info('one-shot photo: libraryType=' + libraryType + ' assetId=' + (assetId || '<schedule>') + ' (Phase 5 will honor explicit asset)');
+          osContent = await buildPhotoSnapshot(osNow);
+        }
+        var osFrameId = 'one-shot:' + contentType + ':' + Date.now().toString(36);
+        var osSnap = R3_snapshotModel.createSnapshot(osFrameId, osContent.snapshot, osContent.frame, contentType, { publishReason: 'one_shot' });
+        await runtime.publicationService.publish(osSnap);
+        runtime.operatingModeService.enterOneShot(osSnap.snapshotId, osExpiresAt);
+        // Persist override file for backward-compat with restart-restore logic
+        var osOverride = JSON.stringify({
+          mode: 'one-shot',
+          contentType: contentType,
+          libraryType: libraryType,
+          assetId: assetId || null,
+          snapshotId: osSnap.snapshotId,
+          createdAt: new Date().toISOString(),
+          expiresAt: osExpiresAt.toISOString(),
+        }, null, 2);
+        try { fs.writeFileSync(path.join(DATA_DIR, 'admin_override.json'), osOverride); } catch(e) {}
+        respondJson(res, {
+          snapshotId: osSnap.snapshotId,
+          frameId: osFrameId,
+          expiresAt: osExpiresAt.toISOString(),
+          operatingMode: 'ONE_SHOT_OVERRIDE',
+        });
+      } catch(e) {
+        r1Logger.warn('one-shot publish failed: ' + e.message);
+        failJson(res, 500, 'one-shot publish failed: ' + e.message);
+      }
+      return;
+    }
+
+    // R3.7: FOCUS_LOCK — pin a snapshot until explicit DELETE
+    if (parsed.pathname === '/api/admin/focus-lock' && req.method === 'PUT') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.operatingModeService || !runtime.publicationService) {
+        failJson(res, 503, 'operating mode service unavailable'); return;
+      }
+      try {
+        var flBody = JSON.parse(await readBody(req) || '{}');
+        var flLibraryType = String(flBody.libraryType || 'custom').toLowerCase();
+        var flTheme = flBody.theme || null;
+        var flAlbumId = flBody.albumId || null;
+        var flNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
+        var flContent;
+        if (flTheme || flAlbumId) {
+          // Phase 5 will honor theme/albumId via Library API; for now, log and use schedule
+          r1Logger.info('focus-lock: libraryType=' + flLibraryType + ' theme=' + (flTheme || '<none>') + ' albumId=' + (flAlbumId || '<none>') + ' (Phase 5 will honor explicit selection)');
+        }
+        flContent = await buildPhotoSnapshot(flNow);
+        var flFrameId = 'focus-lock:' + Date.now().toString(36);
+        var flSnap = R3_snapshotModel.createSnapshot(flFrameId, flContent.snapshot, flContent.frame, 'photo', { publishReason: 'focus_change' });
+        await runtime.publicationService.publish(flSnap);
+        runtime.operatingModeService.enterFocusLock(flSnap.snapshotId, {
+          libraryType: flLibraryType,
+          theme: flTheme,
+          albumId: flAlbumId,
+        });
+        respondJson(res, {
+          snapshotId: flSnap.snapshotId,
+          frameId: flFrameId,
+          operatingMode: 'FOCUS_LOCK',
+          libraryType: flLibraryType,
+          theme: flTheme,
+          albumId: flAlbumId,
+        });
+      } catch(e) {
+        r1Logger.warn('focus-lock enter failed: ' + e.message);
+        failJson(res, 500, 'focus-lock failed: ' + e.message);
+      }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/focus-lock' && req.method === 'DELETE') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.operatingModeService || !runtime.publicationService) {
+        failJson(res, 503, 'operating mode service unavailable'); return;
+      }
+      try {
+        runtime.operatingModeService.exitFocusLock();
+        // Clear override file if present
+        try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
+        // Re-publish current schedule-based snapshot
+        if (runtime.snapshotStore) {
+          var flRestoreNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
+          var flRestoreContent = await getContentForNow(flRestoreNow);
+          var flRestoreSnap = R3_snapshotModel.createSnapshot(flRestoreContent.snapshot.frameId, flRestoreContent.snapshot, flRestoreContent.frame, flRestoreContent.snapshot.mode, { publishReason: 'schedule_restore' });
+          await runtime.publicationService.publish(flRestoreSnap);
+        }
+        respondJson(res, { status: 'ok', operatingMode: 'AUTO' });
+      } catch(e) {
+        r1Logger.warn('focus-lock exit failed: ' + e.message);
+        failJson(res, 500, 'focus-lock release failed: ' + e.message);
+      }
       return;
     }
 
@@ -3165,13 +3305,147 @@ async function handleRequest(req, res) {
       if (runtime.publicationService && runtime.snapshotStore) {
         try {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode);
+          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'schedule_restore' });
           await runtime.publicationService.publish(snap);
         } catch (e) {
           r1Logger.warn('R3 publish after override clear failed: ' + e.message);
         }
       }
       respondJson(res, { status: 'ok' });
+      return;
+    }
+
+    // ── Admin read-only query routes (R10: admin-query-service HTTP exposure) ──
+    if (parsed.pathname === '/api/admin/system/status') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      try {
+        var sysStatus = await runtime.adminQueryService.getSystemStatus();
+        respondJson(res, sysStatus);
+      } catch(e) { failJson(res, 500, 'system status failed: ' + e.message); }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/publications') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      try {
+        var pubs = await runtime.adminQueryService.listPublications();
+        respondJson(res, { publications: pubs || [] });
+      } catch(e) { failJson(res, 500, 'publications query failed: ' + e.message); }
+      return;
+    }
+
+    if (parsed.pathname.indexOf('/api/admin/publications/') === 0) {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      var pubSnapshotId = decodeURIComponent(parsed.pathname.slice('/api/admin/publications/'.length));
+      if (!pubSnapshotId) { failJson(res, 400, 'snapshotId required'); return; }
+      try {
+        var pubDetail = await runtime.adminQueryService.getPublication(pubSnapshotId);
+        if (!pubDetail) { failJson(res, 404, 'publication not found: ' + pubSnapshotId); return; }
+        respondJson(res, pubDetail);
+      } catch(e) { failJson(res, 500, 'publication query failed: ' + e.message); }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/assets') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      var assetFilter = {};
+      if (query.libraryType) assetFilter.libraryType = query.libraryType;
+      if (query.safetyStatus) assetFilter.safetyStatus = query.safetyStatus;
+      if (query.lifecycleStatus) assetFilter.lifecycleStatus = query.lifecycleStatus;
+      if (query.sha256) assetFilter.sha256 = query.sha256;
+      try {
+        var assets = await runtime.adminQueryService.listAssets(assetFilter);
+        respondJson(res, { assets: assets || [] });
+      } catch(e) { failJson(res, 500, 'assets query failed: ' + e.message); }
+      return;
+    }
+
+    if (parsed.pathname.indexOf('/api/admin/assets/') === 0) {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      var assetId = decodeURIComponent(parsed.pathname.slice('/api/admin/assets/'.length));
+      if (!assetId) { failJson(res, 400, 'assetId required'); return; }
+      try {
+        var assetDetail = await runtime.adminQueryService.getAsset(assetId);
+        if (!assetDetail) { failJson(res, 404, 'asset not found: ' + assetId); return; }
+        respondJson(res, assetDetail);
+      } catch(e) { failJson(res, 500, 'asset query failed: ' + e.message); }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/features') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var featureFlagsSource = runtime.featureFlagView || (runtime.adminQueryService && runtime.adminQueryService.getFeatureFlags ? runtime.adminQueryService : null);
+      if (!featureFlagsSource || typeof featureFlagsSource.getFeatureFlags !== 'function') { failJson(res, 503, 'feature flag view unavailable'); return; }
+      try {
+        var flags = featureFlagsSource.getFeatureFlags();
+        respondJson(res, flags);
+      } catch(e) { failJson(res, 500, 'feature flags query failed: ' + e.message); }
+      return;
+    }
+
+    // ── Library API (R4) — GET / PATCH / DELETE implemented; POST upload deferred ──
+    if (parsed.pathname === '/api/admin/library' && req.method === 'GET') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
+      var libType = String(query.libraryType || '').toUpperCase();
+      if (libType !== 'LEARNING' && libType !== 'CUSTOM') {
+        failJson(res, 400, 'libraryType must be "learning" or "custom", got: ' + query.libraryType); return;
+      }
+      try {
+        var libAssets = await runtime.assetRepository.list({ libraryType: libType });
+        respondJson(res, { libraryType: libType, assets: libAssets || [] });
+      } catch(e) { failJson(res, 500, 'library query failed: ' + e.message); }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/library/custom/upload' && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      // POST upload requires NSFW safety gate (safety-decision.js gate not yet wired into
+      // customLibraryService). Refusing until safety invariants can be enforced.
+      failJson(res, 503, 'SAFETY_GATE_REQUIRED: custom upload pending safety gate implementation');
+      return;
+    }
+
+    if (parsed.pathname.indexOf('/api/admin/library/') === 0 && req.method === 'PATCH') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
+      var metaAssetId = decodeURIComponent(parsed.pathname.slice('/api/admin/library/'.length));
+      if (!metaAssetId) { failJson(res, 400, 'assetId required'); return; }
+      try {
+        var metaBody = JSON.parse(await readBody(req) || '{}');
+        // Only metadata is patchable; GUARDED_FIELDS enforced by repository
+        var metaPatch = { metadata: metaBody.metadata || metaBody };
+        await runtime.assetRepository.update(metaAssetId, metaPatch);
+        var metaUpdated = await runtime.assetRepository.get(metaAssetId);
+        respondJson(res, { status: 'ok', asset: metaUpdated });
+      } catch(e) { failJson(res, 500, 'metadata update failed: ' + e.message); }
+      return;
+    }
+
+    if (parsed.pathname.indexOf('/api/admin/library/') === 0 && req.method === 'DELETE') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
+      var delAssetId = decodeURIComponent(parsed.pathname.slice('/api/admin/library/'.length));
+      if (!delAssetId) { failJson(res, 400, 'assetId required'); return; }
+      try {
+        var delReason = 'admin delete via Library API';
+        // Mark tombstoned (assetRepository.update with lifecycle transition)
+        await runtime.assetRepository.markTombstoned(delAssetId, delReason);
+        // Invalidate cached frames referencing this asset (simplified cleanup)
+        if (runtime.cachedFrames && runtime.cachedFrames.forEach) {
+          var toInvalidate = [];
+          runtime.cachedFrames.forEach(function(val, key) {
+            if (val && val.payload && val.payload.assetId === delAssetId) toInvalidate.push(key);
+          });
+          toInvalidate.forEach(function(k) { runtime.cachedFrames.delete(k); });
+        }
+        respondJson(res, { status: 'ok', assetId: delAssetId, invalidatedCaches: true });
+      } catch(e) { failJson(res, 500, 'asset delete failed: ' + e.message); }
       return;
     }
 

@@ -40,8 +40,26 @@ function composeServices(deps) {
       var AssetRepository = require('../assets/asset-repository').AssetRepository;
       assetRepository = AssetRepository(config.paths.dataDir, logger);
     } catch (e) {}
+    // Expose assetRepository to server.js for Library API (GET/PATCH/DELETE)
+    deps.assetRepository = assetRepository;
+    var { getFeatureFlags } = require('../admin/feature-flag-view');
+    var featureFlagView = {
+      getFeatureFlags: function() {
+        return getFeatureFlags({
+          mqttClient: mqttClient,
+          newsPipeline: newsPipeline,
+          renderShadow: renderShadow,
+          activeFrameIdProvider: function() {
+            try {
+              var active = snapshotStore.readActiveSync ? snapshotStore.readActiveSync() : null;
+              return active && active.activeFrameId ? active.activeFrameId : null;
+            } catch (e) { return null; }
+          },
+        });
+      },
+    };
     adminQueryService = createAdminQueryService(
-      snapshotStore, publicationHistory, assetRepository, null, logger
+      snapshotStore, publicationHistory, assetRepository, featureFlagView, logger
     );
   } catch (e) {
     logger.warn('adminQueryService init: ' + e.message);
@@ -60,6 +78,8 @@ function composeServices(deps) {
     newsPipeline: newsPipeline,
     publicationService: pubService,
     adminQueryService: adminQueryService,
+    featureFlagView: featureFlagView || null,
+    assetRepository: assetRepository,
     renderShadow: renderShadow,
   };
 }
