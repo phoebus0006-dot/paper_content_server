@@ -25,6 +25,8 @@
     "rotation:test": "node scripts/rotation-test.js",
     "translation-quality:test": "node scripts/translation-quality-test.js",
     "docs:check": "node scripts/docs-consistency-check.js",
+    "safety:test": "node test/safety/nsfw-safety-gate-test.js",
+    "render:test": "node test/render/analysis-card-test.js && node test/render/comparison-pair-test.js && node test/render/sequence-2x2-test.js",
     "news-render-readability:test": "node scripts/news-render-readability-test.js",
     "contracts:test": "node test/contracts/run-contracts.js",
     "r1:test": "node test/r1/app-shell-test.js && node test/r1/config-parity-test.js && node test/r1/clock-test.js && node test/r1/logger-test.js && node test/r1/atomic-file-test.js && node test/r1/json-store-test.js && node test/r1/http-client-test.js && node test/r1/dependency-boundary-test.js && node test/r1/production-integration-test.js",

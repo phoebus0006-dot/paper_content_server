@@ -39,4 +39,6 @@ jobs:
       - run: npm run admin:test
       - run: npm run lifecycle:test
       - run: npm run mqtt:port-test
+      - run: npm run safety:test
+      - run: npm run render:test
       - run: npm run restart:test
