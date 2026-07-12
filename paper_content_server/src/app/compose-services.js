@@ -1,3 +1,29 @@
+// resolveTranslationConfig — maps the provider-specific translation fields from
+// load-config into the flat { provider, apiKey, model, baseUrl } shape expected
+// by the news pipeline. load-config exposes per-provider fields
+// (openaiApiKey/openaiModel/openaiBaseUrl, deeplApiKey/deeplApiUrl,
+// geminiApiKey/geminiModel/geminiApiBase); the previous code read non-existent
+// config.translation.apiKey/model/baseUrl, so every provider but 'none' ran
+// with empty credentials.
+function resolveTranslationConfig(translationConfig) {
+  var t = translationConfig || {};
+  var provider = t.provider || 'none';
+  var apiKey = '', model = '', baseUrl = '';
+  if (provider === 'openai') {
+    apiKey = t.openaiApiKey || '';
+    model = t.openaiModel || '';
+    baseUrl = t.openaiBaseUrl || '';
+  } else if (provider === 'deepl') {
+    apiKey = t.deeplApiKey || '';
+    baseUrl = t.deeplApiUrl || '';
+  } else if (provider === 'gemini') {
+    apiKey = t.geminiApiKey || '';
+    model = t.geminiModel || '';
+    baseUrl = t.geminiApiBase || '';
+  }
+  return { provider: provider, apiKey: apiKey, model: model, baseUrl: baseUrl };
+}
+
 function composeServices(deps) {
   var config = deps.config, clock = deps.clock, logger = deps.logger;
   var stores = deps.stores, httpClient = deps.httpClient;
@@ -20,12 +46,13 @@ function composeServices(deps) {
   );
 
   try {
+    var translationConfig = resolveTranslationConfig(config.translation);
     var configObj = {
       lastGoodFile: stores.lastGoodNews ? stores.lastGoodNews._filePath || path.join(config.paths.dataDir, 'last_good_news.json') : path.join(config.paths.dataDir, 'last_good_news.json'),
-      provider: config.translation ? config.translation.provider : 'none',
-      apiKey: config.translation ? config.translation.apiKey : '',
-      model: config.translation ? config.translation.model : '',
-      baseUrl: config.translation ? config.translation.baseUrl : '',
+      provider: translationConfig.provider,
+      apiKey: translationConfig.apiKey,
+      model: translationConfig.model,
+      baseUrl: translationConfig.baseUrl,
     };
     var { createNewsPipeline } = require('../news/news-pipeline');
     newsPipeline = createNewsPipeline(configObj, logger);
@@ -84,4 +111,4 @@ function composeServices(deps) {
   };
 }
 
-module.exports = { composeServices: composeServices };
+module.exports = { composeServices: composeServices, resolveTranslationConfig: resolveTranslationConfig };
