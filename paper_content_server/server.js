@@ -2529,9 +2529,8 @@ function adminNetworkCheck(req) {
 }
 
 function adminCSRFCheck(req) {
-  if (ADMIN_ACCESS_MODE !== 'lan') return true;
-  var result = adminCSRF.checkCSRF(req, ADMIN_ALLOW_HEADERLESS_WRITE);
-  return result.allowed;
+  if (ADMIN_ACCESS_MODE !== 'lan') return { allowed: true };
+  return adminCSRF.checkCSRF(req, ADMIN_ALLOW_HEADERLESS_WRITE);
 }
 
 function adminAuth(req) {
@@ -3012,7 +3011,16 @@ async function handleRequest(req, res) {
         parsed.pathname.startsWith('/admin/') || parsed.pathname.startsWith('/api/admin/')) {
       if (!adminNetworkCheck(req)) { failJson(res, 403, 'ADMIN_NETWORK_DENIED'); return; }
       if (req.method !== 'GET' && req.method !== 'OPTIONS') {
-        if (!adminCSRFCheck(req)) { failJson(res, 403, 'ADMIN_CROSS_ORIGIN_DENIED'); return; }
+        var csrfResult = adminCSRFCheck(req);
+        if (!csrfResult.allowed) {
+          // Malformed Origin/Referer headers surface a specific error so the
+          // failure is diagnosable; all other CSRF denials collapse to the
+          // generic cross-origin rejection code.
+          var csrfErr = csrfResult.error;
+          if (csrfErr !== 'INVALID_ORIGIN' && csrfErr !== 'INVALID_REFERER') csrfErr = 'ADMIN_CROSS_ORIGIN_DENIED';
+          failJson(res, 403, csrfErr);
+          return;
+        }
       }
       if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     }
