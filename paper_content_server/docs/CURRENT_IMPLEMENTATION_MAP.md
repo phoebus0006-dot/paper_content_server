@@ -13,12 +13,31 @@ AUDITED_CODE_SHA=55e44e054a9e0df0a95d1d09fc4168de6cf6f45a
 | GET | /api/review.json | Review snapshot | server.js |
 | GET | /health/live | Liveness probe | server.js |
 | GET | /health/ready | Readiness probe | server.js |
-| GET | /api/admin/system/status | Admin system status | admin-query-service.js |
-| GET | /api/admin/publications | Admin publication list | admin-query-service.js |
-| GET | /api/admin/publications/:snapshotId | Admin publication detail | admin-query-service.js |
-| GET | /api/admin/assets | Admin asset list | admin-query-service.js |
-| GET | /api/admin/assets/:assetId | Admin asset detail | admin-query-service.js |
-| GET | /api/admin/features | Admin feature flags | feature-flag-view.js |
+| GET | /api/admin/access-mode | Admin access mode echo | server.js |
+| GET | /api/admin/dashboard | Admin dashboard (mode/frame/uptime) | server.js |
+| GET | /api/admin/news | Current news selection preview | server.js |
+| POST | /api/admin/news/draft | Save admin news draft (6 items) | server.js |
+| POST | /api/admin/publish/news | Manual news publication | server.js |
+| POST | /api/admin/publish/photo | Manual photo publication | server.js |
+| POST | /api/admin/rollback | Rollback to snapshot by id | server.js |
+| GET | /api/admin/publish-history | Publication history list | server.js |
+| GET | /api/admin/photos | Photo library index (admin view) | server.js |
+| DELETE | /api/admin/override | Clear admin override & re-publish | server.js |
+| GET | /api/admin/system/status | System status (mode/frame/uptime/features) | server.js → admin-query-service |
+| GET | /api/admin/publications | Publication history list | server.js → admin-query-service |
+| GET | /api/admin/publications/:id | Get publication by snapshotId | server.js → admin-query-service |
+| GET | /api/admin/assets | List assets (optional ?libraryType= filter) | server.js → admin-query-service |
+| GET | /api/admin/assets/:id | Get asset by assetId | server.js → admin-query-service |
+| GET | /api/admin/features | Feature flags (dynamic: mqtt/news/render state) | server.js → admin-query-service |
+| POST | /api/admin/publish/one-shot | One-shot publish (expires at next HH:00/HH:30 boundary) | server.js → publication-service + operating-mode-service |
+| PUT | /api/admin/focus-lock | Enter FOCUS_LOCK (libraryType/theme/albumId) | server.js → operating-mode-service |
+| DELETE | /api/admin/focus-lock | Exit FOCUS_LOCK (restore AUTO schedule) | server.js → operating-mode-service |
+| GET | /api/admin/library | List library assets | server.js → asset-repository |
+| POST | /api/admin/library/custom/upload | Upload custom asset (503 — NSFW safety gate pending) | server.js |
+| PATCH | /api/admin/library/:id | Update asset metadata (guarded fields) | server.js → asset-repository |
+| DELETE | /api/admin/library/:id | Delete asset (tombstone + reference cleaner) | server.js → asset-repository |
+
+> **NOTE — admin-query-service 已挂载 HTTP**:R10 测试中 `/admin/api/system/status` 路径仍保留为 mock 直查路径;正式生产路由为 `/api/admin/system/status` 等(见 [API_CONTRACT.md](API_CONTRACT.md) §3-§5)。
 
 ## 2. Runtime State Map
 

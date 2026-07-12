@@ -8,24 +8,34 @@ HTTP 是内容真相来源。
 
 ## 2. Topic
 
-建议：
+实现于 `src/mqtt/mqtt-topic.js` (`publicationTopic`):
 
 ```text
-epaper/device01/refresh
+epaper/<deviceId>/publication
 ```
 
-允许通过配置覆盖。
+其中 `<deviceId>` 由配置(`MQTT_DEVICE_ID`)注入,例如 `epaper/device01/publication`。同一 deviceId 下还保留 `command` / `status` / `availability` 三个辅助 topic。
 
 ## 3. Payload
 
+实现于 `src/mqtt/mqtt-message.js` (`createPublicationMessage`):
+
 ```json
 {
-  "frameId": "string",
+  "schemaVersion": 2,
+  "deviceId": "string",
   "snapshotId": "string",
-  "reason": "manual_publish|focus_change|scheduled_boundary|rollback",
-  "publishedAt": "ISO-8601"
+  "frameId": "string",
+  "frameSha256": "string",
+  "publishedAt": "ISO-8601",
+  "reason": "manual_publish|manual_news|manual_photo|one_shot|focus_change|scheduled_boundary|rollback|schedule|schedule_restore"
 }
 ```
+
+- `schemaVersion=2` 由 `SCHEMA_VERSION` 常量保证;`validateMessage` 同时接受 `schemaVersion=1` 的旧消息(向后兼容,ESP32 固件升级期间不丢消息);
+- `frameSha256` 是 frame 内容 SHA-256(非 frame bytes,符合 ADR-0001);
+- `reason` 字段为可选;若存在必须落在 `VALID_REASONS` 白名单内,否则视为非法消息。该字段从 `createSnapshot(..., { publishReason })` → `snapshot.publishReason` → `publication-service.publish` → `mqtt-notification-adapter` → `mqtt-publisher` → `mqtt-message` 全链路贯穿;
+- ESP32 收到通知后只把 `frameId` / `snapshotId` 作为 refresh signal,立即执行正常 HTTP state/frame 刷新(见 §5)。`reason` 仅供设备侧日志/统计,不影响刷新行为。
 
 ## 4. Server 顺序
 

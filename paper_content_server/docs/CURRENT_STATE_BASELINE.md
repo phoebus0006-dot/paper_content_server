@@ -45,15 +45,15 @@ NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 | Last-good | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | Learning Library auto-fetch | NOT_IMPLEMENTED | | | | |
 | Learning relevance gate | NOT_IMPLEMENTED | | | | |
-| Custom Library | NOT_IMPLEMENTED | | | | |
+| Custom Library | PARTIAL | | GET/PATCH/DELETE via /api/admin/library; POST /api/admin/library/custom/upload 503 (NSFW safety gate pending) | NOT VERIFIED | N/A |
 | Strict NSFW deletion | PARTIAL | | | | |
 | Analysis Card | NOT_IMPLEMENTED | | | | |
 | Comparison Pair | NOT_IMPLEMENTED | | | | |
 | Sequence 2×2 | NOT_IMPLEMENTED | | | | |
-| ONE_SHOT_OVERRIDE | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | admin-test 62/62 includes one-shot endpoint, expiry boundary, state/frameId consistency | NOT VERIFIED | NOT TESTED |
-| FOCUS_LOCK | NOT_IMPLEMENTED | | | | |
-| MQTT immediate refresh | NOT_IMPLEMENTED | | | | |
-| Admin production-path publication | PARTIAL | | admin-test 62/62 covers one-shot photo valid/invalid assetId, expiry, frameId consistency, legacy publish/photo photoId propagation. No snapshot service, no MQTT. | NOT VERIFIED | NOT TESTED |
+| ONE_SHOT_OVERRIDE | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | operating-mode-service-test 23/23 includes enter/exit/expiry boundary; admin-test covers /api/admin/publish/one-shot route | NOT VERIFIED | NOT TESTED |
+| FOCUS_LOCK | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | operating-mode-service-test 23/23 includes enter/exit/context; admin-test covers PUT/DELETE /api/admin/focus-lock route | NOT VERIFIED | NOT TESTED |
+| MQTT immediate refresh | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | mqtt-message-test 16/16 covers schemaVersion=2 + reason field + v1 backward compat; mqtt-publisher/notification-adapter wiring present | NOT VERIFIED | NOT TESTED |
+| Admin production-path publication | PARTIAL | | admin-test covers one-shot photo valid/invalid assetId, expiry, frameId consistency, legacy publish/photo photoId propagation. MQTT reason 字段贯穿 snapshot-model → publication-service → mqtt-publisher. | NOT VERIFIED | NOT TESTED |
 
 ## 4. 更新规则
 
@@ -84,12 +84,12 @@ NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 | Last-good | server.js L1542 | rotation-test Phase B/C | NOT VERIFIED | N/A |
 | Learning Library auto-fetch | — | — | NOT VERIFIED | N/A |
 | Learning relevance gate | — | — | NOT VERIFIED | N/A |
-| Custom Library | — | — | NOT VERIFIED | N/A |
+| Custom Library | src/assets/asset-repository.js + server.js /api/admin/library routes | asset-repository tests; admin-test library routes | NOT VERIFIED | N/A |
 | Strict NSFW deletion | server.js L890 (blocklist) | — | NOT VERIFIED | N/A |
 | Analysis Card | — | — | NOT VERIFIED | N/A |
 | Comparison Pair | — | — | NOT VERIFIED | N/A |
 | Sequence 2×2 | — | — | NOT VERIFIED | N/A |
-| ONE_SHOT_OVERRIDE | server.js L3093/L3113 computeNextHalfHourBoundary + loadActiveOverride + getContentForNow + buildManualPhotoFromAsset | admin-test (override expiry test, one-shot photo endpoint, frameId consistency) | NOT VERIFIED | NOT TESTED |
-| FOCUS_LOCK | — | — | NOT VERIFIED | NOT TESTED |
-| MQTT immediate refresh | — | — | NOT VERIFIED | NOT TESTED |
-| Admin production-path pub | server.js one-shot route, buildManualPhotoFromAsset, legacy publish/photo photoId propagation | admin-test (one-shot valid/invalid, asset validation, expiry boundary, frameId consistency) | NOT VERIFIED | NOT TESTED |
+| ONE_SHOT_OVERRIDE | src/publication/operating-mode-service.js enterOneShot/checkExpiry + server.js /api/admin/publish/one-shot + computeNextSwitchAt | operating-mode-service-test 23/23; admin-test one-shot route | NOT VERIFIED | NOT TESTED |
+| FOCUS_LOCK | src/publication/operating-mode-service.js enterFocusLock/exitFocusLock + server.js PUT/DELETE /api/admin/focus-lock | operating-mode-service-test 23/23; admin-test focus-lock routes | NOT VERIFIED | NOT TESTED |
+| MQTT immediate refresh | src/mqtt/mqtt-message.js (SCHEMA_VERSION=2, reason field) + mqtt-publisher + mqtt-notification-adapter + publication-service reason propagation | mqtt-message-test 16/16; r6 mqtt publisher/adapter tests | NOT VERIFIED | NOT TESTED |
+| Admin production-path pub | server.js one-shot + focus-lock + library routes + buildManualPhotoFromAsset + reason propagation through snapshot-model.publishReason | admin-test (one-shot valid/invalid, asset validation, expiry boundary, frameId consistency, library CRUD) | NOT VERIFIED | NOT TESTED |

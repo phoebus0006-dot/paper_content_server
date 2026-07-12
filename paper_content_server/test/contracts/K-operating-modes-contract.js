@@ -19,7 +19,11 @@ t('AUTO_NIGHT_HOLD',r.mode==='photo','mode='+r.mode);
 var code=fs.readFileSync(path.join(__dirname,'..','..','server.js'),'utf8');
 var hasOverride=code.includes('admin_override.json')&&code.includes('manual-news')||code.includes('manual-photo');
 s('LEGACY_ADMIN_OVERRIDE',hasOverride?'PARTIAL':'NOT_IMPLEMENTED','admin_override.json write exists; expiresAt=null; no HH:00/HH:30 revert; no dedicated route');
-s('ONE_SHOT_ROUTE','NOT_IMPLEMENTED','/api/admin/publish/one-shot does not exist');
-s('BOUNDARY_EXPIRY','NOT_IMPLEMENTED','computeNextHalfHourBoundary does not exist');
-s('FOCUS_LOCK','NOT_IMPLEMENTED','No FOCUS_LOCK code in server.js');
+// ONE_SHOT_ROUTE / BOUNDARY_EXPIRY / FOCUS_LOCK now IMPLEMENTED (see src/publication/operating-mode-service.js)
+var hasOneShotRoute=code.includes("'/api/admin/publish/one-shot'") || code.indexOf('/api/admin/publish/one-shot') >= 0;
+var hasComputeNextSwitch=code.indexOf('computeNextSwitchAt') >= 0;
+var hasFocusLock=code.indexOf('FOCUS_LOCK') >= 0 || code.indexOf("'/api/admin/focus-lock'") >= 0;
+s('ONE_SHOT_ROUTE',hasOneShotRoute?'IMPLEMENTED_NOT_PRODUCTION_VERIFIED':'NOT_IMPLEMENTED',hasOneShotRoute?'POST /api/admin/publish/one-shot mounted':'/api/admin/publish/one-shot does not exist');
+s('BOUNDARY_EXPIRY',hasComputeNextSwitch?'IMPLEMENTED_NOT_PRODUCTION_VERIFIED':'NOT_IMPLEMENTED',hasComputeNextSwitch?'computeNextSwitchAt used by ensureActiveSnapshotForSchedule to auto-expire ONE_SHOT at HH:00/HH:30':'computeNextSwitchAt does not exist');
+s('FOCUS_LOCK',hasFocusLock?'IMPLEMENTED_NOT_PRODUCTION_VERIFIED':'NOT_IMPLEMENTED',hasFocusLock?'PUT/DELETE /api/admin/focus-lock mounted + FOCUS_LOCK context in operating-mode-service':'No FOCUS_LOCK code in server.js');
 console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec);
