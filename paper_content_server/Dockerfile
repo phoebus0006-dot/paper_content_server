@@ -29,6 +29,11 @@ RUN node scripts/generate-build-manifest.js
 
 RUN mkdir -p /app/images
 
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+  && chown -R appuser:appuser /app
+
+USER appuser
+
 EXPOSE 8787
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
