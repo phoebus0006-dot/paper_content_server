@@ -164,19 +164,17 @@ const DITHERING_ENABLED = PHOTO_QUANT_MODE === 'fs' ? ['1', 'true', 'yes', 'on']
 const PORT = Number(process.env.PORT || APP_CONFIG.port) > 0 ? Number(process.env.PORT || APP_CONFIG.port) : options.port;
 const TIMEZONE = String(process.env.TZ || APP_CONFIG.timezone || DEFAULT_TIMEZONE || 'UTC');
 const ENABLE_DEBUG_ROUTES = String(process.env.ENABLE_DEBUG_ROUTES || '').toLowerCase() === 'true';
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
-const ADMIN_ACCESS_MODE = String(process.env.ADMIN_ACCESS_MODE || 'token').toLowerCase();
-const ADMIN_ALLOWED_CIDRS_RAW = process.env.ADMIN_ALLOWED_CIDRS || '';
-const TRUST_PROXY = String(process.env.TRUST_PROXY || 'false').toLowerCase() === 'true';
-const TRUSTED_PROXY_CIDRS_RAW = process.env.TRUSTED_PROXY_CIDRS || '';
-const ADMIN_ALLOW_HEADERLESS_WRITE = String(process.env.ADMIN_ALLOW_HEADERLESS_WRITE || process.env.ALLOW_HEADERLESS_WRITE || 'false').toLowerCase() === 'true';
-const MQTT_ENABLED = String(process.env.MQTT_ENABLED || 'false').toLowerCase() === 'true';
-
-// Admin network policies — single source of truth, also used by tests
+// Admin configuration — single source of truth via load-config (APP_CONFIG.admin).
+// No direct process.env reads for admin settings in production code.
 var adminPolicy = require('./src/admin/admin-network-policy');
 var adminCSRF = require('./src/admin/admin-csrf-policy');
-var ADM_PARSED_CIDRS = adminPolicy.parseCIDRList(ADMIN_ALLOWED_CIDRS_RAW);
-var ADM_TRUSTED_PROXY_CIDRS = TRUSTED_PROXY_CIDRS_RAW ? adminPolicy.parseCIDRList(TRUSTED_PROXY_CIDRS_RAW).parsed : [];
+const ADMIN_ACCESS_MODE = APP_CONFIG.admin.accessMode;
+const ADMIN_TOKEN = APP_CONFIG.admin.token;
+const ADM_PARSED_CIDRS = APP_CONFIG.admin.allowedCidrs;
+const TRUST_PROXY = APP_CONFIG.admin.trustProxy;
+const ADM_TRUSTED_PROXY_CIDRS = APP_CONFIG.admin.trustedProxyCidrs.parsed;
+const ADMIN_ALLOW_HEADERLESS_WRITE = APP_CONFIG.admin.allowHeaderlessWrite;
+const MQTT_ENABLED = String(process.env.MQTT_ENABLED || 'false').toLowerCase() === 'true';
 
 const DATA_DIR = resolveConfiguredPath(APP_CONFIG.dataDir || 'data');
 const IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.imageRoot || 'images');
@@ -322,8 +320,21 @@ async function main() {
 
   function gracefulShutdown(signal) {
     r1Logger.info('Received ' + signal + ', shutting down...');
-    var timeout = setTimeout(function() { r1Logger.warn('Shutdown timed out'); process.exitCode = 1; process.exit(1); }, 15000);
-    boot.shutdown().then(function() { clearTimeout(timeout); process.exit(0); }).catch(function(e) { r1Logger.error('Shutdown failed: ' + e.message); process.exitCode = 1; clearTimeout(timeout); process.exit(1); });
+    var forceExitMs = (boot.config.lifecycle && boot.config.lifecycle.forceExitTimeoutMs) || Number(process.env.PROCESS_FORCE_EXIT_TIMEOUT_MS) || 12000;
+    var forceExit = setTimeout(function() {
+      r1Logger.error('Force exit after ' + forceExitMs + 'ms');
+      process.exitCode = 1;
+      process.exit(1);
+    }, forceExitMs);
+    boot.shutdown().then(function() {
+      clearTimeout(forceExit);
+      process.exit(0);
+    }).catch(function(e) {
+      r1Logger.error('Shutdown failed: ' + e.message);
+      clearTimeout(forceExit);
+      process.exitCode = 1;
+      process.exit(1);
+    });
   }
 
   process.on('SIGINT', function() { gracefulShutdown('SIGINT'); });
@@ -359,6 +370,14 @@ function parseArgs(argv, config) {
 
 function loadAppConfig() {
   var result = R1_loadConfig({ cwd: ROOT_DIR });
+  if (!result.isValid) {
+    r1Logger.error('Config validation failed: ' + result.errors.join('; '));
+    // Only hard-exit when run as the entry point. When required by tests for
+    // utility functions, log and fall through so the module still loads.
+    if (require.main === module) {
+      process.exit(1);
+    }
+  }
   return {
     port: result.server.port,
     panelIndex: result.panel.index,
@@ -371,6 +390,7 @@ function loadAppConfig() {
     translationProvider: result.translation.provider,
     dithering: result.photo.quantMode === 'fs' ? '1' : '0',
     timezone: result.server.timezone,
+    admin: result.admin,
   };
 }
 

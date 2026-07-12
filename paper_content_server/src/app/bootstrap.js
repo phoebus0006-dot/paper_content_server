@@ -109,22 +109,68 @@ function bootstrap(overrides) {
     });
   }
 
-  var shutDown = false;
-  function shutdown() {
-    if (shutDown) return Promise.resolve();
-    shutDown = true;
-    var tasks = [];
-    return new Promise(function(resolve) {
-      var timeout = setTimeout(function() { resolve(); }, 10000);
-      if (server) {
-        tasks.push(new Promise(function(ok) { server.close(function() { ok(); }); }));
+  // Shared shutdown Promise — concurrent/second calls return the same Promise.
+  var shutdownPromise = null;
+
+  function disconnectMqtt(client) {
+    if (!client || typeof client.disconnect !== 'function') {
+      return Promise.resolve();
+    }
+    return new Promise(function(resolve, reject) {
+      var settled = false;
+      function done(err) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err);
+        else resolve();
       }
-      if (mqttClient && typeof mqttClient.disconnect === 'function') {
-        try { mqttClient.disconnect(); } catch(e) {}
+      try {
+        var result;
+        if (client.disconnect.length >= 1) {
+          result = client.disconnect(done);
+        } else {
+          result = client.disconnect();
+        }
+        if (result && typeof result.then === 'function') {
+          result.then(function() { done(); }, done);
+        } else if (client.disconnect.length < 1) {
+          done();
+        }
+      } catch (error) {
+        done(error);
       }
-      if (tasks.length === 0) { clearTimeout(timeout); resolve(); return; }
-      Promise.all(tasks).then(function() { clearTimeout(timeout); resolve(); });
     });
+  }
+
+  function performShutdown() {
+    var tasks = [];
+    if (server) {
+      tasks.push(new Promise(function(resolve, reject) {
+        server.close(function(err) { if (err) reject(err); else resolve(); });
+      }));
+    }
+    tasks.push(disconnectMqtt(mqttClient));
+
+    var timeoutMs = (config.lifecycle && config.lifecycle.shutdownTimeoutMs) || Number(process.env.BOOTSTRAP_SHUTDOWN_TIMEOUT_MS) || 10000;
+    var timeout = null;
+    function timeoutReject() {
+      return new Promise(function(resolve, reject) {
+        timeout = setTimeout(function() {
+          reject(new Error('SHUTDOWN_TIMEOUT'));
+        }, timeoutMs);
+      });
+    }
+
+    return Promise.race([
+      Promise.all(tasks).then(function() { if (timeout) clearTimeout(timeout); }),
+      timeoutReject(),
+    ]);
+  }
+
+  function shutdown() {
+    if (shutdownPromise) return shutdownPromise;
+    shutdownPromise = performShutdown();
+    return shutdownPromise;
   }
 
   return {
