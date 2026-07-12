@@ -1,21 +1,3 @@
-FROM node:22-bookworm AS builder
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-     fonts-noto-cjk \
-     fontconfig \
-     python3 \
-     make \
-     g++ \
-     build-essential \
-  && fc-cache -fv \
-  && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm ci --only=production && npm cache clean --force
-
 FROM node:22-bookworm-slim
 
 ARG GIT_SHA
@@ -35,14 +17,17 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --from=builder /app/node_modules ./node_modules
+COPY node_modules ./node_modules
 COPY package.json package-lock.json ./
-COPY . .
+COPY public ./public
+COPY scripts ./scripts
+COPY src ./src
+COPY lib ./lib
+COPY server.js ./
 
 RUN node scripts/generate-build-manifest.js
 
-RUN useradd -r -u 1001 -m appuser && chown -R appuser:appuser /app
-USER appuser
+RUN mkdir -p /app/images
 
 EXPOSE 8787
 
