@@ -38,6 +38,11 @@
     "r12:test": "node test/r12/mqtt-frame-sha256-test.js",
     "r12:all": "node test/r12/run-r12-tests.js",
     "build:manifest": "node scripts/generate-build-manifest.js",
+    "admin:lan-test": "node test/admin/admin-lan-direct-access-test.js",
+    "admin:token-test": "node test/admin/admin-token-mode-compatibility-test.js",
+    "admin:cidr-test": "node test/admin/admin-network-cidr-test.js",
+    "admin:cors-test": "node test/admin/admin-cross-origin-test.js",
+    "admin:ui-test": "node test/admin/admin-ui-no-login-test.js",
     "selftest:deps": "node scripts/dependency-selftest.js",
     "selftest:container": "node scripts/container-selftest.js"
   },

@@ -1,5 +1,7 @@
-var TOKEN = null;
 var STATE = {};
+var ACCESS_MODE = null;
+var TOKEN = null;
+var LOGIN_CALLBACK = null;
 
 function $(id){return document.getElementById(id)}
 function show(el){el.style.display='block'}
@@ -11,7 +13,9 @@ function api(path,opts){
   var h={'Content-Type':'application/json'};
   if(TOKEN) h['Authorization']='Bearer '+TOKEN;
   return fetch(path,Object.assign({headers:h},opts)).then(function(r){
-    if(r.status===401||r.status===403){showLogin();throw new Error('unauthorized')}
+    if(r.status===401||r.status===403){
+      if(ACCESS_MODE==='token'&&!TOKEN){showLogin();throw new Error('unauthorized')}
+    }
     if(r.status===204)return null;
     return r.json().catch(function(){return null});
   });
@@ -33,7 +37,7 @@ $('login-form').addEventListener('submit',function(e){
   var token=$('login-token').value.trim();
   if(!token)return;
   api('/api/admin/dashboard',{headers:{'Authorization':'Bearer '+token}}).then(function(d){
-    if(d&&d.status==='ok'){TOKEN=token;hideLogin();loadAll()}
+    if(d&&d.status==='ok'){TOKEN=token;hideLogin();if(LOGIN_CALLBACK){LOGIN_CALLBACK();LOGIN_CALLBACK=null}}
     else{$('login-error').textContent='Token 无效';$('login-error').style.display='block'}
   }).catch(function(){toast('认证失败','error')});
 });
@@ -159,7 +163,7 @@ function loadPhotos(){
 $('photo-upload-form').addEventListener('submit',function(e){
   e.preventDefault();
   var fd=new FormData();fd.append('photo',$('photo-file').files[0]);
-  fetch('/api/admin/photos/upload',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:fd}).then(function(r){
+  fetch('/api/admin/photos/upload',{method:'POST',headers:{},body:fd}).then(function(r){
     if(r.ok){toast('上传成功','success');$('photo-file').value='';loadPhotos()}
     else{toast('上传失败:'+r.status,'error')}
   }).catch(function(e){toast('上传错误: '+e.message,'error')});
@@ -280,4 +284,18 @@ function loadStatus(){
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
 // Init
-if(!TOKEN)showLogin();
+fetch('/api/admin/access-mode').then(function(r){return r.json()}).then(function(d){
+  ACCESS_MODE=d.mode||'token';
+  if(ACCESS_MODE==='token'){
+    showLogin();
+    LOGIN_CALLBACK=loadAll;
+  }else{
+    show($('app'));
+    hide($('login-overlay'));
+    loadAll();
+  }
+}).catch(function(){
+  ACCESS_MODE='token';
+  showLogin();
+  LOGIN_CALLBACK=loadAll;
+});

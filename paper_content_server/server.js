@@ -165,6 +165,9 @@ const PORT = Number(process.env.PORT || APP_CONFIG.port) > 0 ? Number(process.en
 const TIMEZONE = String(process.env.TZ || APP_CONFIG.timezone || DEFAULT_TIMEZONE || 'UTC');
 const ENABLE_DEBUG_ROUTES = String(process.env.ENABLE_DEBUG_ROUTES || '').toLowerCase() === 'true';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+const ADMIN_ACCESS_MODE = String(process.env.ADMIN_ACCESS_MODE || 'token').toLowerCase();
+const ADMIN_ALLOWED_CIDRS_RAW = process.env.ADMIN_ALLOWED_CIDRS || '';
+const TRUST_PROXY = String(process.env.TRUST_PROXY || 'false').toLowerCase() === 'true';
 const MQTT_ENABLED = String(process.env.MQTT_ENABLED || 'false').toLowerCase() === 'true';
 
 const DATA_DIR = resolveConfiguredPath(APP_CONFIG.dataDir || 'data');
@@ -2474,15 +2477,108 @@ function failJson(res, code, msg) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(b);
 }
+function setAdminCORSHeaders(res) {
+  if (ADMIN_ACCESS_MODE === 'lan') {
+    res.setHeader('Access-Control-Allow-Origin', '');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Credentials', 'false');
+    res.setHeader('Vary', 'Origin');
+  }
+}
+function parseCIDR(cidr) {
+  var parts = cidr.split('/');
+  var ipParts = parts[0].split('.').map(Number);
+  var mask = parseInt(parts[1], 10) || 32;
+  if (ipParts.length !== 4 || ipParts.some(isNaN) || mask < 0 || mask > 32) return null;
+  var ipNum = ((ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]) >>> 0;
+  if (mask === 0) return { network: 0, mask: 0 };
+  var hostBits = 32 - mask;
+  var maskNum = (~((1 << hostBits) - 1)) >>> 0;
+  return { network: ipNum & maskNum, mask: maskNum };
+}
+
+function ipInCIDRs(ip, cidrs) {
+  var ipParts = ip.split('.').map(Number);
+  if (ipParts.length !== 4 || ipParts.some(isNaN)) return false;
+  var ipNum = ((ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]) >>> 0;
+  for (var i = 0; i < cidrs.length; i++) {
+    var c = cidrs[i];
+    if (c && (ipNum & c.mask) === c.network) return true;
+  }
+  return false;
+}
+
+function getRemoteIP(req) {
+  if (TRUST_PROXY) {
+    var xff = req.headers['x-forwarded-for'];
+    if (xff) return xff.split(',')[0].trim();
+    var xri = req.headers['x-real-ip'];
+    if (xri) return xri.trim();
+  }
+  return req.socket.remoteAddress || '127.0.0.1';
+}
+
+function adminNetworkCheck(req) {
+  if (ADMIN_ACCESS_MODE !== 'lan') return true;
+  var raw = ADMIN_ALLOWED_CIDRS_RAW;
+  if (!raw) return true;
+  var cidrList = raw.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  var parsed = [];
+  for (var i = 0; i < cidrList.length; i++) {
+    var p = parseCIDR(cidrList[i]);
+    if (p) parsed.push(p);
+  }
+  if (parsed.length === 0) return true;
+  var ip = getRemoteIP(req);
+  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+  if (ip === '::1' || ip === '127.0.0.1') return true;
+  return ipInCIDRs(ip, parsed);
+}
+
+function adminCSRFCheck(req) {
+  if (ADMIN_ACCESS_MODE !== 'lan') return true;
+  var method = req.method;
+  if (method !== 'POST' && method !== 'PUT' && method !== 'PATCH' && method !== 'DELETE') return true;
+  var ct = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  var allowedCT = ['application/json', 'multipart/form-data'];
+  var ctOk = false;
+  for (var i = 0; i < allowedCT.length; i++) {
+    if (ct === allowedCT[i]) { ctOk = true; break; }
+  }
+  if (!ctOk) return false;
+  var origin = req.headers['origin'];
+  if (origin) {
+    var host = req.headers['host'] || '';
+    var originHost = (new URL(origin)).host;
+    if (originHost !== host) return false;
+  }
+  var referer = req.headers['referer'];
+  if (referer) {
+    var refHost = (new URL(referer)).host;
+    var host2 = req.headers['host'] || '';
+    if (refHost !== host2) return false;
+  }
+  return true;
+}
+
 function adminAuth(req) {
+  if (ADMIN_ACCESS_MODE === 'lan') {
+    if (!adminNetworkCheck(req)) return false;
+    return true;
+  }
   if (!ADMIN_TOKEN) return false;
   var auth = req.headers['authorization'] || '';
   return auth === 'Bearer ' + ADMIN_TOKEN;
 }
 function serveAdminFile(name) {
   var fp = path.join(ROOT_DIR, 'public', 'admin', name);
-  if (fs.existsSync(fp)) return fs.readFileSync(fp);
-  return null;
+  if (!fs.existsSync(fp)) return null;
+  var c = fs.readFileSync(fp);
+  if (name === 'index.html' && ADMIN_ACCESS_MODE === 'lan') {
+    c = c.toString().replace(/<div id=login-overlay[\s\S]*?<\/form><\/div><\/div>/, '');
+  }
+  return Buffer.from(c);
 }
 
 async function handleRequest(req, res) {
@@ -2934,6 +3030,19 @@ async function handleRequest(req, res) {
 
     
     // ── Admin routes ──
+    if (parsed.pathname === '/admin' || parsed.pathname === '/admin/' ||
+        parsed.pathname.startsWith('/admin/') || parsed.pathname.startsWith('/api/admin/')) {
+      if (!adminNetworkCheck(req)) { failJson(res, 403, 'ADMIN_NETWORK_DENIED'); return; }
+      if (req.method !== 'GET' && req.method !== 'OPTIONS') {
+        setAdminCORSHeaders(res);
+        if (!adminCSRFCheck(req)) { failJson(res, 403, 'ADMIN_CROSS_ORIGIN_DENIED'); return; }
+      }
+      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+    }
+    if (parsed.pathname === '/api/admin/access-mode') {
+      respondJson(res, { mode: ADMIN_ACCESS_MODE });
+      return;
+    }
     if (parsed.pathname === '/admin' || parsed.pathname === '/admin/') {
       var h = serveAdminFile('index.html');
       if (h) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(h); return; }
@@ -2949,9 +3058,8 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/admin/dashboard') {
-      if (!ADMIN_TOKEN) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
-      var authHdr = req.headers['authorization'] || '';
-      if (!authHdr) { failJson(res, 401, 'authorization header missing'); return; }
+      if (ADMIN_ACCESS_MODE !== 'lan' && !ADMIN_TOKEN) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
+      if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
       respondJson(res, { status: 'ok', timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount });

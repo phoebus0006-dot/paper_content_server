@@ -2,7 +2,7 @@
 data/
 token*
 .git/
-node_modules/
+# node_modules/ — pre-installed, included in context
 *.md
 .DS_Store
 test/
