@@ -230,6 +230,8 @@ const runtime = {
   safetyGate: null,
   learningIngestionService: null,
   learningLastIngestAt: null,
+  overridePersistence: null,
+  safetyClassifierPort: null,
 };
 
 async function main() {
@@ -294,6 +296,8 @@ async function main() {
   runtime.learningScheduler = boot.services.learningScheduler || null;
   runtime.assetSelectionService = boot.services.assetSelectionService || null;
   runtime.assetDeleteService = boot.services.assetDeleteService || null;
+  runtime.overridePersistence = boot.services.overridePersistence || null;
+  runtime.safetyClassifierPort = boot.services.safetyClassifierPort || null;
   runtime.config = boot.config || null;
   runtime.mqttClient = boot.deps.mqttClient || null;
   await runtime.snapshotStore.ensureDirs();
@@ -310,6 +314,48 @@ async function main() {
     }
   } catch(e) {
     r1Logger.warn('Could not preload active snapshot: ' + e.message);
+  }
+
+  // V3: Restore persisted ONE_SHOT / FOCUS_LOCK override on restart.
+  // validateOverrideAsync() re-checks the asset is still SAFE + SELECTABLE +
+  // local file present. If valid, the operating mode is restored to the same
+  // snapshot. If invalid, the override is cleared and the server falls through
+  // to AUTO schedule (no silent asset substitution).
+  if (runtime.overridePersistence && runtime.assetRepository && runtime.operatingModeService) {
+    try {
+      var persistedOverride = runtime.overridePersistence.loadOverride();
+      if (persistedOverride &&
+          (persistedOverride.mode === 'ONE_SHOT_OVERRIDE' ||
+           persistedOverride.mode === 'FOCUS_LOCK') &&
+          persistedOverride.assetId && persistedOverride.snapshotId) {
+        var v3Validation = await runtime.overridePersistence.validateOverrideAsync(
+          persistedOverride, runtime.assetRepository
+        );
+        if (v3Validation.valid) {
+          // Restore operating mode; snapshot was already preloaded above.
+          if (persistedOverride.mode === 'ONE_SHOT_OVERRIDE') {
+            runtime.operatingModeService.enterOneShot(
+              persistedOverride.snapshotId,
+              persistedOverride.expiresAt || persistedOverride.savedAt
+            );
+            r1Logger.info('Restored ONE_SHOT override: asset=' + persistedOverride.assetId);
+          } else {
+            runtime.operatingModeService.enterFocusLock(persistedOverride.snapshotId, {
+              libraryType: persistedOverride.libraryType || null,
+              theme: persistedOverride.theme || null,
+              albumId: persistedOverride.albumId || null,
+            });
+            r1Logger.info('Restored FOCUS_LOCK override: asset=' + persistedOverride.assetId);
+          }
+        } else {
+          r1Logger.warn('Persisted override invalid on restart (' + v3Validation.reason +
+            ') — clearing override, falling through to AUTO schedule');
+          runtime.overridePersistence.clearOverride();
+        }
+      }
+    } catch (e) {
+      r1Logger.warn('Override restore failed: ' + e.message);
+    }
   }
 
   var server = boot.server;
@@ -2180,11 +2226,13 @@ async function buildPhotoSnapshot(now) {
 // buildPhotoSnapshotFromAsset — construct a photo snapshot from an explicit
 // selected asset (used by ONE_SHOT and FOCUS_LOCK when assetId is provided).
 // Bypasses schedule selection; uses the asset's localPath as the image source.
+// Returns { snapshot, frame, photo } mirroring getContentForNow so createSnapshot
+// receives a proper payload object and EPF1 Buffer.
 async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
   var snap = selectPhotoSnapshot(now);
   var assetTheme = (asset.metadata && asset.metadata.theme) || asset.libraryType || 'PHOTO';
   var frameId = (prefix || 'photo:asset') + ':' + asset.assetId + ':' + Date.now().toString(36);
-  return {
+  var photo = {
     mode: 'photo',
     kind: 'shot',
     slotKey: snap.slotKey,
@@ -2199,6 +2247,36 @@ async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
     imageTheme: assetTheme,
     imagePath: asset.localPath,
     epfPath: (asset.metadata && asset.metadata.epfPath) || null,
+  };
+  // Render the EPF1 frame from the asset's local image file.
+  var selection = { entry: null, theme: assetTheme, kind: 'shot' };
+  if (photo.imagePath && fs.existsSync(photo.imagePath)) {
+    selection.entry = { processedPngPath: photo.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT };
+  }
+  var rawFrame = await renderPhotoFrame(selection, now);
+  var frame = buildFrameBuffer(rawFrame);
+  runtime.renderCount++;
+  return {
+    snapshot: {
+      panelIndex: options.panel,
+      panelName: PANEL_SIZES[options.panel].name,
+      width: FRAME_WIDTH,
+      height: FRAME_HEIGHT,
+      mode: 'photo',
+      frameId: frameId,
+      title: assetTheme,
+      nextSwitchAt: photo.nextSwitchAt,
+      nextSwitchLocal: photo.nextSwitchLocal,
+      timezone: TIMEZONE,
+      timestamp: now.toISOString(),
+      imageStatus: 'ready',
+      imageName: photo.imageName,
+      imageSource: photo.imageSource,
+      imageTheme: photo.imageTheme,
+      kind: 'shot',
+    },
+    frame: frame,
+    photo: photo,
   };
 }
 
@@ -2412,9 +2490,11 @@ async function ensureActiveSnapshotForSchedule(now) {
     var osMode = runtime.operatingModeService.getMode();
     if (osMode === 'ONE_SHOT_OVERRIDE') {
       if (runtime.operatingModeService.checkExpiry(now)) {
-        // BOUNDARY_EXPIRY: exit ONE_SHOT, clear override file, fall through to schedule publish
+        // BOUNDARY_EXPIRY: exit ONE_SHOT, clear persisted override, fall through to schedule publish
         runtime.operatingModeService.exitOneShot();
-        try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
+        if (runtime.overridePersistence) {
+          try { runtime.overridePersistence.clearOverride(); } catch(e) {}
+        }
         r1Logger.info('ONE_SHOT expired at boundary, restoring AUTO schedule');
       } else {
         // ONE_SHOT still active — keep current snapshot, no republish
@@ -2632,6 +2712,7 @@ async function handleRequest(req, res) {
       runtime.pinStore.pin(client, activeSnap.snapshotId);
       const body = Buffer.from(JSON.stringify({
         ...activeSnap.payload, snapshotId: activeSnap.snapshotId, panelIndex,
+        operatingMode: runtime.operatingModeService ? runtime.operatingModeService.getMode() : 'AUTO',
         frameUrl: `${req.headers.host ? `http://${req.headers.host}` : ''}/api/frame.bin?panel=${panelIndex}`,
         frameSha256: activeSnap.frameSha256,
         frameLength: activeSnap.frameLength,
@@ -3226,17 +3307,24 @@ async function handleRequest(req, res) {
         var osSnap = R3_snapshotModel.createSnapshot(osFrameId, osContent.snapshot, osContent.frame, contentType, { publishReason: 'one_shot' });
         await runtime.publicationService.publish(osSnap);
         runtime.operatingModeService.enterOneShot(osSnap.snapshotId, osExpiresAt);
-        // Persist override file for backward-compat with restart-restore logic
-        var osOverride = JSON.stringify({
-          mode: 'one-shot',
-          contentType: contentType,
-          libraryType: libraryType,
-          assetId: assetId || null,
-          snapshotId: osSnap.snapshotId,
-          createdAt: new Date().toISOString(),
-          expiresAt: osExpiresAt.toISOString(),
-        }, null, 2);
-        try { fs.writeFileSync(path.join(DATA_DIR, 'admin_override.json'), osOverride); } catch(e) {}
+        // V3: persist override via overridePersistence (replaces ad-hoc writeFileSync).
+        // On restart, validateOverrideAsync() re-checks the asset; if it has been
+        // deleted / marked unsafe, the override is cleared (no silent swap).
+        if (runtime.overridePersistence) {
+          try {
+            runtime.overridePersistence.saveOverride({
+              mode: 'ONE_SHOT_OVERRIDE',
+              assetId: assetId || null,
+              snapshotId: osSnap.snapshotId,
+              libraryType: libraryType,
+              contentType: contentType,
+              savedAt: new Date().toISOString(),
+              expiresAt: osExpiresAt.toISOString(),
+            });
+          } catch (e) {
+            r1Logger.warn('Failed to persist ONE_SHOT override: ' + e.message);
+          }
+        }
         respondJson(res, {
           snapshotId: osSnap.snapshotId,
           frameId: osFrameId,
@@ -3287,6 +3375,22 @@ async function handleRequest(req, res) {
           albumId: flAlbumId,
           resolvedAssetId: flSelection.assetId,
         });
+        // V3: persist override via overridePersistence for restart restore.
+        if (runtime.overridePersistence) {
+          try {
+            runtime.overridePersistence.saveOverride({
+              mode: 'FOCUS_LOCK',
+              assetId: flSelection.assetId,
+              snapshotId: flSnap.snapshotId,
+              libraryType: flLibraryType,
+              theme: flTheme,
+              albumId: flAlbumId,
+              savedAt: new Date().toISOString(),
+            });
+          } catch (e) {
+            r1Logger.warn('Failed to persist FOCUS_LOCK override: ' + e.message);
+          }
+        }
         respondJson(res, {
           snapshotId: flSnap.snapshotId,
           frameId: flFrameId,
@@ -3310,8 +3414,10 @@ async function handleRequest(req, res) {
       }
       try {
         runtime.operatingModeService.exitFocusLock();
-        // Clear override file if present
-        try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
+        // V3: clear persisted override via overridePersistence (replaces ad-hoc unlinkSync)
+        if (runtime.overridePersistence) {
+          try { runtime.overridePersistence.clearOverride(); } catch(e) {}
+        }
         // Re-publish current schedule-based snapshot
         if (runtime.snapshotStore) {
           var flRestoreNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
@@ -3371,7 +3477,17 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/override' && req.method === 'DELETE') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
+      // V3: clear persisted override via overridePersistence (replaces ad-hoc unlinkSync)
+      if (runtime.overridePersistence) {
+        try { runtime.overridePersistence.clearOverride(); } catch(e) {}
+      } else {
+        try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
+      }
+      // Also exit any active operating mode so the schedule can republish
+      if (runtime.operatingModeService) {
+        try { runtime.operatingModeService.exitOneShot(); } catch(e) {}
+        try { runtime.operatingModeService.exitFocusLock(); } catch(e) {}
+      }
       // R3.6: Re-publish schedule-based content after clearing override
       if (runtime.publicationService && runtime.snapshotStore) {
         try {
@@ -3481,27 +3597,45 @@ async function handleRequest(req, res) {
         failJson(res, 503, 'FEATURE_DISABLED: customLibraryEnabled is false'); return;
       }
       if (!runtime.customLibraryService) { failJson(res, 503, 'SAFETY_GATE_REQUIRED: custom library service unavailable'); return; }
+      // V3 streaming upload: accept application/octet-stream only.
+      // Metadata (original name / mime / size) is passed via headers — no JSON
+      // body, no base64, no client-provided file paths. The request stream is
+      // piped straight into processUploadStream which writes to quarantine with
+      // O_EXCL, enforces maxUploadBytes mid-stream, and runs the full safety
+      // chain (decode → classifier → sha256 → dedup → move → audit → repo).
+      var contentTypeHdr = String(req.headers['content-type'] || '').toLowerCase();
+      if (contentTypeHdr.indexOf('application/octet-stream') !== 0) {
+        failJson(res, 415, 'Content-Type must be application/octet-stream (streaming upload)'); return;
+      }
+      var streamMetadata = {
+        originalName: req.headers['x-original-name'] || 'upload.bin',
+        mimeType: req.headers['x-mime-type'] || '',
+        expectedSize: parseInt(req.headers['content-length'] || '0', 10) || undefined,
+      };
+      var streamMaxBytes = (runtime.config.upload && runtime.config.upload.maxUploadBytes) || undefined;
       try {
-        var uploadBody = JSON.parse(await readBody(req) || '{}');
-        // Secure upload: accept fileBuffer (base64) instead of filePath
-        // No NAS internal path is accepted or returned
-        if (!uploadBody.fileBuffer) { failJson(res, 400, 'fileBuffer required (base64-encoded)'); return; }
-        var upload = {
-          originalName: uploadBody.originalName || 'upload.bin',
-          mimeType: uploadBody.mimeType || '',
-          fileBuffer: Buffer.from(uploadBody.fileBuffer, 'base64'),
-        };
-        var uploadResult = await runtime.customLibraryService.processUpload(upload);
-        if (uploadResult.status === 'ACCEPTED') {
+        var streamResult = await runtime.customLibraryService.processUploadStream(
+          req, streamMetadata, { maxBytes: streamMaxBytes }
+        );
+        if (streamResult.status === 'ACCEPTED') {
           res.writeHead(202, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'accepted', assetId: uploadResult.assetId }));
-        } else if (uploadResult.status === 'REJECTED') {
-          failJson(res, 400, 'upload rejected: ' + (uploadResult.reason || uploadResult.errors && uploadResult.errors.join('; ') || 'unknown'));
-        } else if (uploadResult.status === 'DUPLICATE') {
+          res.end(JSON.stringify({ status: 'accepted', assetId: streamResult.assetId }));
+        } else if (streamResult.status === 'REJECTED') {
+          // TOO_LARGE / DECODE_FAILED / MIME_MISMATCH / NSFW / CLASSIFIER_UNAVAILABLE etc.
+          var rejCode = streamResult.reason || 'unknown';
+          // CLASSIFIER_UNAVAILABLE / FAIL_CLOSED is a server-side gate failure (503),
+          // not a client input error. MIME_MISMATCH / TOO_LARGE / SIZE_MISMATCH /
+          // DECODE_FAILED are client input errors (400). NSFW is policy rejection (400).
+          if (rejCode === 'CLASSIFIER_UNAVAILABLE' || rejCode === 'FAIL_CLOSED') {
+            failJson(res, 503, 'upload rejected: ' + rejCode + ' (classifier not ready, fail-closed)');
+          } else {
+            failJson(res, 400, 'upload rejected: ' + rejCode + (streamResult.error ? ' — ' + streamResult.error : ''));
+          }
+        } else if (streamResult.status === 'DUPLICATE') {
           res.writeHead(409, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'duplicate', sha256: uploadResult.sha256 }));
+          res.end(JSON.stringify({ error: 'duplicate', sha256: streamResult.sha256 }));
         } else {
-          failJson(res, 500, 'upload error: ' + (uploadResult.error || uploadResult.status || 'unknown'));
+          failJson(res, 500, 'upload error: ' + (streamResult.error || streamResult.status || 'unknown'));
         }
       } catch(e) { failJson(res, 500, 'upload failed: ' + e.message); }
       return;
@@ -3567,29 +3701,48 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname.indexOf('/api/admin/library/') === 0 && req.method === 'DELETE') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      // V3 atomic delete: feature flag must be true; no legacy markTombstoned
+      // fallback. Without deletePipelineEnabled the route returns 503
+      // FEATURE_DISABLED so callers cannot bypass the reference check / audit.
+      if (!runtime.config || !runtime.config.features || !runtime.config.features.deletePipelineEnabled) {
+        failJson(res, 503, 'FEATURE_DISABLED: deletePipelineEnabled is false'); return;
+      }
       if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
+      if (!runtime.assetDeleteService) { failJson(res, 503, 'asset delete service unavailable'); return; }
       var delAssetId = decodeURIComponent(parsed.pathname.slice('/api/admin/library/'.length));
       if (!delAssetId) { failJson(res, 400, 'assetId required'); return; }
+      // reason enum (UNSAFE / SUSPICIOUS / POLICY_BLOCKED) — read from body or
+      // query (?reason=...). Body takes precedence. Reject invalid reasons
+      // with 400 instead of silently defaulting (asset-delete-service validates
+      // the enum too, but failing earlier gives a clearer error).
+      var delReasonRaw = null;
+      try { var drb = JSON.parse(await readBody(req) || '{}'); if (drb && drb.reason) delReasonRaw = drb.reason; } catch(e) {}
+      if (!delReasonRaw) delReasonRaw = parsed.searchParams.get('reason') || null;
+      var V3_DELETE_REASONS = ['UNSAFE', 'SUSPICIOUS', 'POLICY_BLOCKED'];
+      if (!delReasonRaw || V3_DELETE_REASONS.indexOf(String(delReasonRaw).toUpperCase()) < 0) {
+        failJson(res, 400, 'reason required (must be one of UNSAFE, SUSPICIOUS, POLICY_BLOCKED)'); return;
+      }
+      var delReason = String(delReasonRaw).toUpperCase();
       try {
-        var delReason = 'admin delete via Library API';
-        // Full delete chain: reference check → tombstone → cleanup → audit
-        if (runtime.assetDeleteService && runtime.config && runtime.config.features && runtime.config.features.deletePipelineEnabled) {
-          await runtime.assetDeleteService.deleteAsset(delAssetId, delReason);
-          respondJson(res, { status: 'ok', assetId: delAssetId, pipeline: 'full_delete_chain' });
-        } else {
-          // Legacy fallback: markTombstoned only (PARTIAL — no reference check or audit)
-          await runtime.assetRepository.markTombstoned(delAssetId, delReason);
-          // Invalidate cached frames referencing this asset
-          if (runtime.cachedFrames && runtime.cachedFrames.forEach) {
-            var toInvalidate = [];
-            runtime.cachedFrames.forEach(function(val, key) {
-              if (val && val.payload && val.payload.assetId === delAssetId) toInvalidate.push(key);
-            });
-            toInvalidate.forEach(function(k) { runtime.cachedFrames.delete(k); });
-          }
-          respondJson(res, { status: 'ok', assetId: delAssetId, invalidatedCaches: true, pipeline: 'legacy_tombstone_only_PARTIAL' });
+        // Full atomic chain: markBlocked → tombstone → cleanup → audit → markTombstoned
+        // (fail-closed: every step rejects on failure; no swallow).
+        await runtime.assetDeleteService.deleteAsset(delAssetId, delReason);
+        // Invalidate cached frames referencing this asset (best-effort)
+        if (runtime.cachedFrames && runtime.cachedFrames.forEach) {
+          var toInvalidate = [];
+          runtime.cachedFrames.forEach(function(val, key) {
+            if (val && val.payload && val.payload.assetId === delAssetId) toInvalidate.push(key);
+          });
+          toInvalidate.forEach(function(k) { runtime.cachedFrames.delete(k); });
         }
-      } catch(e) { failJson(res, 500, 'asset delete failed: ' + e.message); }
+        respondJson(res, { status: 'ok', assetId: delAssetId, reason: delReason, pipeline: 'atomic_delete_chain' });
+      } catch(e) {
+        var delMsg = e && e.message ? e.message : String(e);
+        if (/INVALID_REASON/.test(delMsg)) { failJson(res, 400, delMsg); }
+        else if (/Asset not found/.test(delMsg)) { failJson(res, 404, delMsg); }
+        else if (/Cannot delete asset|active references/.test(delMsg)) { failJson(res, 409, delMsg); }
+        else { failJson(res, 500, 'asset delete failed: ' + delMsg); }
+      }
       return;
     }
 
