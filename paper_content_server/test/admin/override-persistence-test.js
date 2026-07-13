@@ -117,6 +117,60 @@ async function run() {
   persist.clearOverride();
   t('RESTART_RESTORE_CLEARED', persist.loadOverride() === null, '');
 
+  // --- ATOMIC_WRITE_USES_RENAME ---
+  // saveOverride must: produce the state file, leave no .tmp behind,
+  // write schemaVersion=1, and round-trip through loadOverride.
+  persist.saveOverride({ mode: 'ONE_SHOT', assetId: 'ast_atomic', snapshotId: 'snap_atomic', libraryType: 'LEARNING', savedAt: '2026-07-13T02:00:00.000Z' });
+  var atomicRaw = fs.readFileSync(stateFile, 'utf8');
+  var atomicParsed = JSON.parse(atomicRaw);
+  var atomicLoaded = persist.loadOverride();
+  t('ATOMIC_WRITE_USES_RENAME',
+    fs.existsSync(stateFile) &&
+    !fs.existsSync(stateFile + '.tmp') &&
+    atomicParsed.mode === 'ONE_SHOT' &&
+    atomicParsed.assetId === 'ast_atomic' &&
+    atomicParsed.schemaVersion === 1 &&
+    atomicLoaded && atomicLoaded.mode === 'ONE_SHOT' && atomicLoaded.schemaVersion === 1,
+    'exists=' + fs.existsSync(stateFile) + ' tmp=' + fs.existsSync(stateFile + '.tmp') +
+    ' sv=' + (atomicParsed.schemaVersion) + ' loaded=' + (atomicLoaded ? atomicLoaded.mode : 'null'));
+  persist.clearOverride();
+
+  // --- CORRUPT_FILE_QUARANTINED ---
+  // Truncated JSON: loadOverride returns null AND the corrupt file is moved
+  // aside to .corrupt.<ts> so we do not silently re-read broken state.
+  fs.writeFileSync(stateFile, '{ "mode": "ONE_SHOT", "assetId": "ast_corrupt",');
+  var corruptBefore = fs.readdirSync(tmpDir).filter(function (n) { return n.indexOf('.corrupt.') >= 0; }).length;
+  var corruptLoaded = persist.loadOverride();
+  var corruptAfter = fs.readdirSync(tmpDir).filter(function (n) { return n.indexOf('.corrupt.') >= 0; });
+  t('CORRUPT_FILE_QUARANTINED',
+    corruptLoaded === null &&
+    !fs.existsSync(stateFile) &&
+    corruptAfter.length === corruptBefore + 1,
+    'loaded=' + corruptLoaded + ' originalExists=' + fs.existsSync(stateFile) +
+    ' corruptFiles=' + corruptAfter.length + ' (before=' + corruptBefore + ')');
+  // Re-load must NOT find the corrupt content again (it was moved aside)
+  t('CORRUPT_FILE_QUARANTINED_NO_RELID', persist.loadOverride() === null, '');
+  // cleanup quarantined files
+  corruptAfter.forEach(function (n) { try { fs.unlinkSync(path.join(tmpDir, n)); } catch (e) { /* best-effort */ } });
+
+  // --- SCHEMA_VERSION_CHECKED ---
+  // Valid JSON but wrong schemaVersion -> null + quarantined.
+  fs.writeFileSync(stateFile, JSON.stringify({ mode: 'ONE_SHOT', assetId: 'ast_schema', schemaVersion: 99 }));
+  var svBefore = fs.readdirSync(tmpDir).filter(function (n) { return n.indexOf('.corrupt.') >= 0; }).length;
+  var svLoaded = persist.loadOverride();
+  var svAfter = fs.readdirSync(tmpDir).filter(function (n) { return n.indexOf('.corrupt.') >= 0; });
+  t('SCHEMA_VERSION_CHECKED',
+    svLoaded === null && !fs.existsSync(stateFile) && svAfter.length === svBefore + 1,
+    'loaded=' + svLoaded + ' originalExists=' + fs.existsSync(stateFile) +
+    ' corruptFiles=' + svAfter.length + ' (before=' + svBefore + ')');
+  svAfter.forEach(function (n) { try { fs.unlinkSync(path.join(tmpDir, n)); } catch (e) { /* best-effort */ } });
+
+  // Missing schemaVersion (legacy/old format) is also rejected.
+  fs.writeFileSync(stateFile, JSON.stringify({ mode: 'ONE_SHOT', assetId: 'ast_old' }));
+  var oldLoaded = persist.loadOverride();
+  t('SCHEMA_VERSION_CHECKED_MISSING_VERSION_REJECTED', oldLoaded === null, String(oldLoaded));
+  try { if (fs.existsSync(stateFile)) fs.unlinkSync(stateFile); } catch (e) { /* best-effort */ }
+
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}
   console.log('\n=== Summary: ' + pass + ' passed, ' + fail + ' failed ===');
   process.exit(ec);

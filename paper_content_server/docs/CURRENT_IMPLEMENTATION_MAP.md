@@ -135,6 +135,7 @@ AUDITED_CODE_SHA=PENDING_INTEGRATION
 |----|-------------|--------|
 | GAP-001 | Full translation pipeline unit coverage | CLOSED |
 | GAP-002 | Dual library (Learning + Custom) end-to-end | CLOSED |
+| GAP-003 | Real CJK glyph rendering — text-rasterizer.js uses 5x7 ASCII bitmap font; CJK chars fall back to `renderCJKPlaceholder` filled blocks, not real glyphs (Noto Sans CJK probed but never loaded). ASCII_TEXT_RENDER=IMPLEMENTED, CJK_PLACEHOLDER=IMPLEMENTED, REAL_CJK_GLYPH_RENDER=NOT_IMPLEMENTED | NOT_IMPLEMENTED |
 | DATA_DIR resolution | Resolved from config or env | IMPLEMENTED |
 | NAS target path | Configured default `/var/lib/paper-content-server/data` | CONFIGURED |
 | Docker mode | Production container | IMPLEMENTED |
