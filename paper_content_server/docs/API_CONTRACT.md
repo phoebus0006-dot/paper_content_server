@@ -37,7 +37,7 @@
 
 ### POST /api/admin/publish/one-shot
 
-> Status: `IMPLEMENTED` — 在 server.js 实现(Phase 3)。pin 当前 schedule 内容到下一个 HH:00 或 HH:30 边界。
+> Status: `PARTIAL` — 路由已挂载在 server.js,但 `assetId` 参数被接受后尚未真正用于资产选择(尚未生效 — assetId 被接受但不影响选择)。pin 当前 schedule 内容到下一个 HH:00 或 HH:30 边界。
 
 示例：
 
@@ -67,7 +67,7 @@ expiresAt：
 
 ### PUT /api/admin/focus-lock
 
-> Status: `IMPLEMENTED` — 在 server.js 实现(Phase 4)。锁定 photo snapshot 直到显式 DELETE。
+> Status: `PARTIAL` — 路由已挂载在 server.js,但 `theme`/`albumId` 参数被接受后尚未真正查询资产(尚未生效 — 参数被接受但不查询资产)。锁定 photo snapshot 直到显式 DELETE。
 
 示例：
 
@@ -89,7 +89,7 @@ expiresAt：
 
 ### DELETE /api/admin/focus-lock
 
-> Status: `IMPLEMENTED` — 在 server.js 实现(Phase 4)。
+> Status: `IMPLEMENTED` — 在 server.js 实现(Phase 4)。关闭 FOCUS_LOCK 并恢复 AUTO schedule。
 
 行为：
 
@@ -99,7 +99,7 @@ expiresAt：
 
 ## 5. Library
 
-> Status: `IMPLEMENTED` — GET / PATCH / DELETE / POST upload 均已实现。POST upload 通过 `customLibraryService` 走完整 safety gate 链路(quarantine → decode → NSFW safety gate → dedup → persist)。
+> Status: `PARTIAL` — GET / PATCH / DELETE / POST upload 路由均已挂载,但安全链路不完整。POST upload 当前不接受客户端 filePath,不调用真实 NSFW 分类器,不得称为完整 safety pipeline(只是文件名关键词匹配)。DELETE 只做 markTombstoned,尚未走完整 AssetDeleteService。
 
 ### GET /api/admin/library?libraryType=learning
 
@@ -111,7 +111,7 @@ expiresAt：
 
 ### POST /api/admin/library/custom/upload
 
-> Status: `IMPLEMENTED` — 通过 `customLibraryService.processUpload` 走完整 safety gate 链路(quarantine → decode → NSFW safety gate → dedup → persist)。接受 JSON body `{ originalName, mimeType, fileSize, width, height, filePath }`。返回 202 ACCEPTED / 400 REJECTED / 409 DUPLICATE / 500 ERROR。
+> Status: `PARTIAL` — 通过 `customLibraryService.processUpload` 处理,但当前不接受客户端 filePath,不调用真实 NSFW 分类器,不得称为完整 safety pipeline(只是文件名关键词匹配,无真实 multipart,无真实图像内容分类器)。接受 JSON body `{ originalName, mimeType, fileSize, width, height, filePath }`。返回 202 ACCEPTED / 400 REJECTED / 409 DUPLICATE / 500 ERROR。
 
 ### PATCH /api/admin/library/:id
 
@@ -119,7 +119,7 @@ expiresAt：
 
 ### DELETE /api/admin/library/:id
 
-> Status: `IMPLEMENTED` — 走 `assetRepository.markTombstoned(id, 'admin delete via Library API')` + 清理 `cachedFrames` 中引用此 asset 的项。
+> Status: `PARTIAL` — 尚未走完整 AssetDeleteService — 只做 `assetRepository.markTombstoned(id, 'admin delete via Library API')` + 清理 `cachedFrames` 中引用此 asset 的项(没走完整 delete chain:reference-cleaner / safety-audit-log / tombstone-store 完整链路未在 DELETE 路由中串联)。
 
 ## 6. Legacy API (Current Admin Routes)
 

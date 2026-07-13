@@ -23,7 +23,7 @@ s('LEGACY_ADMIN_OVERRIDE',hasOverride?'PARTIAL':'NOT_IMPLEMENTED','admin_overrid
 var hasOneShotRoute=code.includes("'/api/admin/publish/one-shot'") || code.indexOf('/api/admin/publish/one-shot') >= 0;
 var hasComputeNextSwitch=code.indexOf('computeNextSwitchAt') >= 0;
 var hasFocusLock=code.indexOf('FOCUS_LOCK') >= 0 || code.indexOf("'/api/admin/focus-lock'") >= 0;
-s('ONE_SHOT_ROUTE',hasOneShotRoute?'IMPLEMENTED_NOT_PRODUCTION_VERIFIED':'NOT_IMPLEMENTED',hasOneShotRoute?'POST /api/admin/publish/one-shot mounted':'/api/admin/publish/one-shot does not exist');
+s('ONE_SHOT_ROUTE',hasOneShotRoute?'PARTIAL':'NOT_IMPLEMENTED',hasOneShotRoute?'POST /api/admin/publish/one-shot route mounted but assetId accepted and not actually used for asset selection':'/api/admin/publish/one-shot does not exist');
 s('BOUNDARY_EXPIRY',hasComputeNextSwitch?'IMPLEMENTED_NOT_PRODUCTION_VERIFIED':'NOT_IMPLEMENTED',hasComputeNextSwitch?'computeNextSwitchAt used by ensureActiveSnapshotForSchedule to auto-expire ONE_SHOT at HH:00/HH:30':'computeNextSwitchAt does not exist');
-s('FOCUS_LOCK',hasFocusLock?'IMPLEMENTED_NOT_PRODUCTION_VERIFIED':'NOT_IMPLEMENTED',hasFocusLock?'PUT/DELETE /api/admin/focus-lock mounted + FOCUS_LOCK context in operating-mode-service':'No FOCUS_LOCK code in server.js');
+s('FOCUS_LOCK',hasFocusLock?'PARTIAL':'NOT_IMPLEMENTED',hasFocusLock?'PUT/DELETE /api/admin/focus-lock mounted + FOCUS_LOCK context in operating-mode-service, but theme/albumId accepted and not actually queried against assets':'No FOCUS_LOCK code in server.js');
 console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec);

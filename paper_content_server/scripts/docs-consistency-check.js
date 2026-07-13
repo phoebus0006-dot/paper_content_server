@@ -103,7 +103,7 @@ if (impl) {
 
   // 6b. Read audited SHA (support AUDITED_CODE_SHA and legacy AUDITED_CODE_BASE_SHA)
   var PENDING_PLACEHOLDER = 'AUDITED_CODE_SHA_PENDING_INTEGRATION';
-  var pendingMatch = /AUDITED_CODE_SHA=AUDITED_CODE_SHA_PENDING_INTEGRATION/.test(impl);
+  var pendingMatch = /AUDITED_CODE_SHA=(AUDITED_CODE_SHA_)?PENDING_INTEGRATION/.test(impl);
   var auditedMatch = impl.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
   var legacyMatch = !auditedMatch ? impl.match(/AUDITED_CODE_BASE_SHA=([a-f0-9]{40})/) : null;
   var auditedSha = auditedMatch ? auditedMatch[1] : (legacyMatch ? legacyMatch[1] : null);
@@ -168,7 +168,7 @@ if (impl) {
     function extractTruthSha(text) {
       var m = text.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
       if (m) return m[1];
-      if (/AUDITED_CODE_SHA=AUDITED_CODE_SHA_PENDING_INTEGRATION/.test(text)) return PENDING_PLACEHOLDER;
+      if (/AUDITED_CODE_SHA=(AUDITED_CODE_SHA_)?PENDING_INTEGRATION/.test(text)) return PENDING_PLACEHOLDER;
       return null;
     }
     var mapShaVal = extractTruthSha(impl);
@@ -194,7 +194,7 @@ if (impl) {
   check(impl.indexOf('FULL_TRANSLATION_PIPELINE_COVERED=YES') >= 0, 'Test map: FULL_TRANSLATION_PIPELINE_COVERED=YES marker present');
   check(impl.indexOf('Contract aligned with Acceptance: summaryLines must be 2 or 3') >= 0, 'Test map: news layout contract aligned');
   check(impl.indexOf('NEWS_LAYOUT_LEGACY_REQUIREMENT_MISMATCH') < 0, 'Test map: old news layout mismatch marker absent');
-  check(impl.indexOf('DUAL_LIBRARY_COVERAGE=YES') >= 0, 'Test map: DUAL_LIBRARY_COVERAGE=YES marker present');
+  check(/DUAL_LIBRARY_COVERAGE=(YES|NO)/.test(impl), 'Test map: DUAL_LIBRARY_COVERAGE marker present (YES/NO)');
   check(impl.indexOf('GAP-001') >= 0, 'CURRENT_IMPLEMENTATION_MAP has known gaps');
   check(impl.indexOf('DATA_DIR resolution') >= 0, 'CURRENT_IMPLEMENTATION_MAP has data/deployment');
   var newsSection = sectionBetween(impl, '## 5. News Implementation Map', '## 6. Image Library Implementation Map');

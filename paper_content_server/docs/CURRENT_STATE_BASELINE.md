@@ -2,7 +2,7 @@
 
 > 本文件用于记录“当前真实状态”，不是目标架构。每个阶段完成后更新一次。
 
-AUDITED_CODE_SHA=da85c7aa321017f7c4df9b7979597a1ca550bea8
+AUDITED_CODE_SHA=PENDING_INTEGRATION
 ESP32_RUNTIME_STATUS=NOT TESTED
 NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 
@@ -43,15 +43,15 @@ NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 | News final dedupe | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | News layout | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | Last-good | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| Learning Library auto-fetch | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| Learning relevance gate | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| Custom Library | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | GET/PATCH/DELETE via /api/admin/library; POST /api/admin/library/custom/upload wired through customLibraryService + NSFW safety gate | NOT VERIFIED | N/A |
-| Strict NSFW deletion | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| Analysis Card | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| Comparison Pair | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| Sequence 2×2 | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| ONE_SHOT_OVERRIDE | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | operating-mode-service-test 23/23 includes enter/exit/expiry boundary; admin-test covers /api/admin/publish/one-shot route | NOT VERIFIED | NOT TESTED |
-| FOCUS_LOCK | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | operating-mode-service-test 23/23 includes enter/exit/context; admin-test covers PUT/DELETE /api/admin/focus-lock route | NOT VERIFIED | NOT TESTED |
+| Learning Library auto-fetch | NOT_IMPLEMENTED | | learningIngestionService.ingestAll() 存在但 sourceRegistry 为空,无真实 source adapter,无 scheduler | NOT VERIFIED | N/A |
+| Learning relevance gate | PARTIAL | | PARTIAL_LICENSE_ONLY — learning-policy.js 只检查 license,无主题/关键词/质量评分 | NOT VERIFIED | N/A |
+| Custom Library | PARTIAL | | PARTIAL_SECURITY_BLOCKED — POST /api/admin/library/custom/upload 接受客户端 filePath(安全漏洞),无真实 multipart,无真实 NSFW classifier(只是文件名关键词匹配) | NOT VERIFIED | N/A |
+| Strict NSFW deletion | NOT_IMPLEMENTED | | NOT_IMPLEMENTED_REAL_CLASSIFIER — nsfw-safety-gate.js 只是文件名启发式,不是真实图像内容分类器 | NOT VERIFIED | N/A |
+| Analysis Card | PARTIAL | | MODULE_ONLY_NOT_EPAPER_RENDERED — 渲染器只是 Buffer.from(JSON.stringify(layout)),不产生真实 EPF1 帧 | NOT VERIFIED | N/A |
+| Comparison Pair | PARTIAL | | MODULE_ONLY_NOT_EPAPER_RENDERED — 渲染器只是 Buffer.from(JSON.stringify(layout)),不产生真实 EPF1 帧 | NOT VERIFIED | N/A |
+| Sequence 2×2 | PARTIAL | | MODULE_ONLY_NOT_EPAPER_RENDERED — 渲染器只是 Buffer.from(JSON.stringify(layout)),不产生真实 EPF1 帧 | NOT VERIFIED | N/A |
+| ONE_SHOT_OVERRIDE | PARTIAL | | 路由存在但 assetId 参数被接受后未真正用于资产选择 | NOT VERIFIED | NOT TESTED |
+| FOCUS_LOCK | PARTIAL | | 路由存在但 theme/albumId 未真正查询资产 | NOT VERIFIED | NOT TESTED |
 | MQTT immediate refresh | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | mqtt-message-test 16/16 covers schemaVersion=2 + reason field + v1 backward compat; mqtt-publisher/notification-adapter wiring present | NOT VERIFIED | NOT TESTED |
 | Admin production-path publication | PARTIAL | | admin-test covers one-shot photo valid/invalid assetId, expiry, frameId consistency, legacy publish/photo photoId propagation. MQTT reason 字段贯穿 snapshot-model → publication-service → mqtt-publisher. | NOT VERIFIED | NOT TESTED |
 
@@ -82,14 +82,14 @@ NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 | News final dedupe | server.js L1462-1483 | news-render-readability-test | NOT VERIFIED | NOT TESTED |
 | News layout | server.js L2106-2115 (layoutNewsCard) | news-render-readability-test 17/17 | NOT VERIFIED | NOT TESTED |
 | Last-good | server.js L1542 | rotation-test Phase B/C | NOT VERIFIED | N/A |
-| Learning Library auto-fetch | — | — | NOT VERIFIED | N/A |
-| Learning relevance gate | — | — | NOT VERIFIED | N/A |
-| Custom Library | src/assets/asset-repository.js + server.js /api/admin/library routes | asset-repository tests; admin-test library routes | NOT VERIFIED | N/A |
-| Strict NSFW deletion | server.js L890 (blocklist) | — | NOT VERIFIED | N/A |
-| Analysis Card | — | — | NOT VERIFIED | N/A |
-| Comparison Pair | — | — | NOT VERIFIED | N/A |
-| Sequence 2×2 | — | — | NOT VERIFIED | N/A |
-| ONE_SHOT_OVERRIDE | src/publication/operating-mode-service.js enterOneShot/checkExpiry + server.js /api/admin/publish/one-shot + computeNextSwitchAt | operating-mode-service-test 23/23; admin-test one-shot route | NOT VERIFIED | NOT TESTED |
-| FOCUS_LOCK | src/publication/operating-mode-service.js enterFocusLock/exitFocusLock + server.js PUT/DELETE /api/admin/focus-lock | operating-mode-service-test 23/23; admin-test focus-lock routes | NOT VERIFIED | NOT TESTED |
+| Learning Library auto-fetch | src/learning/learning-ingestion-service.js (ingestAll exists) | — (sourceRegistry empty, no source adapter, no scheduler) | NOT VERIFIED | N/A |
+| Learning relevance gate | src/learning/learning-policy.js | — (license-only check, no topic/keyword/quality scoring) | NOT VERIFIED | N/A |
+| Custom Library | src/assets/asset-repository.js + server.js /api/admin/library routes | asset-repository tests; admin-test library routes (upload accepts client filePath — security vuln; no real multipart; NSFW is filename heuristic only) | NOT VERIFIED | N/A |
+| Strict NSFW deletion | src/safety/nsfw-safety-gate.js (filename keyword match only) | — (no real image content classifier) | NOT VERIFIED | N/A |
+| Analysis Card | module exists | — (renderer only Buffer.from(JSON.stringify(layout)), no real EPF1 frame: no magic/width/height/panel/palette quantization) | NOT VERIFIED | N/A |
+| Comparison Pair | module exists | — (renderer only Buffer.from(JSON.stringify(layout)), no real EPF1 frame) | NOT VERIFIED | N/A |
+| Sequence 2×2 | module exists | — (renderer only Buffer.from(JSON.stringify(layout)), no real EPF1 frame) | NOT VERIFIED | N/A |
+| ONE_SHOT_OVERRIDE | src/publication/operating-mode-service.js enterOneShot/checkExpiry + server.js /api/admin/publish/one-shot + computeNextSwitchAt | operating-mode-service-test 23/23; admin-test one-shot route (assetId accepted but not actually used for asset selection) | NOT VERIFIED | NOT TESTED |
+| FOCUS_LOCK | src/publication/operating-mode-service.js enterFocusLock/exitFocusLock + server.js PUT/DELETE /api/admin/focus-lock | operating-mode-service-test 23/23; admin-test focus-lock routes (theme/albumId accepted but not actually queried against assets) | NOT VERIFIED | NOT TESTED |
 | MQTT immediate refresh | src/mqtt/mqtt-message.js (SCHEMA_VERSION=2, reason field) + mqtt-publisher + mqtt-notification-adapter + publication-service reason propagation | mqtt-message-test 16/16; r6 mqtt publisher/adapter tests | NOT VERIFIED | NOT TESTED |
 | Admin production-path pub | server.js one-shot + focus-lock + library routes + buildManualPhotoFromAsset + reason propagation through snapshot-model.publishReason | admin-test (one-shot valid/invalid, asset validation, expiry boundary, frameId consistency, library CRUD) | NOT VERIFIED | NOT TESTED |

@@ -1,4 +1,4 @@
-AUDITED_CODE_SHA=da85c7aa321017f7c4df9b7979597a1ca550bea8
+AUDITED_CODE_SHA=PENDING_INTEGRATION
 
 ## 1. Route Map
 
@@ -126,7 +126,7 @@ AUDITED_CODE_SHA=da85c7aa321017f7c4df9b7979597a1ca550bea8
 | news-render-readability-test.js | render | News readability + SVG render |
 | docs-consistency-check.js | docs | Documentation integrity |
 | FULL_TRANSLATION_PIPELINE_COVERED=YES | | |
-| DUAL_LIBRARY_COVERAGE=YES | | |
+| DUAL_LIBRARY_COVERAGE=NO | | |
 | Contract aligned with Acceptance: summaryLines must be 2 or 3 | | |
 
 ## 8. Known Gaps
@@ -134,7 +134,7 @@ AUDITED_CODE_SHA=da85c7aa321017f7c4df9b7979597a1ca550bea8
 | ID | Description | Status |
 |----|-------------|--------|
 | GAP-001 | Full translation pipeline unit coverage | CLOSED |
-| GAP-002 | Dual library (Learning + Custom) end-to-end | CLOSED |
+| GAP-002 | Dual library (Learning + Custom) end-to-end | OPEN |
 | DATA_DIR resolution | Resolved from config or env | IMPLEMENTED |
 | NAS target path | Configured default `/var/lib/paper-content-server/data` | CONFIGURED |
 | Docker mode | Production container | IMPLEMENTED |

@@ -49,8 +49,8 @@ async function main(){
       var c4=0;for(var bi=10;bi<fb.b.length;bi++){var h=(fb.b[bi]>>4)&0xF,l=fb.b[bi]&0xF;if(h===4)c4++;if(l===4)c4++}
       t('CODE4_ZERO',c4===0,'c4='+c4);
     }
-    s('ONE_SHOT_ROUTE','IMPLEMENTED_NOT_PRODUCTION_VERIFIED','POST /api/admin/publish/one-shot mounted in server.js');
-    s('ROLLBACK_SNAPSHOT_RESTORE','IMPLEMENTED_NOT_PRODUCTION_VERIFIED','POST /api/admin/rollback mounted in server.js');
+    s('ONE_SHOT_ROUTE','PARTIAL','POST /api/admin/publish/one-shot route mounted in server.js but assetId parameter accepted and not actually used for asset selection');
+    s('ROLLBACK_SNAPSHOT_RESTORE','NOT_IMPLEMENTED','POST /api/admin/rollback route not fully implementing snapshot restore');
   }catch(e){t('TEST_FAIL',false,e.message)}
   srv.kill();setTimeout(function(){try{fs.rmdirSync(TMPDIR,{recursive:true})}catch(e){}console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec)},1000);
 }
