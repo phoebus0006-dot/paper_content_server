@@ -15,6 +15,7 @@ var D = require(path.join(ROOT, 'src', 'learning', 'learning-deduplicator'));
 var P = require(path.join(ROOT, 'src', 'learning', 'learning-policy'));
 var SR = require(path.join(ROOT, 'src', 'learning', 'learning-source-registry'));
 var DL = require(path.join(ROOT, 'src', 'learning', 'learning-downloader'));
+var SCHED = require(path.join(ROOT, 'src', 'learning', 'learning-scheduler'));
 var NSFW = require(path.join(ROOT, 'src', 'safety', 'nsfw-safety-gate'));
 
 function mkdtemp(prefix) {
@@ -29,6 +30,11 @@ function startImageServer(pngBuf, pngBuf2) {
       if (req.url.indexOf('/notfound.png') >= 0) {
         res.writeHead(404, {});
         res.end('not found');
+      } else if (req.url.indexOf('/badimg.png') >= 0) {
+        // 200 + image/png Content-Type,但正文不是真实图像 → sharp decode 失败
+        var bad = Buffer.from('not a real png');
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': bad.length });
+        res.end(bad);
       } else if (req.url.indexOf('/img2.png') >= 0) {
         res.writeHead(200, { 'Content-Type': 'image/png' });
         res.end(pngBuf2 || pngBuf);
@@ -92,17 +98,19 @@ function closeServer(s) { return new Promise(function(r) { s.server.close(functi
       isSafe: function(classification) { return classification && classification.score !== undefined && classification.score < 0.5; },
       audit: function(entry) { return Promise.resolve(); },
     };
-    var downloader = opts.downloader || DL.createLearningDownloader(stagingDir, {});
+    var downloader = opts.downloader || DL.createLearningDownloader(stagingDir, {}, { allowHttp: true });
     var svc = IS.createIngestionService(reg, validator, dedup, policy, repo, {}, {
       downloader: downloader, safetyGate: safetyGate,
       stagingDir: stagingDir, assetsDir: assetsDir,
+      enabled: opts.enabled !== undefined ? opts.enabled : true,
     });
     return { svc: svc, reg: reg, dedup: dedup };
   }
 
   try {
     // --- Test 1: full chain ACCEPTED ---
-    var repo1 = { create: function(a) { return Promise.resolve(a.assetId); } };
+    var captured1 = null;
+    var repo1 = { create: function(a) { captured1 = a; return Promise.resolve(a.assetId); } };
     var ctx1 = buildSvc(repo1);
     var r1 = await ctx1.svc.ingestOne({
       candidateId: 'wm:1', sourceUrl: imgUrl, source: 'wikimedia',
@@ -111,9 +119,13 @@ function closeServer(s) { return new Promise(function(r) { s.server.close(functi
     t('CHAIN_ACCEPTED', r1.status === 'ACCEPTED', JSON.stringify(r1));
     t('CHAIN_HAS_SHA256', r1.sha256 === expectedSha, 'sha=' + r1.sha256);
     t('CHAIN_HAS_ASSET_ID', typeof r1.assetId === 'string' && r1.assetId.indexOf('ast_') === 0, r1.assetId);
-    t('CHAIN_HAS_FINAL_PATH', typeof r1.finalPath === 'string' && r1.finalPath.indexOf(assetsDir) === 0, r1.finalPath);
-    t('CHAIN_FINAL_FILE_EXISTS', r1.finalPath && fs.existsSync(r1.finalPath), 'final asset file present');
-    t('CHAIN_FINAL_FILE_NOT_TMP_EXT', r1.finalPath && path.extname(r1.finalPath) === '.png', 'ext=' + (r1.finalPath ? path.extname(r1.finalPath) : 'N/A'));
+    // ACCEPTED 摘要不得泄露内部路径
+    t('CHAIN_NO_FINAL_PATH_LEAK', r1.finalPath === undefined, 'finalPath=' + r1.finalPath);
+    t('CHAIN_NO_LOCAL_PATH_LEAK', r1.localPath === undefined, 'localPath=' + r1.localPath);
+    // 内部资产仍带 localPath(仅持久化层可见)
+    t('CHAIN_INTERNAL_LOCAL_PATH_SET', captured1 && typeof captured1.localPath === 'string' && captured1.localPath.indexOf(assetsDir) === 0, captured1 && captured1.localPath);
+    t('CHAIN_FINAL_FILE_EXISTS', captured1 && fs.existsSync(captured1.localPath), 'final asset file present');
+    t('CHAIN_FINAL_FILE_NOT_TMP_EXT', captured1 && path.extname(captured1.localPath) === '.png', 'ext=' + (captured1 ? path.extname(captured1.localPath) : 'N/A'));
     t('CHAIN_STAGING_EMPTY_AFTER_MOVE', fs.readdirSync(stagingDir).length === 0, 'staging should be empty after move');
 
     // --- Test 2: duplicate detection (same sourceUrl) ---
@@ -221,6 +233,81 @@ function closeServer(s) { return new Promise(function(r) { s.server.close(functi
       title: 'File:meta.png', license: 'CC0',
     });
     t('MANAGED_ASSET_ACCEPTED', r9.status === 'ACCEPTED', JSON.stringify(r9));
+
+    // --- Test 10: decode fail-closed (download OK 但正文非图像 → sharp 失败 → REJECTED) ---
+    var beforeDecode = fs.readdirSync(assetsDir).length;
+    var repoDec = { create: function(a) { return Promise.resolve(a.assetId); } };
+    var ctxDec = buildSvc(repoDec);
+    var rDec = await ctxDec.svc.ingestOne({
+      candidateId: 'wm:dec', sourceUrl: 'http://127.0.0.1:' + srv.port + '/badimg.png',
+      source: 'wikimedia', title: 'File:bad.png', license: 'CC0',
+    });
+    t('DECODE_FAIL_CLOSED', rDec.status === 'REJECTED' && rDec.reasonCode === 'DECODE', JSON.stringify(rDec));
+    t('DECODE_FAIL_STAGING_CLEAN', fs.readdirSync(stagingDir).length === 0, 'staging cleaned after decode fail');
+    t('DECODE_FAIL_NO_NEW_ASSET', fs.readdirSync(assetsDir).length === beforeDecode, 'no asset after decode fail');
+
+    // --- Test 11: flag=false → ingestAll 立即 DISABLED,零网络请求(fetchAll 不被调用) ---
+    var fetchCount = 0;
+    var regDisabled = SR.createSourceRegistry();
+    regDisabled.register({
+      sourceName: 'mock-disabled',
+      fetchAll: function() { fetchCount++; return Promise.resolve([]); },
+    });
+    var validatorD = V.createValidator();
+    var dedupD = D.createDeduplicator();
+    var policyD = P.createPolicy();
+    var repoD = { create: function(a) { return Promise.resolve(a.assetId); } };
+    var svcDisabled = IS.createIngestionService(regDisabled, validatorD, dedupD, policyD, repoD, {}, {
+      downloader: DL.createLearningDownloader(stagingDir, {}, { allowHttp: true }),
+      safetyGate: {
+        classify: function() { return Promise.resolve({ score: 0, category: 'safe' }); },
+        isSafe: function() { return true; },
+      },
+      stagingDir: stagingDir, assetsDir: assetsDir, enabled: false,
+    });
+    var rDisabled = await svcDisabled.ingestAll();
+    t('DISABLED_INGEST_ALL_STATUS', rDisabled && rDisabled.status === 'DISABLED', JSON.stringify(rDisabled));
+    t('DISABLED_INGEST_ALL_CANDIDATES', Array.isArray(rDisabled.candidates) && rDisabled.candidates.length === 0, '');
+    t('DISABLED_NO_NETWORK', fetchCount === 0, 'fetchAll called ' + fetchCount + ' times (expected 0)');
+
+    // --- Test 12: classifier 未 ready → scheduler 不启动 ---
+    var schedCalls = 0;
+    var svcSched = { ingestAll: function() { schedCalls++; return Promise.resolve([]); } };
+    var logsSched = [];
+    var loggerSched = { info: function(m) { logsSched.push(m); }, warn: function(m) { logsSched.push(m); }, error: function() {} };
+    var sNotReady = SCHED.createLearningScheduler(svcSched, { enabled: true, intervalMs: 100000 }, loggerSched, {
+      classifierReady: function() { return false; },
+    });
+    sNotReady.start();
+    t('CLASSIFIER_NOT_READY_NO_TICK', schedCalls === 0, 'ingestAll should not be called');
+    t('CLASSIFIER_NOT_READY_STATUS', sNotReady.getStatus().status === 'SAFETY_CLASSIFIER_NOT_READY', sNotReady.getStatus().status);
+    t('CLASSIFIER_NOT_READY_READY_FALSE', sNotReady.getStatus().ready === false, '');
+    t('CLASSIFIER_NOT_READY_CLASSIFIER_FIELD', sNotReady.getStatus().classifierReady === false, '');
+    t('CLASSIFIER_NOT_READY_LOGGED', logsSched.some(function(m) { return m.indexOf('classifier not ready') >= 0; }), 'logged not ready');
+    sNotReady.stop();
+
+    // --- Test 13: classifier ready → scheduler 启动并可 tick ---
+    var schedCalls2 = 0;
+    var svcSched2 = { ingestAll: function() { schedCalls2++; return Promise.resolve([{ ok: 1 }]); } };
+    var sReady = SCHED.createLearningScheduler(svcSched2, { enabled: true, intervalMs: 100000 }, {}, {
+      classifierReady: function() { return true; },
+    });
+    t('CLASSIFIER_READY_BEFORE', sReady.getStatus().ready === true && sReady.getStatus().status === 'IDLE', sReady.getStatus().status);
+    sReady.start();
+    t('CLASSIFIER_READY_STARTED', sReady.getStatus().enabled === true, '');
+    await sReady.tick();
+    t('CLASSIFIER_READY_TICK_RAN', schedCalls2 === 1, 'ingestAll called once');
+    t('CLASSIFIER_READY_LAST_RUN_AT', sReady.getStatus().lastRunAt !== null, '');
+    sReady.stop();
+
+    // --- Test 14: disabled scheduler (enabled=false) status ---
+    var sOff = SCHED.createLearningScheduler(svcSched, { enabled: false, intervalMs: 100000 }, {}, {
+      classifierReady: function() { return true; },
+    });
+    sOff.start();
+    t('SCHED_DISABLED_STATUS', sOff.getStatus().status === 'DISABLED', sOff.getStatus().status);
+    t('SCHED_DISABLED_NO_TICK', schedCalls === 0, 'no tick when disabled');
+    sOff.stop();
   } finally {
     await closeServer(srv);
     rmrf(stagingDir);
