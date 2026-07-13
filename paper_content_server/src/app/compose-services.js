@@ -70,21 +70,30 @@ function composeServices(deps) {
   }
 
   // --- assetRepository: asset persistence (shared by library + admin) ---
+  // Store file = dataDir/assets.json (JsonStore requires a file path, not a dir).
+  // Without this, reads/writes fail with EISDIR and upload/delete/selection
+  // routes cannot persist or query assets.
   var assetRepository = null;
   try {
     var AssetRepository = require('../assets/asset-repository').AssetRepository;
-    assetRepository = AssetRepository(config.paths.dataDir, logger);
+    assetRepository = AssetRepository(path.join(config.paths.dataDir, 'assets.json'), logger);
   } catch (e) { logger.warn('assetRepository init: ' + e.message); }
   // Expose assetRepository to server.js for Library API (GET/PATCH/DELETE)
   deps.assetRepository = assetRepository;
 
   // --- safetyClassifierPort: real NSFW classifier port (fail-closed when no model) ---
+  // Pass-through config.safety fields (modelPath/modelType/threshold/auditFile).
+  // ready = configured = !!modelPath && fs.existsSync(modelPath); without a real
+  // model the classifier is created but never ready, so customLibrary/learning
+  // features stay fail-closed (BLOCKED) end-to-end.
   try {
     var { createSafetyClassifierPort } = require('../safety/safety-classifier-port');
     safetyClassifierPort = createSafetyClassifierPort({
       logger: logger,
       modelPath: (config.safety && config.safety.modelPath) || null,
+      modelType: (config.safety && config.safety.modelType) || 'tensorflow',
       threshold: (config.safety && config.safety.threshold) != null ? config.safety.threshold : 0.5,
+      auditFile: (config.safety && config.safety.auditFile) || null,
     });
   } catch (e) { logger.warn('safetyClassifierPort init: ' + e.message); }
 
@@ -151,13 +160,23 @@ function composeServices(deps) {
       learningIngestionService = createIngestionService(
         learningSourceRegistry, learningValidator, learningDeduplicator,
         learningPolicy, assetRepository, logger,
-        { downloader: learningDownloader, safetyGate: safetyGate, stagingDir: stagingDir, assetsDir: learningAssetsDir }
+        {
+          downloader: learningDownloader, safetyGate: safetyGate,
+          stagingDir: stagingDir, assetsDir: learningAssetsDir,
+          enabled: config.features.learningLibraryEnabled,
+          maxDownloadBytes: (config.learning && config.learning.maxDownloadBytes) || null,
+        }
       );
 
+      // classifierReady gate: scheduler will not start (and emit zero network
+      // requests) until safetyClassifierPort.ready === true. With no real model
+      // loaded, the scheduler stays IDLE + SAFETY_CLASSIFIER_NOT_READY.
       learningScheduler = createLearningScheduler(learningIngestionService, {
-        enabled: true,
+        enabled: config.features.learningLibraryEnabled,
         intervalMs: (config.learning && config.learning.intervalMs) || 3600000,
-      }, logger);
+      }, logger, {
+        classifierReady: function () { return !!(safetyClassifierPort && safetyClassifierPort.ready); },
+      });
       learningScheduler.start();
     } catch (e) { logger.warn('learningIngestionService init: ' + e.message); }
   }
@@ -246,6 +265,19 @@ function composeServices(deps) {
     } catch (e) { logger.warn('assetDeleteService init: ' + e.message); }
   }
 
+  // --- overridePersistence: persists ONE_SHOT / FOCUS_LOCK state across restarts ---
+  // stateFile = dataDir/admin_override.json (replaces ad-hoc fs.writeFileSync in
+  // server.js routes). validateOverrideAsync() verifies the asset is still
+  // SAFE + SELECTABLE + file-present on restart before restoring the override.
+  var overridePersistence = null;
+  try {
+    var { createOverridePersistence } = require('../admin/override-persistence');
+    overridePersistence = createOverridePersistence(
+      path.join(config.paths.dataDir, 'admin_override.json'),
+      logger
+    );
+  } catch (e) { logger.warn('overridePersistence init: ' + e.message); }
+
   // --- adminQueryService + featureFlagView (references services above) ---
   var featureFlagView = null;
   try {
@@ -260,6 +292,8 @@ function composeServices(deps) {
           customLibraryService: customLibraryService,
           learningIngestionService: learningIngestionService,
           renderShadow: renderShadow,
+          assetDeleteService: assetDeleteService,
+          safetyClassifierPort: safetyClassifierPort,
           activeFrameIdProvider: function() {
             try {
               var active = snapshotStore.readActiveSync ? snapshotStore.readActiveSync() : null;
@@ -290,6 +324,7 @@ function composeServices(deps) {
     learningScheduler: learningScheduler,
     assetSelectionService: assetSelectionService,
     assetDeleteService: assetDeleteService,
+    overridePersistence: overridePersistence,
   };
 }
 
