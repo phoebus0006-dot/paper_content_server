@@ -300,7 +300,7 @@ if (apiContract) {
 }
 
 // 11b. Package scripts referenced by CI must exist
-var ciScripts = ['docs:check','contracts:test','r1:test','r2:test','r3:test','r4:test','r5:test','r6:test','r7:test','r8:test','r9:test','r10:test','r11:test','r12:all','admin:test','lifecycle:test','restart:test'];
+var ciScripts = ['docs:check','contracts:test','r1:test','r2:test','r3:test','r4:test','r5:test','r6:test','r7:test','r8:test','r9:test','r10:test','r11:test','r12:all','admin:test','lifecycle:test','restart:test','config:test','custom-library:test','learning:test','selection:test'];
 var missingScripts = ciScripts.filter(function(s) { return !pkgJson.scripts || !pkgJson.scripts[s]; });
 check(missingScripts.length === 0, 'Package scripts present (missing: ' + missingScripts.join(', ') + ')');
 

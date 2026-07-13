@@ -42,3 +42,7 @@ jobs:
       - run: npm run safety:test
       - run: npm run render:test
       - run: npm run restart:test
+      - run: npm run config:test
+      - run: npm run custom-library:test
+      - run: npm run learning:test
+      - run: npm run selection:test
