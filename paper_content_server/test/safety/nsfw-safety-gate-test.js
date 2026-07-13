@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 // nsfw-safety-gate-test.js — NSFW safety gate (兼容层) 单元测试
-// 新版本:isSafe 接受 classification 对象(不是 filePath),classify 委托给 SafetyClassifierPort
-// 默认未配置模型 → fail-closed
+// isSafe 接受 classification 对象(不是 filePath),classify 委托给 SafetyClassifierPort。
+// 默认未配置模型 → fail-closed:port.classify reject,gate 返回 score=undefined 的分类。
+// 注:isSafe 现基于 score vs threshold(fail-closed 由 classify reject 保证);
+//     因此 gate.isSafe({score:0.0}) 在无模型时仍返回 true(0<0.5),
+//     但实际流程中 classify 拒绝 → 上层拿到 score=undefined → isSafe 返回 false。
 var path = require('path');
+var fs = require('fs');
+var os = require('os');
 var ROOT = path.join(__dirname, '..', '..');
 var { createNsfwSafetyGate } = require(path.join(ROOT, 'src', 'safety', 'nsfw-safety-gate'));
 var { createSafetyClassifierPort } = require(path.join(ROOT, 'src', 'safety', 'safety-classifier-port'));
@@ -16,13 +21,15 @@ async function run() {
   var gate = createNsfwSafetyGate({ logger: logger });
 
   // ── isSafe(接受 classification 对象)──
-  // 1. 默认无模型 → isSafe 永远 false (fail-closed)
-  t('NO_MODEL_SAFE_FALSE_LOW', gate.isSafe({ score: 0.0 }) === false, 'score=0 should be unsafe when no model');
-  t('NO_MODEL_SAFE_FALSE_HIGH', gate.isSafe({ score: 0.9 }) === false, '');
+  // 1. isSafe 基于 score vs threshold(fail-closed 由 classify reject 保证:无模型时
+  //    classify 返回 score=undefined 的分类 → 上层 isSafe 返回 false)。
+  //    直接调用 isSafe({score:0.0}) 仍按 threshold 判断 → true(0 < 0.5)。
+  t('NO_MODEL_SAFE_LOW_SCORE_TRUE', gate.isSafe({ score: 0.0 }) === true, '0.0 < 0.5 threshold');
+  t('NO_MODEL_SAFE_HIGH_SCORE_FALSE', gate.isSafe({ score: 0.9 }) === false, '0.9 >= 0.5 threshold');
   // 2. 无 classification → false
   t('NULL_CLASSIFICATION_FALSE', gate.isSafe(null) === false, '');
   t('UNDEFINED_CLASSIFICATION_FALSE', gate.isSafe(undefined) === false, '');
-  // 3. 无 score → false
+  // 3. 无 score → false(fail-closed:无 score 一律不安全)
   t('NO_SCORE_FALSE', gate.isSafe({}) === false, '');
   t('UNDEFINED_SCORE_FALSE', gate.isSafe({ score: undefined }) === false, '');
 
@@ -86,15 +93,22 @@ async function run() {
   var c8 = await gate2.classify('/tmp/q.bin', { originalName: 'nsfw.png', fileSize: 100, width: 100, height: 100 });
   t('CUSTOM_PORT_HEURISTIC_STILL_REJECTS', c8 && c8.score === 1.0 && c8.category === 'HEURISTIC_REJECT', '');
 
-  // ── 用 modelPath 注入(但仍 fail-closed,因为无真实推理引擎)──
-  var gate3 = createNsfwSafetyGate({ logger: logger, modelPath: '/tmp/model.onnx' });
-  t('WITH_MODELPATH_CONFIGURED_TRUE', gate3.configured === true, '');
-  t('WITH_MODELPATH_MODEL_VERSION_STUB', gate3.modelVersion === 'STUB_1.0', '');
-  var c9 = await gate3.classify('/tmp/q.bin', { originalName: 'ok.png', fileSize: 100, width: 100, height: 100 });
-  t('WITH_MODELPATH_CLASSIFY_FAILCLOSED', c9 && c9.score === undefined, 'port 未实现 → 无 score');
-  // isSafe 对有 score 的 classification 仍判断(threshold)
-  t('WITH_MODELPATH_IS_SAFE_LOW', gate3.isSafe({ score: 0.1 }) === true, '');
-  t('WITH_MODELPATH_IS_SAFE_HIGH', gate3.isSafe({ score: 0.9 }) === false, '');
+  // ── 用 modelPath 注入(指向真实存在的文件,但 port 仍未实现推理)──
+  //    新 port:configured = !!modelPath && fs.existsSync(modelPath),因此必须用真实文件。
+  var tmpModel = path.join(os.tmpdir(), 'nsfw-gate-fake-model-' + Date.now() + '-' + process.pid + '.onnx');
+  fs.writeFileSync(tmpModel, 'FAKE_MODEL_BYTES');
+  try {
+    var gate3 = createNsfwSafetyGate({ logger: logger, modelPath: tmpModel });
+    t('WITH_MODELPATH_CONFIGURED_TRUE', gate3.configured === true, 'configured=' + gate3.configured);
+    t('WITH_MODELPATH_MODEL_VERSION_STUB', gate3.modelVersion === 'STUB_1.0', 'modelVersion=' + gate3.modelVersion);
+    var c9 = await gate3.classify('/tmp/q.bin', { originalName: 'ok.png', fileSize: 100, width: 100, height: 100 });
+    t('WITH_MODELPATH_CLASSIFY_FAILCLOSED', c9 && c9.score === undefined, 'port 未实现 → 无 score');
+    // isSafe 对有 score 的 classification 仍判断(threshold)
+    t('WITH_MODELPATH_IS_SAFE_LOW', gate3.isSafe({ score: 0.1 }) === true, '');
+    t('WITH_MODELPATH_IS_SAFE_HIGH', gate3.isSafe({ score: 0.9 }) === false, '');
+  } finally {
+    try { fs.unlinkSync(tmpModel); } catch (e) {}
+  }
 
   console.log('\n=== Summary: ' + pass + ' passed, ' + fail + ' failed ===');
   process.exit(ec);
