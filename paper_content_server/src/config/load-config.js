@@ -128,6 +128,11 @@ function loadConfig(opts) {
   // Render
   config.render = {
     fontStack: '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif',
+    // productionSide selects which render pipeline is served (returned) by
+    // render-shadow: 'legacy' (default) keeps the legacy frame as production
+    // while the orchestrator pipeline is exercised for comparison; 'orchestrator'
+    // flips it so the new pipeline is served while legacy is the shadow.
+    productionSide: String(env.RENDER_PRODUCTION_SIDE || 'legacy'),
   };
 
   // Admin — single source of truth for admin access configuration.

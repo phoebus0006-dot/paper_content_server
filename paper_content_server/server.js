@@ -321,6 +321,20 @@ async function main() {
   runtime.mqttClient = boot.deps.mqttClient || null;
   await runtime.snapshotStore.ensureDirs();
 
+  // V6: initialize the safety classifier async lifecycle (load model + smoke
+  // inference). Failure here does NOT block the news service — the classifier
+  // stays ready=false and Custom/Learning features stay fail-closed (BLOCKED)
+  // via the classifierReady gate in compose-services and the feature-flag view.
+  // Logged for diagnostics so operators can see why the classifier is not ready.
+  try {
+    if (runtime.safetyClassifierPort && typeof runtime.safetyClassifierPort.initialize === 'function') {
+      await runtime.safetyClassifierPort.initialize();
+    }
+  } catch (e) {
+    r1Logger.warn('safetyClassifierPort initialize failed: ' + (e && e.message) +
+      ' — Custom/Learning stay fail-closed');
+  }
+
   // R3.8: Preload active snapshot into cache on restart
   try {
     var activePtr = await runtime.snapshotStore.readActive();
@@ -412,7 +426,18 @@ async function main() {
         boot.services.learningScheduler.stop();
       }
     } catch(e) { r1Logger.warn('learningScheduler stop failed: ' + e.message); }
-    boot.shutdown().then(function() {
+    // V6: shutdown the safety classifier async lifecycle (release model handle).
+    // Idempotent and non-blocking — failure here is logged but does not prevent
+    // the rest of shutdown from proceeding.
+    var classifierShutdown = Promise.resolve();
+    if (runtime.safetyClassifierPort && typeof runtime.safetyClassifierPort.shutdown === 'function') {
+      classifierShutdown = runtime.safetyClassifierPort.shutdown().catch(function(e) {
+        r1Logger.warn('safetyClassifierPort shutdown failed: ' + (e && e.message));
+      });
+    }
+    classifierShutdown.then(function() {
+      return boot.shutdown();
+    }).then(function() {
       clearTimeout(forceExit);
       process.exit(0);
     }).catch(function(e) {

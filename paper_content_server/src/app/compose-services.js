@@ -240,7 +240,10 @@ function composeServices(deps) {
         legacyAdapter.render,
         orchestratorAdapter.render,
         logger,
-        { disable: !config.features.renderShadowEnabled }
+        {
+          disable: !config.features.renderShadowEnabled,
+          productionSide: (config.render && config.render.productionSide) || 'legacy',
+        }
       );
     } catch (e) { logger.warn('renderShadow init: ' + e.message); }
   }
