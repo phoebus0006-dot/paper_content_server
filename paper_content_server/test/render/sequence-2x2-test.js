@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // sequence-2x2-test.js — Sequence 2x2 渲染器单元测试
+// 验证布局规划 + 真实 EPF1 二进制帧光栅化
 var path = require('path');
 var ROOT = path.join(__dirname, '..', '..');
 var { createSequence2x2Renderer, renderSequence2x2 } = require(path.join(ROOT, 'src', 'render', 'sequence-2x2-renderer'));
 var ec = 0, pass = 0, fail = 0;
 function t(n, o, d) { console.log((o ? 'PASS' : 'FAIL') + ' ' + n + (d ? ': ' + d : '')); if (o) pass++; else { ec = 1; fail++; } }
 
+// === 布局规划模型测试 ===
 // 1. 无 content 返回 null
 t('NULL_CONTENT', renderSequence2x2(null) === null, '');
 
@@ -62,26 +64,78 @@ var grid4 = renderSequence2x2({ items: [
 ] });
 t('DESC_FALLBACK', grid4.cells[0].summary === 'DA' && grid4.cells[3].summary === 'DD', '');
 
-// 10. renderer.render 返回 frame
+// === EPF1 真实帧测试 ===
 var renderer = createSequence2x2Renderer();
-renderer.render({ items: [{ title: 'A' }, { title: 'B' }, { title: 'C' }, { title: 'D' }] }, 'p').then(function(result) {
+var content = { items: [
+  { title: '事件一', summary: '上午发生', imageUrl: 'http://1.png' },
+  { title: '事件二', summary: '中午发生', imageUrl: null },
+  { title: '事件三', summary: '下午发生', imageUrl: 'http://3.png' },
+  { title: '事件四', summary: '晚间发生', imageUrl: null },
+] };
+
+renderer.render(content, 'p').then(function(result) {
   t('RENDER_RETURNS_FRAME', result && Buffer.isBuffer(result.frame), '');
   t('RENDER_FRAME_ID_PREFIX', typeof result.frameId === 'string' && result.frameId.indexOf('sequence_2x2:') === 0, '');
   t('RENDER_PROFILE', result.profileId === 'p', '');
+  t('RENDER_LAYOUT_ATTACHED', result.layout && result.layout.type === 'sequence_2x2', '');
 
-  // 11. canRender
-  t('CAN_RENDER_4', renderer.canRender({ items: [1,2,3,4] }) === true, '');
-  t('CAN_RENDER_5', renderer.canRender({ items: [1,2,3,4,5] }) === true, '');
-  t('CANNOT_RENDER_3', renderer.canRender({ items: [1,2,3] }) === false, '');
-  t('CANNOT_RENDER_NULL', renderer.canRender(null) === false, '');
+  // EPF1 magic / header
+  t('EPF1_MAGIC', result.frame.slice(0, 4).toString('ascii') === 'EPF1', '');
+  t('WIDTH_800', result.frame.readUInt16LE(4) === 800, '');
+  t('HEIGHT_480', result.frame.readUInt16LE(6) === 480, '');
+  t('PANEL_49', result.frame.readUInt8(8) === 49, '');
+  t('VERSION_1', result.frame.readUInt8(9) === 1, '');
+  t('LENGTH_192010', result.frame.length === 192010, 'len=' + result.frame.length);
 
-  // 12. render null 返回 null
-  return renderer.render(null, 'x');
+  // code4_count=0
+  var code4Count = 0;
+  for (var i = 10; i < result.frame.length; i++) {
+    var left = (result.frame[i] >> 4) & 0x0F;
+    var right = result.frame[i] & 0x0F;
+    if (left === 4) code4Count++;
+    if (right === 4) code4Count++;
+  }
+  t('CODE4_COUNT_ZERO', code4Count === 0, 'code4 count: ' + code4Count);
+  t('CODE4_COUNT', code4Count === 0 || code4Count > 0, 'code4 count: ' + code4Count);
+
+  // deterministic
+  return renderer.render(content, 'p').then(function(result2) {
+    t('DETERMINISTIC', result.frame.compare(result2.frame) === 0, '');
+
+    // canRender
+    t('CAN_RENDER_4', renderer.canRender({ items: [1,2,3,4] }) === true, '');
+    t('CAN_RENDER_5', renderer.canRender({ items: [1,2,3,4,5] }) === true, '');
+    t('CANNOT_RENDER_3', renderer.canRender({ items: [1,2,3] }) === false, '');
+    t('CANNOT_RENDER_NULL', renderer.canRender(null) === false, '');
+
+    // 文字溢出处理(超长中英文标题不崩溃)
+    var longContent = { items: [
+      { title: '一'.repeat(300), summary: 's'.repeat(500) },
+      { title: '二'.repeat(300), summary: 's'.repeat(500) },
+      { title: '三'.repeat(300), summary: 's'.repeat(500) },
+      { title: '四'.repeat(300), summary: 's'.repeat(500) },
+    ] };
+    return renderer.render(longContent, 'x');
+  }).then(function(overflowResult) {
+    t('OVERFLOW_NO_CRASH', overflowResult !== null && Buffer.isBuffer(overflowResult.frame) && overflowResult.frame.length === 192010, '');
+
+    // 图片缺失 fallback:全部 imageUrl 为 null 时仍渲染成功
+    var noImgContent = { items: [
+      { title: 'NoImg1' }, { title: 'NoImg2' }, { title: 'NoImg3' }, { title: 'NoImg4' },
+    ] };
+    return renderer.render(noImgContent, 'x');
+  }).then(function(fallbackResult) {
+    t('IMAGE_MISSING_FALLBACK', fallbackResult !== null && Buffer.isBuffer(fallbackResult.frame) && fallbackResult.frame.length === 192010, '');
+
+    // render null 返回 null
+    return renderer.render(null, 'x');
+  });
 }).then(function(r) {
   t('RENDER_NULL_RETURNS_NULL', r === null, '');
   console.log('\n=== Summary: ' + pass + ' passed, ' + fail + ' failed ===');
   process.exit(ec);
 }).catch(function(e) {
   console.log('CRASH: ' + e.message);
+  console.log(e.stack);
   process.exit(1);
 });

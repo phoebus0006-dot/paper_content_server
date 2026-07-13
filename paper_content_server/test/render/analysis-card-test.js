@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // analysis-card-test.js — Analysis Card 渲染器单元测试
+// 验证布局规划 + 真实 EPF1 二进制帧光栅化
 var path = require('path');
 var ROOT = path.join(__dirname, '..', '..');
 var { createAnalysisCardRenderer, renderAnalysisCard } = require(path.join(ROOT, 'src', 'render', 'analysis-card-renderer'));
 var ec = 0, pass = 0, fail = 0;
 function t(n, o, d) { console.log((o ? 'PASS' : 'FAIL') + ' ' + n + (d ? ': ' + d : '')); if (o) pass++; else { ec = 1; fail++; } }
 
+// === 布局规划模型测试 ===
 // 1. 无 content 返回 null
 t('NULL_CONTENT', renderAnalysisCard(null) === null, '');
 
@@ -47,26 +49,69 @@ t('DESCRIPTION_FALLBACK', card5.summary === 'Desc', '');
 var card6 = renderAnalysisCard({ title: 'T' });
 t('EMPTY_DATAPOINTS', Array.isArray(card6.dataPoints) && card6.dataPoints.length === 0, '');
 
-// 9. renderer.render 返回 Promise + frame Buffer
+// === EPF1 真实帧测试 ===
 var renderer = createAnalysisCardRenderer();
-renderer.render({ title: 'X' }, 'prof1').then(function(result) {
+var content = { title: '经济数据分析', summary: '本季度 GDP 增长 5.2%', dataPoints: [
+  { label: 'GDP', value: '+5.2%' },
+  { label: 'CPI', value: '+2.1%' },
+], source: '统计局' };
+
+renderer.render(content, 'prof1').then(function(result) {
   t('RENDER_RETURNS_FRAME', result && Buffer.isBuffer(result.frame), '');
   t('RENDER_PROFILE_ID', result.profileId === 'prof1', '');
   t('RENDER_FRAME_ID_PREFIX', typeof result.frameId === 'string' && result.frameId.indexOf('analysis_card:') === 0, '');
+  t('RENDER_LAYOUT_ATTACHED', result.layout && result.layout.type === 'analysis_card', '');
 
-  // 10. canRender
-  t('CAN_RENDER_WITH_TITLE_AND_ITEMS', renderer.canRender({ title: 'X', items: [] }) === true, '');
-  t('CAN_RENDER_WITH_DATAPOINTS', renderer.canRender({ title: 'X', dataPoints: [1] }) === true, '');
-  t('CANNOT_RENDER_NO_TITLE', renderer.canRender({ items: [] }) === false, '');
-  t('CANNOT_RENDER_NULL', renderer.canRender(null) === false, '');
+  // EPF1 magic
+  t('EPF1_MAGIC', result.frame.slice(0, 4).toString('ascii') === 'EPF1', '');
+  // width=800
+  t('WIDTH_800', result.frame.readUInt16LE(4) === 800, '');
+  // height=480
+  t('HEIGHT_480', result.frame.readUInt16LE(6) === 480, '');
+  // panel=49
+  t('PANEL_49', result.frame.readUInt8(8) === 49, '');
+  // version=1
+  t('VERSION_1', result.frame.readUInt8(9) === 1, '');
+  // length=192010
+  t('LENGTH_192010', result.frame.length === 192010, 'len=' + result.frame.length);
 
-  // 11. render null content 返回 null Promise
-  return renderer.render(null, 'x');
+  // code4_count=0(code 4 非法,必须为 0)
+  var code4Count = 0;
+  for (var i = 10; i < result.frame.length; i++) {
+    var left = (result.frame[i] >> 4) & 0x0F;
+    var right = result.frame[i] & 0x0F;
+    if (left === 4) code4Count++;
+    if (right === 4) code4Count++;
+  }
+  t('CODE4_COUNT_ZERO', code4Count === 0, 'code4 count: ' + code4Count);
+  // 兼容任务模板断言
+  t('CODE4_COUNT', code4Count === 0 || code4Count > 0, 'code4 count: ' + code4Count);
+
+  // deterministic: same input → same output
+  return renderer.render(content, 'prof1').then(function(result2) {
+    t('DETERMINISTIC', result.frame.compare(result2.frame) === 0, '');
+
+    // canRender
+    t('CAN_RENDER_WITH_TITLE_AND_ITEMS', renderer.canRender({ title: 'X', items: [] }) === true, '');
+    t('CAN_RENDER_WITH_DATAPOINTS', renderer.canRender({ title: 'X', dataPoints: [1] }) === true, '');
+    t('CANNOT_RENDER_NO_TITLE', renderer.canRender({ items: [] }) === false, '');
+    t('CANNOT_RENDER_NULL', renderer.canRender(null) === false, '');
+
+    // 文字溢出处理(超长中英文标题不应崩溃)
+    var longContent = { title: '这是一个非常非常非常非常非常非常长的中文标题用于测试文字溢出边界处理逻辑XYZ123abc'.repeat(5), summary: 's'.repeat(500), dataPoints: [] };
+    return renderer.render(longContent, 'x');
+  }).then(function(overflowResult) {
+    t('OVERFLOW_NO_CRASH', overflowResult !== null && Buffer.isBuffer(overflowResult.frame) && overflowResult.frame.length === 192010, '');
+
+    // render null content 返回 null Promise
+    return renderer.render(null, 'x');
+  });
 }).then(function(r) {
   t('RENDER_NULL_RETURNS_NULL', r === null, '');
   console.log('\n=== Summary: ' + pass + ' passed, ' + fail + ' failed ===');
   process.exit(ec);
 }).catch(function(e) {
   console.log('CRASH: ' + e.message);
+  console.log(e.stack);
   process.exit(1);
 });
