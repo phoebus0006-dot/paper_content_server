@@ -3686,6 +3686,10 @@ async function handleRequest(req, res) {
       if (!runtime.config || !runtime.config.features || !runtime.config.features.learningLibraryEnabled) {
         failJson(res, 503, 'FEATURE_DISABLED: learningLibraryEnabled is false'); return;
       }
+      // Classifier readiness gate: fail-closed — do not ingest if classifier not ready
+      if (runtime.safetyClassifierPort && !runtime.safetyClassifierPort.ready) {
+        failJson(res, 503, 'SAFETY_CLASSIFIER_NOT_READY'); return;
+      }
       // 触发 learning 摄取(自动 fetch sources → validate → dedup → persist)
       if (!runtime.learningIngestionService) { failJson(res, 503, 'learning ingestion service unavailable'); return; }
       try {
@@ -3716,7 +3720,7 @@ async function handleRequest(req, res) {
         lastIngestAt: runtime.learningLastIngestAt || null,
       };
       if (runtime.learningScheduler) {
-        try { learningStatus.scheduler = runtime.learningScheduler.getStatus(); } catch(e) {}
+        learningStatus.scheduler = runtime.learningScheduler.getStatus();
       }
       respondJson(res, learningStatus);
       return;

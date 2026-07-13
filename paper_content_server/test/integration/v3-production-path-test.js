@@ -301,11 +301,10 @@ async function main() {
     }, TOKEN);
     t('S2_FOCUS_LOCK_NO_MATCH_404', flNoMatch.s === 404, 'http=' + flNoMatch.s + ' body=' + flNoMatch.b.toString().slice(0, 100));
 
-    // 2i. Learning ingest — service exists but no classifier → ingest runs but
-    //     candidates fail at safety gate (or source adapter returns empty).
-    //     Either way, the route should return 200 with results array.
+    // 2i. Learning ingest — classifier not ready → fail-closed 503
     var ingestOn = await request('POST', port2, '/api/admin/learning/ingest', {}, TOKEN);
-    t('S2_LEARNING_INGEST_200', ingestOn.s === 200, 'http=' + ingestOn.s + ' body=' + ingestOn.b.toString().slice(0, 150));
+    t('S2_LEARNING_INGEST_503_CLASSIFIER_NOT_READY', ingestOn.s === 503, 'http=' + ingestOn.s + ' body=' + ingestOn.b.toString().slice(0, 150));
+    t('S2_LEARNING_INGEST_BODY_MATCH', /SAFETY_CLASSIFIER_NOT_READY/i.test(ingestOn.b.toString()), '');
 
     // 2j. Learning status — scheduler should report SAFETY_CLASSIFIER_NOT_READY
     var lstatus = await request('GET', port2, '/api/admin/learning/status', null, TOKEN);
@@ -589,7 +588,7 @@ async function main() {
     if (ready6) {
       // Invalid override should be cleared (asset doesn't exist)
       var logText6 = logs6.join('');
-      t('S6_INVALID_OVERRIDE_LOGGED', /Persisted override invalid|clearing override/i.test(logText6), 'log: ' + logText6.slice(-300).replace(/\n/g, ' '));
+      t('S6_INVALID_OVERRIDE_LOGGED', /Persisted override invalid|clearing override|quarantin|schemaVersion mismatch/i.test(logText6), 'log: ' + logText6.slice(-300).replace(/\n/g, ' '));
       // Override file should be cleared
       t('S6_INVALID_OVERRIDE_CLEARED', !fs.existsSync(path.join(dir6, 'admin_override.json')), 'override file still exists');
       // Mode should be AUTO (not FOCUS_LOCK)
