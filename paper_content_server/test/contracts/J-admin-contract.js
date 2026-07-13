@@ -49,7 +49,8 @@ async function main(){
       var c4=0;for(var bi=10;bi<fb.b.length;bi++){var h=(fb.b[bi]>>4)&0xF,l=fb.b[bi]&0xF;if(h===4)c4++;if(l===4)c4++}
       t('CODE4_ZERO',c4===0,'c4='+c4);
     }
-    s('ONE_SHOT_ROUTE','IMPLEMENTED','POST /api/admin/publish/one-shot route uses assetSelectionService.selectForOneShot() for strict explicit asset validation (no fallback); override persisted via overridePersistence.saveOverride() with restart validation (validateOverrideAsync re-checks asset safety/selectability/file existence; cleared if invalid); 400 on selection failure');
+    s('ONE_SHOT_ROUTE','IMPLEMENTED_NOT_PRODUCTION_VERIFIED','POST /api/admin/publish/one-shot route uses assetSelectionService.selectForOneShot() for strict explicit asset validation (no fallback); override persisted via overridePersistence.saveOverride() with restart validation (validateOverrideAsync re-checks asset safety/selectability/file existence; cleared if invalid); 400 on selection failure; not yet verified on ESP32 true device');
+    s('FOCUS_LOCK','IMPLEMENTED_NOT_PRODUCTION_VERIFIED','PUT/DELETE /api/admin/focus-lock route uses assetSelectionService.selectForFocusLock() for strict theme/albumId matching (404 on no match, no schedule fallback); restart-validated same as ONE_SHOT; not yet verified on ESP32 true device');
     s('ROLLBACK_SNAPSHOT_RESTORE','NOT_IMPLEMENTED','POST /api/admin/rollback route not fully implementing snapshot restore');
   }catch(e){t('TEST_FAIL',false,e.message)}
   srv.kill();setTimeout(function(){try{fs.rmdirSync(TMPDIR,{recursive:true})}catch(e){}console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec)},1000);

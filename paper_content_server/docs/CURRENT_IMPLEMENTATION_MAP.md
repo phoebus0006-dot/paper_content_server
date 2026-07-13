@@ -1,4 +1,11 @@
 AUDITED_CODE_SHA=PENDING_INTEGRATION
+REAL_CJK_MODULE=IMPLEMENTED
+REAL_CJK_GLYPH_RENDER=IMPLEMENTED_NOT_PRODUCTION_VERIFIED
+ORCHESTRATOR_SHADOW=IMPLEMENTED
+ORCHESTRATOR_PRODUCTION_SWITCH=NOT_IMPLEMENTED
+REAL_CLASSIFIER=BLOCKED
+NAS_DYNAMIC_ACCEPTANCE=NOT_TESTED
+ESP32_DYNAMIC_ACCEPTANCE=NOT_TESTED
 
 ## 1. Route Map
 
@@ -37,7 +44,7 @@ AUDITED_CODE_SHA=PENDING_INTEGRATION
 | POST | /api/admin/learning/ingest | Trigger learning library ingestion | server.js → learningIngestionService |
 | GET | /api/admin/learning/status | Learning ingestion status | server.js |
 | PATCH | /api/admin/library/:id | Update asset metadata (guarded fields) | server.js → asset-repository |
-| DELETE | /api/admin/library/:id | Delete asset (tombstone + reference cleaner) | server.js → asset-repository |
+| DELETE | /api/admin/library/:id | Delete asset (atomic chain: HTTP route → feature flag check → AssetDeleteService.deleteAsset → findReferences → markBlocked → tombstone write → cleanup → audit → markTombstoned; reason enum UNSAFE/SUSPICIOUS/POLICY_BLOCKED) | server.js → assetDeleteService (gated by deletePipelineEnabled; no legacy fallback) |
 
 > **NOTE — admin-query-service 已挂载 HTTP**:R10 测试中 `/admin/api/system/status` 路径仍保留为 mock 直查路径;正式生产路由为 `/api/admin/system/status` 等(见 [API_CONTRACT.md](API_CONTRACT.md) §3-§5)。
 
@@ -135,7 +142,7 @@ AUDITED_CODE_SHA=PENDING_INTEGRATION
 |----|-------------|--------|
 | GAP-001 | Full translation pipeline unit coverage | CLOSED |
 | GAP-002 | Dual library (Learning + Custom) end-to-end | CLOSED |
-| GAP-003 | Real CJK glyph rendering — text-rasterizer.js uses 5x7 ASCII bitmap font; CJK chars fall back to `renderCJKPlaceholder` filled blocks, not real glyphs (Noto Sans CJK probed but never loaded). ASCII_TEXT_RENDER=IMPLEMENTED, CJK_PLACEHOLDER=IMPLEMENTED, REAL_CJK_GLYPH_RENDER=NOT_IMPLEMENTED | NOT_IMPLEMENTED |
+| GAP-003 | Real CJK glyph rendering — text-rasterizer.js renders real CJK glyphs via sharp SVG text + font-detector (Microsoft YaHei / Noto Sans CJK / Source Han Sans / PingFang SC). ASCII_TEXT_RENDER=IMPLEMENTED, CJK_PLACEHOLDER=IMPLEMENTED, REAL_CJK_MODULE=IMPLEMENTED, REAL_CJK_GLYPH_RENDER=IMPLEMENTED_NOT_PRODUCTION_VERIFIED (true-device ESP32 verification pending). | CLOSED |
 | DATA_DIR resolution | Resolved from config or env | IMPLEMENTED |
 | NAS target path | Configured default `/var/lib/paper-content-server/data` | CONFIGURED |
 | Docker mode | Production container | IMPLEMENTED |

@@ -5,9 +5,11 @@
 AUDITED_CODE_SHA=PENDING_INTEGRATION
 ESP32_RUNTIME_STATUS=NOT TESTED
 NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
+REAL_CJK_MODULE=IMPLEMENTED
+REAL_CJK_GLYPH_RENDER=IMPLEMENTED_NOT_PRODUCTION_VERIFIED
+ORCHESTRATOR_SHADOW=IMPLEMENTED
+ORCHESTRATOR_PRODUCTION_SWITCH=NOT_IMPLEMENTED
 REAL_CLASSIFIER=BLOCKED
-REAL_CJK_GLYPH_RENDER=IMPLEMENTED
-RENDER_SHADOW=IMPLEMENTED
 OVERRIDE_CONCURRENCY_SAFE=YES
 NAS_DYNAMIC_ACCEPTANCE=NOT_TESTED
 ESP32_DYNAMIC_ACCEPTANCE=NOT_TESTED
@@ -52,7 +54,7 @@ ESP32_DYNAMIC_ACCEPTANCE=NOT_TESTED
 | Learning Library auto-fetch | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Wikimedia source adapter + HTTPS-only downloader (size/redirect/timeout guards) + scheduler with classifierReady gate + ingestion service (enabled guard, fail-closed decode); wired behind learningLibraryEnabled flag. Scheduler does NOT start when classifier not ready (zero network requests). | NOT TESTED | N/A |
 | Learning relevance gate | PARTIAL | | PARTIAL_LICENSE_ONLY — learning-policy.js 只检查 license,无主题/关键词/质量评分 | NOT VERIFIED | N/A |
 | Custom Library | BLOCKED | | Streaming upload (octet-stream → processUploadStream → quarantine → sharp decode → MIME mismatch → SHA256 → safety gate → dedup → atomic move) fully wired, but classifier has no real model → fail-closed (CLASSIFIER_UNAVAILABLE). Upload cannot ACCEPT until a real NSFW model is configured. Gated by customLibraryEnabled + classifierReady. | NOT TESTED | N/A |
-| Strict NSFW deletion | NOT_IMPLEMENTED | | No real NSFW classifier model. safety-classifier-port fail-closed (configured=false, ready=false). asset-delete-service atomic chain (markBlocked → tombstone → cleanup → audit → markTombstoned, reason enum) is IMPLEMENTED but cannot make a real deletion decision without a classifier. | NOT TESTED | N/A |
+| Strict NSFW deletion | NOT_IMPLEMENTED | | No real NSFW classifier model. safety-classifier-port fail-closed (configured=false, ready=false). AssetDeleteService atomic DELETE chain (HTTP route → feature flag check → AssetDeleteService.deleteAsset → findReferences → markBlocked → tombstone write → cleanup → audit → markTombstoned, reason enum UNSAFE/SUSPICIOUS/POLICY_BLOCKED, fail-closed: no swallow) is IMPLEMENTED but cannot make a real deletion decision without a classifier. | NOT TESTED | N/A |
 | Analysis Card | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer (5x7 ASCII bitmap font + real CJK glyphs via sharp SVG text / font-detector) producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
 | Comparison Pair | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer (sharp decode + quantize) producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
 | Sequence 2×2 | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
@@ -65,9 +67,20 @@ ESP32_DYNAMIC_ACCEPTANCE=NOT_TESTED
 
 ASCII_TEXT_RENDER=IMPLEMENTED
 CJK_PLACEHOLDER=IMPLEMENTED
-REAL_CJK_GLYPH_RENDER=IMPLEMENTED
+REAL_CJK_MODULE=IMPLEMENTED
+REAL_CJK_GLYPH_RENDER=IMPLEMENTED_NOT_PRODUCTION_VERIFIED
 
 当前文字渲染器 (`src/render/text-rasterizer.js`) 使用内置 5x7 bitmap font 处理 ASCII 字母/数字/基本标点。CJK 字符通过 sharp SVG text 管线 (librsvg + pango + harfbuzz + freetype) 渲染真实字形 — `font-detector.js` 在模块加载时自动探测系统 CJK 字体 (Windows: Microsoft YaHei; Linux: Noto Sans CJK / Source Han Sans; macOS: PingFang SC)，`renderTextAsync` 将含 CJK 的文本路由到 sharp SVG 渲染器并将 alpha 像素 blit 到 EPF1 codes 数组。`CJK_PLACEHOLDER` 路径 (`renderCJKPlaceholder`) 仍保留作为 ASCII 同步路径的回退，但 `renderTextAsync` 不再静默回退到占位方块 — 无可用字体时返回 0 行。
+
+> REAL_CJK_MODULE=IMPLEMENTED 表示 CJK 渲染模块本身（text-rasterizer + font-detector + sharp SVG 管线）已实现并通过单元/golden 测试（cjk-glyph-test）。
+> REAL_CJK_GLYPH_RENDER=IMPLEMENTED_NOT_PRODUCTION_VERIFIED — 渲染实现已完成，但尚未在真机 ESP32-S3 + Spectra 6 面板上验证显示效果（NAS 端 EPF1 bytes 已生成，ESP32 真机刷新未测试）。
+
+### Render Pipeline (Orchestrator Shadow)
+
+ORCHESTRATOR_SHADOW=IMPLEMENTED
+ORCHESTRATOR_PRODUCTION_SWITCH=NOT_IMPLEMENTED
+
+`render-shadow.js` + `orchestrator-shadow-adapter.js` 实现了独立的 shadow 渲染管道：production 路径仍走 legacy-render-adapter，shadow 管道在 `renderShadowEnabled=true` 时并行运行（render-shadow-meaningful-test / shadow-independent-test 验证 shadow 与 legacy 输出可独立比较，shadow mismatch 不影响 production）。ORCHESTRATOR_PRODUCTION_SWITCH=NOT_IMPLEMENTED — orchestrator 尚未成为默认 production 路径，production 仍由 legacy-render-adapter 主导；切换需先完成 shadow↔legacy 长时间一致性验证 + 真机回归，目前未达成。
 
 ## 4. 更新规则
 
@@ -99,7 +112,7 @@ REAL_CJK_GLYPH_RENDER=IMPLEMENTED
 | Learning Library auto-fetch | src/learning/learning-ingestion-service.js + wikimedia-source-adapter.js + learning-downloader.js + learning-scheduler.js + src/app/compose-services.js (classifierReady gate) | learning:test; v3:integration SECTION 2 (scheduler status=SAFETY_CLASSIFIER_NOT_READY when no model) | NOT TESTED | N/A |
 | Learning relevance gate | src/learning/learning-policy.js | learning-policy-test (license-only check, no topic/keyword/quality scoring — PARTIAL) | NOT VERIFIED | N/A |
 | Custom Library | src/custom-library/custom-library-service.js (processUploadStream) + custom-file-store.js (createQuarantineWriteStream/streamDecode/streamSha256) + server.js /api/admin/library/custom/upload (octet-stream) + src/app/compose-services.js (config.safety passthrough) | custom-upload-security-test; v3:integration SECTION 2 (streaming upload → fail-closed CLASSIFIER_UNAVAILABLE when no model; 415 on wrong Content-Type) | NOT TESTED | N/A |
-| Strict NSFW deletion | src/safety/safety-classifier-port.js + nsfw-safety-gate.js + src/assets/asset-delete-service.js (reason enum, markBlocked-before-tombstone) + server.js DELETE route (atomic, no legacy fallback) | safety-classifier-port-test; nsfw-safety-gate-test; asset-delete-service-test; v3:integration SECTION 2 (DELETE 400 no reason, 400 bad reason, 404 not found, 503 flag off) | NOT TESTED | N/A |
+| Strict NSFW deletion | src/safety/safety-classifier-port.js + nsfw-safety-gate.js + src/assets/asset-delete-service.js (DELETE chain: HTTP route → feature flag check → AssetDeleteService.deleteAsset → findReferences → markBlocked → tombstone write → cleanup → audit → markTombstoned; reason enum UNSAFE/SUSPICIOUS/POLICY_BLOCKED; fail-closed: no swallow) + server.js DELETE route (atomic, no legacy fallback; 503 FEATURE_DISABLED when flag off) | safety-classifier-port-test; nsfw-safety-gate-test; asset-delete-service-test; v3:integration SECTION 2 (DELETE 400 no reason, 400 bad reason, 404 not found, 503 flag off) | NOT TESTED | N/A |
 | Analysis Card | src/render/analysis-card-renderer.js (5x7 ASCII bitmap font + real CJK glyphs via sharp SVG text + font-detector) + src/render/legacy-shadow-adapter.js + orchestrator-shadow-adapter.js (independent shadow pipelines) | analysis-card-test; cjk-glyph-test; render-shadow-meaningful-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
 | Comparison Pair | src/render/comparison-pair-renderer.js (sharp decode + quantize) | comparison-pair-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
 | Sequence 2×2 | src/render/sequence-2x2-renderer.js | sequence-2x2-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
