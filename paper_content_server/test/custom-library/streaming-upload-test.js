@@ -8,7 +8,7 @@
 //   5. 无效 JPEG(stream 写入 garbage)→ REJECTED DECODE_FAILED + cleanup
 //   6. MIME 伪装(metadata.mimeType='image/jpeg' 但实际 PNG)→ REJECTED MIME_MISMATCH
 //   7. aborted upload(inputStream error)→ cleanup
-//   8. classifier unavailable(默认 gate 无模型)→ REJECTED CLASSIFIER_UNAVAILABLE
+//   8. classifier unavailable(默认 gate 无模型)→ FEATURE_NOT_READY
 //   9. classifier unsafe(score=0.95)→ REJECTED NSFW
 //  10. audit failure → ERROR AUDIT_FAILED + cleanup finalPath
 //  11. repository failure → ERROR REPOSITORY_FAILED + cleanup finalPath
@@ -214,15 +214,16 @@ async function run() {
     t('ABORTED_NO_ASSET', fs.readdirSync(aDir).length === 0, '');
   }
 
-  // ── 8. classifier unavailable(默认 gate 无模型)→ REJECTED CLASSIFIER_UNAVAILABLE ──
+  // ── 8. classifier unavailable(默认 gate 无模型)→ FEATURE_NOT_READY ──
+  //    classifier 未就绪是 feature 不可用,不是内容拒绝 → FEATURE_NOT_READY
   {
     resetDirs();
     var d = defaultDeps(); // gate 无 modelPath → fail-closed
     var png = await makePng();
     var svc = CLS(d.store, d.val, d.dedup, d.gate, makeRepo(), lg);
     var r = await svc.processUploadStream(streamFromBuffer(png), { originalName: 'a.png', mimeType: 'image/png', expectedSize: png.length });
-    t('CLASSIFIER_UNAVAILABLE_REJECTED', r.status === 'REJECTED' && r.reason === 'CLASSIFIER_UNAVAILABLE', r.status + ':' + r.reason);
-    t('CLASSIFIER_UNAVAILABLE_FAIL_CLOSED', r.reasonCode === 'FAIL_CLOSED', 'reasonCode=' + r.reasonCode);
+    t('CLASSIFIER_UNAVAILABLE_FEATURE_NOT_READY', r.status === 'FEATURE_NOT_READY', r.status + ':' + r.reason + ':' + r.reasonCode);
+    t('CLASSIFIER_UNAVAILABLE_REASON', r.reason === 'CLASSIFIER_UNAVAILABLE', '');
     t('CLASSIFIER_UNAVAILABLE_CLEANED', fs.readdirSync(qDir).length === 0, '');
   }
 

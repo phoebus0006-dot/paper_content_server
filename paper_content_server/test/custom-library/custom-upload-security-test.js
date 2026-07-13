@@ -240,15 +240,17 @@ async function run() {
     t('UNSAFE_QUARANTINE_CLEANED', fs.readdirSync(qDir).length === 0, '');
   }
 
-  // ── 9. classifier 不可用 (默认 gate 无模型) → REJECTED FAIL_CLOSED ──
+  // ── 9. classifier 不可用 (默认 gate 无模型) → FEATURE_NOT_READY ──
+  //    classifier 未就绪是 feature 不可用,不是内容拒绝 → FEATURE_NOT_READY
   {
     resetDirs();
     var d = defaultDeps();  // gate 无 modelPath
     var png = await makePng();
     var svc = CLS(d.store, d.val, d.dedup, d.gate, makeRepo(), lg);
     var r = await svc.processUpload({ fileBuffer: png, originalName: 'a.png', mimeType: 'image/png' });
-    t('CLASSIFIER_UNAVAILABLE_FAIL_CLOSED', r.status === 'REJECTED' && r.reason === 'CLASSIFIER_UNAVAILABLE' && r.reasonCode === 'FAIL_CLOSED',
+    t('CLASSIFIER_UNAVAILABLE_FEATURE_NOT_READY', r.status === 'FEATURE_NOT_READY',
       r.status + ':' + r.reason + ':' + r.reasonCode);
+    t('CLASSIFIER_UNAVAILABLE_REASON', r.reason === 'CLASSIFIER_UNAVAILABLE', '');
     t('CLASSIFIER_UNAVAILABLE_QUARANTINE_CLEANED', fs.readdirSync(qDir).length === 0, '');
   }
 

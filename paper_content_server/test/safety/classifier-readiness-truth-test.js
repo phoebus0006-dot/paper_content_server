@@ -1,22 +1,25 @@
 #!/usr/bin/env node
-// classifier-readiness-truth-test.js — P0-3: classifier readiness 5-level truth.
+// classifier-readiness-truth-test.js — P0-3: classifier readiness 7-level truth.
 //
 // Truth model under test (src/safety/safety-classifier-port.js):
-//   configured    = !!modelPath (path provided)
-//   modelExists   = !!modelPath && fs.existsSync(modelPath)
-//   loaded        = false (no runtime loader)
-//   inferenceReady = false (no smoke inference)
-//   ready         = inferenceReady = false until a real inference engine is wired in
+//   configured         = !!modelPath (path provided)
+//   modelExists        = !!modelPath && fs.existsSync(modelPath)
+//   runtimeAvailable   = 推理 runtime (onnxruntime/tfjs-node) 已安装
+//   loaded             = false (当前无 runtime,不冒充加载)
+//   smokeInferencePassed = false (当前无 runtime,不冒充推理)
+//   inferenceReady     = loaded && smokeInferencePassed = false
+//   ready              = inferenceReady = false until a real inference engine is wired in
 //
 // Key invariant: even when a user sets NSFW_MODEL_PATH to an existing file,
-// `ready` MUST stay false because there is no inference implementation.
-// classify() still rejects with CLASSIFIER_NOT_IMPLEMENTED (behavior unchanged).
+// `ready` MUST stay false because there is no inference runtime.
+// classify() rejects with NO_RUNTIME_AVAILABLE (file exists, no runtime) or
+// CLASSIFIER_NOT_READY (no modelPath / file missing). No fake data is returned.
 //
 // This test verifies the truth propagates end-to-end:
 //   1. EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME — port.ready=false with a real file
 //   2. CUSTOM_NOT_READY_WITH_STUB_CLASSIFIER — customLibrary feature ready=false
 //   3. LEARNING_SCHEDULER_NOT_STARTED_WITH_STUB_CLASSIFIER — scheduler does not start
-//   4. CLASSIFIER_NOT_IMPLEMENTED_NEVER_REPORTS_READY — ready never true
+//   4. CLASSIFIER_NOT_READY_NEVER_REPORTS_READY — ready never true across all configs
 var path = require('path');
 var fs = require('fs');
 var os = require('os');
@@ -35,10 +38,10 @@ var logger = { info: function () {}, warn: function () {}, error: function () {}
 
 async function run() {
   // ── EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME ──
-  // A dummy model file exists on disk, but with no runtime loader / inference engine,
-  // the port reports: configured=true, modelExists=true, loaded=false,
-  // inferenceReady=false, ready=false. classify() still rejects with
-  // CLASSIFIER_NOT_IMPLEMENTED (behavior unchanged).
+  // A dummy model file exists on disk, but with no runtime (onnxruntime/tfjs-node),
+  // the port reports: configured=true, modelExists=true, runtimeAvailable=false,
+  // loaded=false, smokeInferencePassed=false, inferenceReady=false, ready=false.
+  // classify() rejects with NO_RUNTIME_AVAILABLE (file exists but no runtime).
   var tmpModel = path.join(os.tmpdir(), 'p03-truth-model-' + Date.now() + '-' + process.pid + '.onnx');
   fs.writeFileSync(tmpModel, 'FAKE_MODEL_BYTES');
   try {
@@ -48,19 +51,23 @@ async function run() {
       port.configured === true, 'configured=' + port.configured);
     t('EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME_modelExists_true',
       port.modelExists === true, 'modelExists=' + port.modelExists);
+    t('EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME_runtimeAvailable_false',
+      port.runtimeAvailable === false, 'runtimeAvailable=' + port.runtimeAvailable);
     t('EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME_loaded_false',
       port.loaded === false, 'loaded=' + port.loaded);
+    t('EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME_smokeInferencePassed_false',
+      port.smokeInferencePassed === false, 'smokeInferencePassed=' + port.smokeInferencePassed);
     t('EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME_inferenceReady_false',
       port.inferenceReady === false, 'inferenceReady=' + port.inferenceReady);
     t('EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME_ready_false',
       port.ready === false, 'ready=' + port.ready);
 
-    // classify still rejects with CLASSIFIER_NOT_IMPLEMENTED (no behavior change)
+    // classify rejects with NO_RUNTIME_AVAILABLE (file exists but no runtime)
     var classifyErr = null;
     try { await port.classify('/tmp/x.png', { width: 10, height: 10 }); }
     catch (e) { classifyErr = e; }
-    t('EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME_classify_not_implemented',
-      classifyErr !== null && classifyErr.message === 'CLASSIFIER_NOT_IMPLEMENTED',
+    t('EXISTING_MODEL_FILE_NOT_READY_WITHOUT_RUNTIME_classify_no_runtime',
+      classifyErr !== null && classifyErr.message === 'NO_RUNTIME_AVAILABLE',
       classifyErr ? classifyErr.message : 'no error');
   } finally {
     try { fs.unlinkSync(tmpModel); } catch (e) {}
@@ -100,17 +107,17 @@ async function run() {
     'reason=' + flags.customLibrary.reason);
 
   // Also verify with a port whose model file DOES exist (configured=true, modelExists=true,
-  // ready=false) — the most dangerous case: a user dropped a real file at NSFW_MODEL_PATH.
-  var realFilePort = createSafetyClassifierPort({ logger: logger, modelPath: tmpModel });
-  // tmpModel was unlinked above; recreate for this scenario
+  // runtimeAvailable=false, ready=false) — the most dangerous case: a user dropped a real
+  // file at NSFW_MODEL_PATH but no runtime is installed.
   fs.writeFileSync(tmpModel, 'FAKE_MODEL_BYTES');
   try {
-    t('CUSTOM_NOT_READY_WITH_STUB_CLASSIFIER_realfile_port_configured_true',
-      realFilePort.configured === true, 'configured=' + realFilePort.configured);
-    // Note: realFilePort was built before recreating the file; rebuild to be safe
     var realFilePort2 = createSafetyClassifierPort({ logger: logger, modelPath: tmpModel });
+    t('CUSTOM_NOT_READY_WITH_STUB_CLASSIFIER_realfile_port_configured_true',
+      realFilePort2.configured === true, 'configured=' + realFilePort2.configured);
     t('CUSTOM_NOT_READY_WITH_STUB_CLASSIFIER_realfile_modelExists_true',
       realFilePort2.modelExists === true, 'modelExists=' + realFilePort2.modelExists);
+    t('CUSTOM_NOT_READY_WITH_STUB_CLASSIFIER_realfile_runtimeAvailable_false',
+      realFilePort2.runtimeAvailable === false, 'runtimeAvailable=' + realFilePort2.runtimeAvailable);
     t('CUSTOM_NOT_READY_WITH_STUB_CLASSIFIER_realfile_ready_false',
       realFilePort2.ready === false, 'ready=' + realFilePort2.ready);
     var flagsReal = FV.getFeatureFlags({
@@ -169,10 +176,10 @@ async function run() {
   // have scheduled any timer-based ticks.
   scheduler.stop();
 
-  // ── CLASSIFIER_NOT_IMPLEMENTED_NEVER_REPORTS_READY ──
-  // Across every configuration where classify() returns CLASSIFIER_NOT_IMPLEMENTED
-  // (i.e. modelExists=true), `ready` MUST be false. There is no path where a port
-  // reports CLASSIFIER_NOT_IMPLEMENTED AND ready=true simultaneously.
+  // ── CLASSIFIER_NOT_READY_NEVER_REPORTS_READY ──
+  // Across every configuration where the classifier is not ready, `ready` MUST be false.
+  // There is no path where a port reports ready=true without a real runtime + loaded model
+  // + passed smoke inference.
   var anotherModel = path.join(os.tmpdir(), 'p03-never-ready-' + Date.now() + '-' + process.pid + '.onnx');
   fs.writeFileSync(anotherModel, 'FAKE_MODEL_BYTES');
   try {
@@ -184,22 +191,34 @@ async function run() {
     ];
     for (var i = 0; i < ports.length; i++) {
       var entry = ports[i];
-      // For ports where the model file exists, classify rejects with CLASSIFIER_NOT_IMPLEMENTED.
+      // For ports where the model file exists, classify rejects with NO_RUNTIME_AVAILABLE.
+      // For ports where the file is missing, classify rejects with CLASSIFIER_NOT_READY.
       // In ALL cases ready must be false.
       if (entry.port.modelExists) {
         var err = null;
         try { await entry.port.classify('/tmp/x.png', { width: 8, height: 8 }); }
         catch (e) { err = e; }
-        t('CLASSIFIER_NOT_IMPLEMENTED_NEVER_REPORTS_READY_' + entry.label + '_classify_rejects',
-          err !== null && err.message === 'CLASSIFIER_NOT_IMPLEMENTED',
+        t('CLASSIFIER_NOT_READY_NEVER_REPORTS_READY_' + entry.label + '_classify_rejects',
+          err !== null && err.message === 'NO_RUNTIME_AVAILABLE',
           err ? err.message : 'no error');
+      } else {
+        var err2 = null;
+        try { await entry.port.classify('/tmp/x.png', { width: 8, height: 8 }); }
+        catch (e) { err2 = e; }
+        t('CLASSIFIER_NOT_READY_NEVER_REPORTS_READY_' + entry.label + '_classify_rejects',
+          err2 !== null && err2.message === 'CLASSIFIER_NOT_READY',
+          err2 ? err2.message : 'no error');
       }
-      t('CLASSIFIER_NOT_IMPLEMENTED_NEVER_REPORTS_READY_' + entry.label + '_ready_false',
+      t('CLASSIFIER_NOT_READY_NEVER_REPORTS_READY_' + entry.label + '_ready_false',
         entry.port.ready === false, 'ready=' + entry.port.ready);
-      t('CLASSIFIER_NOT_IMPLEMENTED_NEVER_REPORTS_READY_' + entry.label + '_inferenceReady_false',
+      t('CLASSIFIER_NOT_READY_NEVER_REPORTS_READY_' + entry.label + '_inferenceReady_false',
         entry.port.inferenceReady === false, 'inferenceReady=' + entry.port.inferenceReady);
-      t('CLASSIFIER_NOT_IMPLEMENTED_NEVER_REPORTS_READY_' + entry.label + '_loaded_false',
+      t('CLASSIFIER_NOT_READY_NEVER_REPORTS_READY_' + entry.label + '_loaded_false',
         entry.port.loaded === false, 'loaded=' + entry.port.loaded);
+      t('CLASSIFIER_NOT_READY_NEVER_REPORTS_READY_' + entry.label + '_smokeInferencePassed_false',
+        entry.port.smokeInferencePassed === false, 'smokeInferencePassed=' + entry.port.smokeInferencePassed);
+      t('CLASSIFIER_NOT_READY_NEVER_REPORTS_READY_' + entry.label + '_runtimeAvailable_false',
+        entry.port.runtimeAvailable === false, 'runtimeAvailable=' + entry.port.runtimeAvailable);
     }
   } finally {
     try { fs.unlinkSync(anotherModel); } catch (e) {}

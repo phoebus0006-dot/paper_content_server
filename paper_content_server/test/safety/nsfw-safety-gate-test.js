@@ -93,19 +93,26 @@ async function run() {
   var c8 = await gate2.classify('/tmp/q.bin', { originalName: 'nsfw.png', fileSize: 100, width: 100, height: 100 });
   t('CUSTOM_PORT_HEURISTIC_STILL_REJECTS', c8 && c8.score === 1.0 && c8.category === 'HEURISTIC_REJECT', '');
 
-  // ── 用 modelPath 注入(指向真实存在的文件,但 port 仍未实现推理)──
-  //    新 port:configured = !!modelPath && fs.existsSync(modelPath),因此必须用真实文件。
+  // ── 用 modelPath 注入(指向真实存在的文件,但无 runtime → fail-closed)──
+  //    port: configured=true, modelExists=true, runtimeAvailable=false, ready=false
+  //    → classify reject(NO_RUNTIME_AVAILABLE) → gate 返回无 score 标记(fail-closed)
   var tmpModel = path.join(os.tmpdir(), 'nsfw-gate-fake-model-' + Date.now() + '-' + process.pid + '.onnx');
   fs.writeFileSync(tmpModel, 'FAKE_MODEL_BYTES');
   try {
     var gate3 = createNsfwSafetyGate({ logger: logger, modelPath: tmpModel });
     t('WITH_MODELPATH_CONFIGURED_TRUE', gate3.configured === true, 'configured=' + gate3.configured);
-    t('WITH_MODELPATH_MODEL_VERSION_STUB', gate3.modelVersion === 'STUB_1.0', 'modelVersion=' + gate3.modelVersion);
+    // 无 runtime → 未加载 → modelVersion='NONE'(不是 STUB_1.0,因为无真实推理)
+    t('WITH_MODELPATH_MODEL_VERSION_NONE', gate3.modelVersion === 'NONE', 'modelVersion=' + gate3.modelVersion);
     var c9 = await gate3.classify('/tmp/q.bin', { originalName: 'ok.png', fileSize: 100, width: 100, height: 100 });
-    t('WITH_MODELPATH_CLASSIFY_FAILCLOSED', c9 && c9.score === undefined, 'port 未实现 → 无 score');
+    t('WITH_MODELPATH_CLASSIFY_FAILCLOSED', c9 && c9.score === undefined, '无 runtime → 无 score');
+    t('WITH_MODELPATH_CLASSIFY_REASON', c9 && (c9.reason === 'NO_RUNTIME_AVAILABLE' || c9.reason === 'CLASSIFIER_NOT_READY'),
+      'reason=' + (c9 && c9.reason));
     // isSafe 对有 score 的 classification 仍判断(threshold)
     t('WITH_MODELPATH_IS_SAFE_LOW', gate3.isSafe({ score: 0.1 }) === true, '');
     t('WITH_MODELPATH_IS_SAFE_HIGH', gate3.isSafe({ score: 0.9 }) === false, '');
+    // isSafe 对有 decision 的 classification 判断(新结构)
+    t('WITH_MODELPATH_IS_SAFE_DECISION_SAFE', gate3.isSafe({ decision: 'SAFE' }) === true, '');
+    t('WITH_MODELPATH_IS_SAFE_DECISION_UNSAFE', gate3.isSafe({ decision: 'UNSAFE' }) === false, '');
   } finally {
     try { fs.unlinkSync(tmpModel); } catch (e) {}
   }
