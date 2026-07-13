@@ -12,25 +12,20 @@ function createAssetSelectionService(assetRepository, snapshotStore, logger) {
     var asset = await assetRepository.get(assetId);
     if (!asset) throw new Error('Asset not found: ' + assetId);
 
-    // 验证 libraryType
     if (asset.libraryType !== libraryType) {
       throw new Error('Library type mismatch: expected ' + libraryType + ', got ' + asset.libraryType);
     }
 
-    // 验证 safety
     if (asset.safetyStatus !== 'SAFE') {
       throw new Error('Asset not safe: ' + asset.safetyStatus);
     }
 
-    // 验证 lifecycle
     if (asset.lifecycleStatus !== 'SELECTABLE') {
       throw new Error('Asset not selectable: ' + asset.lifecycleStatus);
     }
 
-    // 验证 local file 可读
-    if (!asset.localPath) {
-      throw new Error('Asset has no local path');
-    }
+    // localPath 必须可读
+    if (!asset.localPath) throw new Error('Asset has no local path');
     var fs = require('fs');
     if (!fs.existsSync(asset.localPath)) {
       throw new Error('Asset local file not found: ' + asset.localPath);
@@ -40,6 +35,7 @@ function createAssetSelectionService(assetRepository, snapshotStore, logger) {
   }
 
   // FOCUS_LOCK: 解析 theme/albumId/libraryType,查询匹配资产
+  // strict: 提供 theme/albumId 时必须匹配,否则 throw NO_MATCH(不回退)
   async function selectForFocusLock(options) {
     options = options || {};
     var libraryType = options.libraryType;
@@ -48,33 +44,46 @@ function createAssetSelectionService(assetRepository, snapshotStore, logger) {
 
     if (!libraryType) throw new Error('libraryType required for focus lock');
 
+    // 查询 libraryType 的所有 SAFE+SELECTABLE 资产
     var filter = { libraryType: libraryType, safetyStatus: 'SAFE', lifecycleStatus: 'SELECTABLE' };
-    if (albumId) filter.albumId = albumId;
-
     var assets = await assetRepository.list(filter);
 
-    if (assets.length === 0) {
-      throw new Error('No matching assets found for libraryType=' + libraryType +
-        (theme ? ' theme=' + theme : '') + (albumId ? ' albumId=' + albumId : ''));
+    // 如果有 albumId,按 albumId 过滤
+    if (albumId) {
+      assets = assets.filter(function(a) {
+        return a.metadata && a.metadata.albumId === albumId;
+      });
+      if (assets.length === 0) {
+        throw new Error('NO_MATCH: no assets with albumId=' + albumId);
+      }
     }
 
-    // 如果有 theme,按 metadata.theme 过滤(简化)
-    var selected = assets[0];
+    // 如果有 theme,按 theme 过滤
     if (theme) {
       var themed = assets.filter(function(a) {
         return a.metadata && a.metadata.theme === theme;
       });
-      if (themed.length > 0) selected = themed[0];
+      if (themed.length === 0) {
+        throw new Error('NO_MATCH: no assets with theme=' + theme);
+      }
+      assets = themed;
     }
 
-    // 验证 local file
+    if (assets.length === 0) {
+      throw new Error('NO_MATCH: no SAFE+SELECTABLE assets for libraryType=' + libraryType);
+    }
+
+    // 选择第一个(不回退到非 theme/album 匹配的资产)
+    var selected = assets[0];
+
+    // 验证 localPath 可读
     if (!selected.localPath) throw new Error('Selected asset has no local path');
     var fs = require('fs');
     if (!fs.existsSync(selected.localPath)) {
       throw new Error('Asset local file not found: ' + selected.localPath);
     }
 
-    return { asset: selected, assetId: selected.assetId, libraryType: libraryType };
+    return { asset: selected, assetId: selected.assetId, libraryType: libraryType, theme: theme, albumId: albumId };
   }
 
   return {
