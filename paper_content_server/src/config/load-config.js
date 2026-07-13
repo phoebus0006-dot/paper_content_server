@@ -68,6 +68,9 @@ function loadConfig(opts) {
 
   var config = {};
 
+  // Resolved config file path — exposed for diagnostics (debug/config endpoint).
+  config.configFile = configPath;
+
   // Server
   config.server = {
     port: Number(env.PORT || fileConfig.port || 8787),
@@ -117,6 +120,9 @@ function loadConfig(opts) {
   // Photo
   config.photo = {
     quantMode: String(env.PHOTO_QUANT_MODE || fileConfig.photoQuantMode || 'clean').toLowerCase(),
+    // Raw DITHERING env value preserved (string). Callers interpret it via
+    // ['1','true','yes','on'] membership. Empty when unset.
+    dithering: env.DITHERING || '',
   };
 
   // Render
@@ -150,11 +156,19 @@ function loadConfig(opts) {
   // Debug
   config.debug = {
     enabled: config.server.enableDebugRoutes,
+    enableDebugRoutes: config.server.enableDebugRoutes,
   };
 
   // Lifecycle timeouts (ms). Unified across bootstrap and server.js.
   config.lifecycle = {
     shutdownTimeoutMs: Number(env.BOOTSTRAP_SHUTDOWN_TIMEOUT_MS) || 10000,
+    forceExitTimeoutMs: Number(env.PROCESS_FORCE_EXIT_TIMEOUT_MS) || 12000,
+  };
+
+  // Process control — force-exit guard for stuck shutdowns. Mirrors
+  // lifecycle.forceExitTimeoutMs but lives under `process` so server.js can
+  // read it without touching process.env directly.
+  config.process = {
     forceExitTimeoutMs: Number(env.PROCESS_FORCE_EXIT_TIMEOUT_MS) || 12000,
   };
 
@@ -190,6 +204,27 @@ function loadConfig(opts) {
     maxCandidates: parseInt(env.LEARNING_MAX_CANDIDATES || '50', 10),
     maxDownloadBytes: parseInt(env.LEARNING_MAX_DOWNLOAD_BYTES || (20 * 1024 * 1024).toString(), 10),
     requestTimeoutMs: parseInt(env.LEARNING_REQUEST_TIMEOUT_MS || '10000', 10),
+    maxPages: parseInt(env.WIKIMEDIA_MAX_PAGES || '10', 10),
+    apiUrl: env.WIKIMEDIA_API_URL || 'https://commons.wikimedia.org/w/api.php',
+  };
+
+  // MQTT — single source of truth. server.js reads APP_CONFIG.mqtt instead of
+  // calling loadMqttConfig(process.env). loadMqttConfig stays available for
+  // backward-compatible tests; here we inline the same mapping.
+  var mqttEnabled = parseBoolEnv(env.MQTT_ENABLED, false);
+  config.mqtt = {
+    enabled: mqttEnabled,
+    broker: env.MQTT_BROKER || 'mqtt://localhost:1883',
+    deviceId: env.MQTT_DEVICE_ID || env.DEVICE_ID || 'epaper-01',
+    username: env.MQTT_USERNAME || '',
+    password: env.MQTT_PASSWORD || '',
+    tls: String(env.MQTT_TLS || '').toLowerCase() === 'true',
+    caPath: env.MQTT_CA_PATH || '',
+    topicPrefix: env.MQTT_TOPIC_PREFIX || 'epaper',
+    willTopic: env.MQTT_WILL_TOPIC || '',
+    willMessage: env.MQTT_WILL_MESSAGE || 'offline',
+    reconnectDelayMs: Number(env.MQTT_RECONNECT_DELAY_MS) || 5000,
+    maxReconnectAttempts: Number(env.MQTT_MAX_RECONNECT_ATTEMPTS) || 0,
   };
 
   // Upload 配置 — used by custom-library upload route guards.

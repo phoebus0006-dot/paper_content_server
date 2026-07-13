@@ -24,6 +24,29 @@ function resolveTranslationConfig(translationConfig) {
   return { provider: provider, apiKey: apiKey, model: model, baseUrl: baseUrl };
 }
 
+// resolveWikimediaAdapterConfig — maps config.learning (load-config shape) into
+// the { apiUrl, searchTerm, limit, timeout, maxPages } shape expected by
+// createWikimediaSourceAdapter. The adapter's own field names are preserved
+// (searchTerm/limit/timeout) so existing adapter unit tests stay unchanged;
+// only the compose-services wiring translates between the two vocabularies.
+//   topics           -> searchTerm (first topic, or joined with ' ' when many)
+//   maxCandidates    -> limit
+//   requestTimeoutMs -> timeout
+//   maxPages         -> maxPages (passthrough)
+//   apiUrl           -> apiUrl (passthrough)
+function resolveWikimediaAdapterConfig(learningConfig) {
+  var lc = learningConfig || {};
+  var topics = Array.isArray(lc.topics) ? lc.topics : [];
+  var searchTerm = topics.length === 0 ? '' : (topics.length === 1 ? topics[0] : topics.join(' '));
+  return {
+    apiUrl: lc.apiUrl || 'https://commons.wikimedia.org/w/api.php',
+    searchTerm: searchTerm || 'educational',
+    limit: lc.maxCandidates || 10,
+    timeout: lc.requestTimeoutMs || 10000,
+    maxPages: lc.maxPages || 3,
+  };
+}
+
 function composeServices(deps) {
   var config = deps.config, clock = deps.clock, logger = deps.logger;
   var stores = deps.stores, httpClient = deps.httpClient;
@@ -148,7 +171,8 @@ function composeServices(deps) {
       var { createWikimediaSourceAdapter } = require('../learning/wikimedia-source-adapter');
 
       var learningSourceRegistry = createSourceRegistry();
-      learningSourceRegistry.register(createWikimediaSourceAdapter(config.learning || {}));
+      var wikimediaAdapterConfig = resolveWikimediaAdapterConfig(config.learning || {});
+      learningSourceRegistry.register(createWikimediaSourceAdapter(wikimediaAdapterConfig));
 
       var learningPolicy = createPolicy(config.learning || {});
       var learningValidator = createLearningValidator();
@@ -158,7 +182,15 @@ function composeServices(deps) {
       var learningAssetsDir = path.join(config.paths.dataDir, 'learning_assets');
       try { fs.mkdirSync(stagingDir, { recursive: true }); } catch (e) {}
       try { fs.mkdirSync(learningAssetsDir, { recursive: true }); } catch (e) {}
-      var learningDownloader = createLearningDownloader(stagingDir, logger);
+      // Propagate config.learning into the downloader: maxDownloadBytes caps
+      // stream size, requestTimeoutMs bounds the HTTP timeout. allowHttp stays
+      // false in production (test fixtures override via createLearningDownloader
+      // direct calls).
+      var learningDownloader = createLearningDownloader(stagingDir, logger, {
+        maxDownloadBytes: (config.learning && config.learning.maxDownloadBytes) || null,
+        timeout: (config.learning && config.learning.requestTimeoutMs) || null,
+        allowHttp: false,
+      });
 
       learningIngestionService = createIngestionService(
         learningSourceRegistry, learningValidator, learningDeduplicator,
@@ -345,4 +377,8 @@ function composeServices(deps) {
   };
 }
 
-module.exports = { composeServices: composeServices, resolveTranslationConfig: resolveTranslationConfig };
+module.exports = {
+  composeServices: composeServices,
+  resolveTranslationConfig: resolveTranslationConfig,
+  resolveWikimediaAdapterConfig: resolveWikimediaAdapterConfig,
+};

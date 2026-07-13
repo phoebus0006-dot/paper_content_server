@@ -122,6 +122,20 @@ const CATEGORY_KEYWORDS = [
 
 const FONT_STACK = '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif';
 
+// ── process.env policy ──────────────────────────────────────────────────────
+// server.js MUST NOT read business configuration from process.env directly.
+// All business config (PORT, TZ, TRANSLATION_PROVIDER, API keys, MQTT flags,
+// photo/dithering, panel index, debug routes, force-exit timeout, etc.) is
+// loaded once via load-config into APP_CONFIG and read from there.
+//
+// Whitelisted exceptions (the ONLY direct process.env reads allowed):
+//   - process.env.NODE_ENV — Node.js runtime standard variable, not business
+//     configuration. Frameworks/libraries read it to switch between
+//     development/production behavior.
+//
+// The static test test/config/server-no-direct-env-test.js enforces this by
+// scanning server.js for `process.env.UPPERCASE_NAME` (excluding NODE_ENV).
+
 function loadDotEnv(filePath) {
   if (!fs.existsSync(filePath)) return;
   const text = fs.readFileSync(filePath, 'utf8');
@@ -135,6 +149,10 @@ function loadDotEnv(filePath) {
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
+    // Populate process.env from .env so libraries that read process.env
+    // (mqtt, sharp, etc.) still see configured values. This is a write, not a
+    // business-config read; load-config remains the single source of truth
+    // for server.js's own configuration.
     if (!process.env[key]) process.env[key] = value;
   }
 }
@@ -150,20 +168,20 @@ const PANEL_SIZES = {
 };
 
 const options = parseArgs(process.argv, APP_CONFIG);
-const TRANSLATION_PROVIDER = String(process.env.TRANSLATION_PROVIDER || APP_CONFIG.translationProvider || DEFAULT_PROVIDER).toLowerCase();
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const OPENAI_BASE_URL = String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
-const DEEPL_API_KEY = process.env.DEEPL_API_KEY || '';
-const DEEPL_API_URL = process.env.DEEPL_API_URL || 'https://api-free.deepl.com/v2/translate';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_API_BASE = String(process.env.GEMINI_API_BASE || '').replace(/\/+$/, '') || (OPENAI_BASE_URL && TRANSLATION_PROVIDER === 'gemini' ? OPENAI_BASE_URL : '');
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const PHOTO_QUANT_MODE = String(process.env.PHOTO_QUANT_MODE || 'clean').toLowerCase();
-const DITHERING_ENABLED = PHOTO_QUANT_MODE === 'fs' ? ['1', 'true', 'yes', 'on'].includes(String(process.env.DITHERING ?? APP_CONFIG.dithering ?? '').toLowerCase()) : false;
-const PORT = Number(process.env.PORT || APP_CONFIG.port) > 0 ? Number(process.env.PORT || APP_CONFIG.port) : options.port;
-const TIMEZONE = String(process.env.TZ || APP_CONFIG.timezone || DEFAULT_TIMEZONE || 'UTC');
-const ENABLE_DEBUG_ROUTES = String(process.env.ENABLE_DEBUG_ROUTES || '').toLowerCase() === 'true';
+const TRANSLATION_PROVIDER = String(APP_CONFIG.translation.provider || DEFAULT_PROVIDER).toLowerCase();
+const OPENAI_API_KEY = APP_CONFIG.translation.openaiApiKey || '';
+const OPENAI_MODEL = APP_CONFIG.translation.openaiModel || 'gpt-4o-mini';
+const OPENAI_BASE_URL = String(APP_CONFIG.translation.openaiBaseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+const DEEPL_API_KEY = APP_CONFIG.translation.deeplApiKey || '';
+const DEEPL_API_URL = APP_CONFIG.translation.deeplApiUrl || 'https://api-free.deepl.com/v2/translate';
+const GEMINI_API_KEY = APP_CONFIG.translation.geminiApiKey || '';
+const GEMINI_API_BASE = String(APP_CONFIG.translation.geminiApiBase || '').replace(/\/+$/, '') || (OPENAI_BASE_URL && TRANSLATION_PROVIDER === 'gemini' ? OPENAI_BASE_URL : '');
+const GEMINI_MODEL = APP_CONFIG.translation.geminiModel || 'gemini-2.5-flash';
+const PHOTO_QUANT_MODE = String(APP_CONFIG.photo.quantMode || 'clean').toLowerCase();
+const DITHERING_ENABLED = PHOTO_QUANT_MODE === 'fs' ? ['1', 'true', 'yes', 'on'].includes(String(APP_CONFIG.photo.dithering ?? '').toLowerCase()) : false;
+const PORT = Number(APP_CONFIG.port) > 0 ? Number(APP_CONFIG.port) : options.port;
+const TIMEZONE = String(APP_CONFIG.timezone || DEFAULT_TIMEZONE || 'UTC');
+const ENABLE_DEBUG_ROUTES = !!(APP_CONFIG.debug && APP_CONFIG.debug.enableDebugRoutes);
 // Admin configuration — single source of truth via load-config (APP_CONFIG.admin).
 // No direct process.env reads for admin settings in production code.
 var adminPolicy = require('./src/admin/admin-network-policy');
@@ -174,7 +192,7 @@ const ADM_PARSED_CIDRS = APP_CONFIG.admin.allowedCidrs;
 const TRUST_PROXY = APP_CONFIG.admin.trustProxy;
 const ADM_TRUSTED_PROXY_CIDRS = APP_CONFIG.admin.trustedProxyCidrs.parsed;
 const ADMIN_ALLOW_HEADERLESS_WRITE = APP_CONFIG.admin.allowHeaderlessWrite;
-const MQTT_ENABLED = String(process.env.MQTT_ENABLED || 'false').toLowerCase() === 'true';
+const MQTT_ENABLED = !!(APP_CONFIG.mqtt && APP_CONFIG.mqtt.enabled);
 
 const DATA_DIR = resolveConfiguredPath(APP_CONFIG.dataDir || 'data');
 const IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.imageRoot || 'images');
@@ -237,13 +255,14 @@ const runtime = {
 async function main() {
   r1Logger.info('Starting NewsPhoto content server via R1 bootstrap');
 
-  // Create MQTT and notification port BEFORE bootstrap — single construction
+  // Create MQTT and notification port BEFORE bootstrap — single construction.
+  // MQTT config comes from APP_CONFIG.mqtt (single source of truth via
+  // load-config); no direct process.env reads here.
   var notificationPort = null;
   var mqttClient = null;
   if (MQTT_ENABLED) {
     try {
-      var MqttConfig = require('./src/mqtt/mqtt-config').loadMqttConfig;
-      var mqttConfig = MqttConfig(process.env);
+      var mqttConfig = APP_CONFIG.mqtt;
       var { createMqttClientPort } = require('./src/mqtt/mqtt-client-port');
       mqttClient = createMqttClientPort(mqttConfig, r1Logger);
       mqttClient.connect().catch(function(e) {
@@ -381,7 +400,7 @@ async function main() {
 
   function gracefulShutdown(signal) {
     r1Logger.info('Received ' + signal + ', shutting down...');
-    var forceExitMs = (boot.config.lifecycle && boot.config.lifecycle.forceExitTimeoutMs) || Number(process.env.PROCESS_FORCE_EXIT_TIMEOUT_MS) || 12000;
+    var forceExitMs = (APP_CONFIG.process && APP_CONFIG.process.forceExitTimeoutMs) || (boot.config.lifecycle && boot.config.lifecycle.forceExitTimeoutMs) || 12000;
     var forceExit = setTimeout(function() {
       r1Logger.error('Force exit after ' + forceExitMs + 'ms');
       process.exitCode = 1;
@@ -410,8 +429,8 @@ async function main() {
 
 function parseArgs(argv, config) {
   const parsed = {
-    port: Number(process.env.PORT || config?.port) || DEFAULT_PORT,
-    panel: Number(process.env.PANEL_INDEX || config?.panelIndex) || DEFAULT_PANEL,
+    port: Number(config && config.port) || DEFAULT_PORT,
+    panel: Number(config && (config.panelIndex != null ? config.panelIndex : (config.panel && config.panel.index))) || DEFAULT_PANEL,
   };
 
   for (let i = 2; i < argv.length; i++) {
@@ -448,16 +467,36 @@ function loadAppConfig() {
   return {
     port: result.server.port,
     panelIndex: result.panel.index,
+    panel: result.panel,
     imageRoot: result.paths.imagesDir,
     dataDir: result.paths.dataDir,
     feedsFile: result.paths.feedsFile,
     newsCacheFile: result.paths.newsCacheFile,
     libraryStateFile: result.paths.libraryStateFile,
     newsRotationFile: result.paths.newsRotationFile,
+    imageIndexFile: result.paths.imageIndexFile,
+    rawImagesDir: result.paths.rawImagesDir,
+    processedImagesDir: result.paths.processedImagesDir,
+    importImagesDir: result.paths.importImagesDir,
+    lastGoodNewsFile: result.paths.lastGoodNewsFile,
+    fallbackStudyDir: result.paths.fallbackStudyDir,
     translationProvider: result.translation.provider,
-    dithering: result.photo.quantMode === 'fs' ? '1' : '0',
+    translation: result.translation,
+    photo: result.photo,
+    // Backwards-compat scalar dithering flag derived from photo.quantMode + photo.dithering.
+    dithering: result.photo.dithering || (result.photo.quantMode === 'fs' ? '1' : '0'),
     timezone: result.server.timezone,
+    debug: result.debug,
+    mqtt: result.mqtt,
+    process: result.process,
+    lifecycle: result.lifecycle,
+    features: result.features,
+    learning: result.learning,
+    safety: result.safety,
+    upload: result.upload,
     admin: result.admin,
+    testInstanceId: result.server.testInstanceId,
+    configFile: result.configFile,
   };
 }
 
@@ -2990,7 +3029,7 @@ async function handleRequest(req, res) {
         NEWS_ROTATION_FILE: NEWS_ROTATION_FILE,
         IMAGE_INDEX_FILE: IMAGE_INDEX_FILE,
         FEEDS_FILE: FEEDS_FILE,
-        CONFIG_FILE: process.env.CONFIG_FILE || path.join(ROOT_DIR, 'config.json'),
+        CONFIG_FILE: APP_CONFIG.configFile || path.join(ROOT_DIR, 'config.json'),
       }, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
       res.end(r);
@@ -3122,7 +3161,7 @@ async function handleRequest(req, res) {
 
     
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/test-instance') {
-      var insId = process.env.TEST_INSTANCE_ID || '';
+      var insId = APP_CONFIG.testInstanceId || '';
       var r = Buffer.from(JSON.stringify({ instanceId: insId, pid: process.pid }));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
       res.end(r);
