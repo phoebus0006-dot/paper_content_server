@@ -53,7 +53,12 @@
     "admin:cors-test": "node test/admin/admin-cross-origin-test.js",
     "admin:ui-test": "node test/admin/admin-ui-no-login-test.js",
     "selftest:deps": "node scripts/dependency-selftest.js",
-    "selftest:container": "node scripts/container-selftest.js"
+    "selftest:container": "node scripts/container-selftest.js",
+    "v5:cjk": "node test/render/cjk-glyph-test.js",
+    "v5:shadow": "node test/render/render-shadow-meaningful-test.js",
+    "v5:classifier": "node test/safety/classifier-readiness-truth-test.js",
+    "v5:concurrency": "node test/admin/override-concurrency-test.js",
+    "hygiene:check": "node scripts/production-hygiene-check.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

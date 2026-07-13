@@ -47,3 +47,8 @@ jobs:
       - run: npm run learning:test
       - run: npm run selection:test
       - run: npm run v3:integration
+      - run: npm run v5:cjk
+      - run: npm run v5:shadow
+      - run: npm run v5:classifier
+      - run: npm run v5:concurrency
+      - run: npm run hygiene:check
