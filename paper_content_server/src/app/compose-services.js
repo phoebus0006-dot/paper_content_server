@@ -41,7 +41,12 @@ function composeServices(deps) {
   var renderShadow = null;
   var customLibraryService = null;
   var learningIngestionService = null;
+  var learningScheduler = null;
   var safetyGate = null;
+  var safetyClassifierPort = null;
+  var assetSelectionService = null;
+  var assetDeleteService = null;
+  var features = (config && config.features) || {};
 
   var PublicationService = require('../publication/publication-service').PublicationService;
   var pubService = PublicationService(
@@ -73,15 +78,32 @@ function composeServices(deps) {
   // Expose assetRepository to server.js for Library API (GET/PATCH/DELETE)
   deps.assetRepository = assetRepository;
 
-  // --- safetyGate: NSFW safety gate for custom uploads ---
+  // --- safetyClassifierPort: real NSFW classifier port (fail-closed when no model) ---
+  try {
+    var { createSafetyClassifierPort } = require('../safety/safety-classifier-port');
+    safetyClassifierPort = createSafetyClassifierPort({
+      logger: logger,
+      modelPath: (config.safety && config.safety.modelPath) || null,
+      threshold: (config.safety && config.safety.threshold) != null ? config.safety.threshold : 0.5,
+    });
+  } catch (e) { logger.warn('safetyClassifierPort init: ' + e.message); }
+
+  // --- safetyGate: NSFW safety gate — delegates to classifier port, fail-closed ---
   try {
     var { createNsfwSafetyGate } = require('../safety/nsfw-safety-gate');
-    safetyGate = createNsfwSafetyGate({ logger: logger });
+    safetyGate = createNsfwSafetyGate({
+      logger: logger,
+      classifierPort: safetyClassifierPort,
+      modelPath: (config.safety && config.safety.modelPath) || null,
+      threshold: (config.safety && config.safety.threshold) != null ? config.safety.threshold : 0.5,
+    });
   } catch (e) { logger.warn('safetyGate init: ' + e.message); }
 
-  // --- customLibraryService: upload + decode + safety + dedup + persist ---
-  try {
-    if (assetRepository && safetyGate) {
+  // --- customLibraryService: secure upload + decode + safety + dedup + persist ---
+  // Gated by config.features.customLibraryEnabled — when false, no service is
+  // created and the upload route returns 503 FEATURE_DISABLED.
+  if (features.customLibraryEnabled && assetRepository && safetyGate) {
+    try {
       var { createCustomLibraryService } = require('../custom-library/custom-library-service');
       var { createFileStore } = require('../custom-library/custom-file-store');
       var { createValidator: createCustomValidator } = require('../custom-library/custom-validator');
@@ -96,53 +118,133 @@ function composeServices(deps) {
       customLibraryService = createCustomLibraryService(
         customFileStore, customValidator, customDeduplicator, safetyGate, assetRepository, logger
       );
-    }
-  } catch (e) { logger.warn('customLibraryService init: ' + e.message); }
+    } catch (e) { logger.warn('customLibraryService init: ' + e.message); }
+  }
 
-  // --- learningIngestionService: fetch + validate + dedup + persist ---
-  try {
-    if (assetRepository) {
+  // --- learningIngestionService + scheduler: Wikimedia adapter + downloader + policy ---
+  // Gated by config.features.learningLibraryEnabled — when false, no service is
+  // created and the ingest route returns 503 FEATURE_DISABLED.
+  if (features.learningLibraryEnabled && assetRepository) {
+    try {
       var { createIngestionService } = require('../learning/learning-ingestion-service');
       var { createPolicy } = require('../learning/learning-policy');
       var { createSourceRegistry } = require('../learning/learning-source-registry');
       var { createValidator: createLearningValidator } = require('../learning/learning-validator');
       var { createDeduplicator: createLearningDeduplicator } = require('../learning/learning-deduplicator');
-      var learningPolicy = createPolicy({});
+      var { createLearningDownloader } = require('../learning/learning-downloader');
+      var { createLearningScheduler } = require('../learning/learning-scheduler');
+      var { createWikimediaSourceAdapter } = require('../learning/wikimedia-source-adapter');
+
       var learningSourceRegistry = createSourceRegistry();
+      learningSourceRegistry.register(createWikimediaSourceAdapter(config.learning || {}));
+
+      var learningPolicy = createPolicy(config.learning || {});
       var learningValidator = createLearningValidator();
       var learningDeduplicator = createLearningDeduplicator();
+
+      var stagingDir = (config.paths && config.paths.stagingDir) || path.join(config.paths.dataDir, 'staging');
+      var learningAssetsDir = path.join(config.paths.dataDir, 'learning_assets');
+      try { fs.mkdirSync(stagingDir, { recursive: true }); } catch (e) {}
+      try { fs.mkdirSync(learningAssetsDir, { recursive: true }); } catch (e) {}
+      var learningDownloader = createLearningDownloader(stagingDir, logger);
+
       learningIngestionService = createIngestionService(
         learningSourceRegistry, learningValidator, learningDeduplicator,
-        learningPolicy, assetRepository, logger
+        learningPolicy, assetRepository, logger,
+        { downloader: learningDownloader, safetyGate: safetyGate, stagingDir: stagingDir, assetsDir: learningAssetsDir }
       );
-    }
-  } catch (e) { logger.warn('learningIngestionService init: ' + e.message); }
 
-  // --- renderShadow: shadow dual-run for R9 rendering comparison ---
-  try {
-    var { createRenderShadow } = require('../render/render-shadow');
-    var { createAnalysisCardRenderer } = require('../render/analysis-card-renderer');
-    var { createComparisonPairRenderer } = require('../render/comparison-pair-renderer');
-    var { createSequence2x2Renderer } = require('../render/sequence-2x2-renderer');
-    var analysisRenderer = createAnalysisCardRenderer();
-    var comparisonRenderer = createComparisonPairRenderer();
-    var sequenceRenderer = createSequence2x2Renderer();
-    renderShadow = createRenderShadow(
-      function(content, profileId) {
-        // 按优先级顺序尝试渲染器
+      learningScheduler = createLearningScheduler(learningIngestionService, {
+        enabled: true,
+        intervalMs: (config.learning && config.learning.intervalMs) || 3600000,
+      }, logger);
+      learningScheduler.start();
+    } catch (e) { logger.warn('learningIngestionService init: ' + e.message); }
+  }
+
+  // --- renderShadow: real EPF1 rasterizers for analysis/comparison/sequence ---
+  // Gated by config.features.renderShadowEnabled — when false, no shadow is
+  // created and the render route uses the legacy renderer only.
+  if (features.renderShadowEnabled) {
+    try {
+      var { createRenderShadow } = require('../render/render-shadow');
+      var { createAnalysisCardRenderer } = require('../render/analysis-card-renderer');
+      var { createComparisonPairRenderer } = require('../render/comparison-pair-renderer');
+      var { createSequence2x2Renderer } = require('../render/sequence-2x2-renderer');
+      var analysisRenderer = createAnalysisCardRenderer();
+      var comparisonRenderer = createComparisonPairRenderer();
+      var sequenceRenderer = createSequence2x2Renderer();
+      function renderWithLayouts(content, profileId) {
         if (analysisRenderer.canRender(content)) return analysisRenderer.render(content, profileId);
         if (comparisonRenderer.canRender(content)) return comparisonRenderer.render(content, profileId);
         if (sequenceRenderer.canRender(content)) return sequenceRenderer.render(content, profileId);
         return Promise.resolve(null);
-      },
-      function(content, profileId) {
-        // 预览渲染
-        if (analysisRenderer.canRender(content)) return analysisRenderer.render(content, profileId);
-        return Promise.resolve(null);
-      },
-      logger
-    );
-  } catch (e) { logger.warn('renderShadow init: ' + e.message); }
+      }
+      renderShadow = createRenderShadow(renderWithLayouts, renderWithLayouts, logger, { disable: false });
+    } catch (e) { logger.warn('renderShadow init: ' + e.message); }
+  }
+
+  // --- assetSelectionService: validates assets for ONE_SHOT / FOCUS_LOCK ---
+  // No feature flag — this is a read-only validation service with no side effects.
+  if (assetRepository) {
+    try {
+      var { createAssetSelectionService } = require('../admin/asset-selection-service');
+      assetSelectionService = createAssetSelectionService(assetRepository, snapshotStore, logger);
+    } catch (e) { logger.warn('assetSelectionService init: ' + e.message); }
+  }
+
+  // --- assetDeleteService: full delete chain (reference check → tombstone → cleanup → audit) ---
+  // Gated by config.features.deletePipelineEnabled — when false, the DELETE route
+  // falls back to the legacy markTombstoned-only path.
+  if (features.deletePipelineEnabled && assetRepository) {
+    try {
+      var { createAssetDeleteService } = require('../assets/asset-delete-service');
+      var { AssetReferenceIndex } = require('../assets/asset-reference-index');
+      var { TombstoneStore } = require('../safety/tombstone-store');
+      var { SafetyAuditLog } = require('../safety/safety-audit-log');
+      var { ReferenceCleaner } = require('../safety/reference-cleaner');
+
+      // referenceIndex adapter: AssetReferenceIndex.findReferences → getReferences(assetId) → refs[]
+      var refIndex = AssetReferenceIndex(config.paths.dataDir, snapshotStore, publicationHistory, null);
+      var referenceIndexAdapter = {
+        getReferences: function (assetId) {
+          return refIndex.findReferences(assetId).then(function (result) {
+            return (result && result.references) || [];
+          });
+        },
+      };
+
+      // tombstoneStore adapter: TombstoneStore.write(record) → record(assetId, data)
+      var tombstoneDir = path.join(config.paths.dataDir, 'tombstones');
+      try { fs.mkdirSync(tombstoneDir, { recursive: true }); } catch (e) {}
+      var tombstoneStoreRaw = TombstoneStore(tombstoneDir, logger);
+      var tombstoneStoreAdapter = {
+        record: function (assetId, data) {
+          return tombstoneStoreRaw.write(Object.assign({ assetId: assetId }, data || {}));
+        },
+      };
+
+      // safetyAuditLog adapter: SafetyAuditLog.append(entry) → record(entry)
+      var auditLogFile = path.join(config.paths.dataDir, 'safety-audit.log');
+      var auditLogRaw = SafetyAuditLog(auditLogFile, logger);
+      var safetyAuditLogAdapter = { record: function (entry) { return auditLogRaw.append(entry); } };
+
+      // referenceCleaner adapter: cleanCache + cleanLegacyIndexes → cleanForAsset(assetId)
+      var referenceCleanerRaw = ReferenceCleaner(snapshotStore, snapshotCache, publicationHistory, config.paths.dataDir, logger);
+      var referenceCleanerAdapter = {
+        cleanForAsset: function (assetId) {
+          try { referenceCleanerRaw.cleanCache(assetId); } catch (e) {}
+          try { referenceCleanerRaw.cleanLegacyIndexes(assetId, null); } catch (e) {}
+          return Promise.resolve();
+        },
+      };
+
+      assetDeleteService = createAssetDeleteService(
+        assetRepository, referenceIndexAdapter, tombstoneStoreAdapter,
+        safetyAuditLogAdapter, referenceCleanerAdapter, logger
+      );
+    } catch (e) { logger.warn('assetDeleteService init: ' + e.message); }
+  }
 
   // --- adminQueryService + featureFlagView (references services above) ---
   var featureFlagView = null;
@@ -152,6 +254,7 @@ function composeServices(deps) {
     featureFlagView = {
       getFeatureFlags: function() {
         return getFeatureFlags({
+          config: config,
           mqttClient: mqttClient,
           newsPipeline: newsPipeline,
           customLibraryService: customLibraryService,
@@ -180,9 +283,13 @@ function composeServices(deps) {
     featureFlagView: featureFlagView || null,
     assetRepository: assetRepository,
     renderShadow: renderShadow,
-    customLibraryService: customLibraryService,
     safetyGate: safetyGate,
+    safetyClassifierPort: safetyClassifierPort,
+    customLibraryService: customLibraryService,
     learningIngestionService: learningIngestionService,
+    learningScheduler: learningScheduler,
+    assetSelectionService: assetSelectionService,
+    assetDeleteService: assetDeleteService,
   };
 }
 
