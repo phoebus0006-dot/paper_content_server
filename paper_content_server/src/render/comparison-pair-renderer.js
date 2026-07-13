@@ -3,6 +3,8 @@
 var epf1 = require('../epaper/epf1');
 var palette = require('../epaper/palette');
 var frameValidator = require('../epaper/frame-validator');
+var textRasterizer = require('./text-rasterizer');
+var imageRasterizer = require('./image-rasterizer');
 
 var CANVAS_WIDTH = epf1.EPF1_CONSTANTS.WIDTH;
 var CANVAS_HEIGHT = epf1.EPF1_CONSTANTS.HEIGHT;
@@ -13,6 +15,7 @@ function renderComparisonPair(content, options) {
   options = options || {};
   var width = options.width || 800;
   var height = options.height || 480;
+  var clock = options.clock;
 
   var left = content.items[0];
   var right = content.items[1];
@@ -32,9 +35,10 @@ function renderComparisonPair(content, options) {
       imageUrl: right.imageUrl || null,
     },
     dividerX: width / 2,
+    publishedAt: content.publishedAt || (clock != null ? String(clock) : ''),
     layout: {
-      leftTitleY: 40,
-      rightTitleY: 40,
+      leftTitleY: 20,
+      rightTitleY: 20,
       leftSummaryY: 100,
       rightSummaryY: 100,
       dividerX: width / 2,
@@ -85,38 +89,76 @@ function drawVLine(codes, x, y0, y1, code, thickness) {
   }
 }
 
-// 把对比布局光栅化为 384000 个调色板码。
+// 把对比布局光栅化为 384000 个调色板码(含真实文字像素)。
 function rasterizeComparisonPair(pair) {
   if (!pair) return null;
-  // 白色背景
   var codes = newCanvas(1);
   var half = Math.floor(CANVAS_WIDTH / 2); // 400
 
-  // 左半部分(0-399):标题区+摘要区,红色边框 (code 3)
-  // 左侧内容区域边框(矩形)
-  drawHLine(codes, 8, half - 8, 8, 3, 2);          // 顶边
-  drawHLine(codes, 8, half - 8, CANVAS_HEIGHT - 8, 3, 2); // 底边
-  drawVLine(codes, 8, 8, CANVAS_HEIGHT - 8, 3, 2); // 左边
-  drawVLine(codes, half - 8, 8, CANVAS_HEIGHT - 8, 3, 2); // 右边(靠近分隔线)
-  // 左标题区背景(上部 10-80):浅色区分(红色填充作为标题条带)
+  // 左半部分边框 (code 3) + 标题条带
+  drawHLine(codes, 8, half - 8, 8, 3, 2);
+  drawHLine(codes, 8, half - 8, CANVAS_HEIGHT - 8, 3, 2);
+  drawVLine(codes, 8, 8, CANVAS_HEIGHT - 8, 3, 2);
+  drawVLine(codes, half - 8, 8, CANVAS_HEIGHT - 8, 3, 2);
   fillRect(codes, 10, 10, half - 10, 80, 3);
-  // 左摘要区分隔线
   drawHLine(codes, 10, half - 10, 90, 0, 1);
 
-  // 右半部分(400-799):标题区+摘要区,绿色边框 (code 6)
+  // 右半部分边框 (code 6) + 标题条带
   drawHLine(codes, half + 8, CANVAS_WIDTH - 8, 8, 6, 2);
   drawHLine(codes, half + 8, CANVAS_WIDTH - 8, CANVAS_HEIGHT - 8, 6, 2);
   drawVLine(codes, half + 8, 8, CANVAS_HEIGHT - 8, 6, 2);
   drawVLine(codes, CANVAS_WIDTH - 8, 8, CANVAS_HEIGHT - 8, 6, 2);
-  // 右标题区背景(上部):绿色填充作为标题条带
   fillRect(codes, half + 10, 10, CANVAS_WIDTH - 10, 80, 6);
-  // 右摘要区分隔线
   drawHLine(codes, half + 10, CANVAS_WIDTH - 10, 90, 0, 1);
 
-  // 中间分隔线 x=400,全高,黑色 (code 0),3px 厚
+  // 中间分隔线 x=400,全高,黑色,3px 厚
   drawVLine(codes, half - 1, 0, CANVAS_HEIGHT, 0, 3);
 
+  // === 文字内容 ===
+  // 左标题(红色背景上白色文字)
+  textRasterizer.renderText(pair.left.title || '', 20, 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
+    scale: 2, maxWidth: half - 40, maxLines: 2,
+  });
+  // 左摘要(白色背景上黑色文字)
+  textRasterizer.renderText(pair.left.summary || '', 20, 100, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
+    scale: 1, maxWidth: half - 40, maxLines: 6,
+  });
+
+  // 右标题(绿色背景上白色文字)
+  textRasterizer.renderText(pair.right.title || '', half + 20, 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
+    scale: 2, maxWidth: half - 40, maxLines: 2,
+  });
+  // 右摘要(白色背景上黑色文字)
+  textRasterizer.renderText(pair.right.summary || '', half + 20, 100, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
+    scale: 1, maxWidth: half - 40, maxLines: 6,
+  });
+
   return codes;
+}
+
+// 异步光栅化两侧图片(若有 imageUrl)。
+function rasterizeImages(pair, codes) {
+  var tasks = [];
+  var half = Math.floor(CANVAS_WIDTH / 2);
+  // 图片区域:摘要下方(y=300 到 y=470,高 170;宽 360;居中)
+  var imgW = 360;
+  var imgH = 160;
+  var imgY = 300;
+
+  if (pair && pair.left && pair.left.imageUrl) {
+    tasks.push(imageRasterizer.rasterizeImage(
+      pair.left.imageUrl, 20 + Math.floor((half - 40 - imgW) / 2), imgY, imgW, imgH,
+      codes, CANVAS_WIDTH, CANVAS_HEIGHT, { mode: 'contain' }
+    ));
+  }
+  if (pair && pair.right && pair.right.imageUrl) {
+    tasks.push(imageRasterizer.rasterizeImage(
+      pair.right.imageUrl, half + 20 + Math.floor((half - 40 - imgW) / 2), imgY, imgW, imgH,
+      codes, CANVAS_WIDTH, CANVAS_HEIGHT, { mode: 'contain' }
+    ));
+  }
+  if (tasks.length === 0) return Promise.resolve(null);
+  return Promise.all(tasks).then(function() { return null; });
 }
 
 function encodeAndValidate(codes) {
@@ -131,21 +173,30 @@ function encodeAndValidate(codes) {
 
 function createComparisonPairRenderer() {
   return {
-    render: function(content, profileId) {
-      var pair = renderComparisonPair(content);
+    render: function(content, profileId, clock) {
+      var pair = renderComparisonPair(content, { clock: clock });
       if (!pair) return Promise.resolve(null);
+      var codes;
       try {
-        var codes = rasterizeComparisonPair(pair);
-        var frame = encodeAndValidate(codes);
-        return Promise.resolve({
-          frame: frame,
-          frameId: 'comparison_pair:' + Date.now().toString(36),
-          profileId: profileId || 'default',
-          layout: pair,
-        });
+        codes = rasterizeComparisonPair(pair);
       } catch (e) {
         return Promise.reject(e);
       }
+      return rasterizeImages(pair, codes).then(function() {
+        var frame;
+        try {
+          frame = encodeAndValidate(codes);
+        } catch (e) {
+          throw e;
+        }
+        var clockValue = (clock !== undefined && clock !== null) ? clock : '0';
+        return {
+          frame: frame,
+          frameId: 'comparison_pair:' + clockValue,
+          profileId: profileId || 'default',
+          layout: pair,
+        };
+      });
     },
     canRender: function(content) {
       return !!(content && Array.isArray(content.items) && content.items.length >= 2);

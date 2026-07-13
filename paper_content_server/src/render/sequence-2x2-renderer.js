@@ -3,6 +3,8 @@
 var epf1 = require('../epaper/epf1');
 var palette = require('../epaper/palette');
 var frameValidator = require('../epaper/frame-validator');
+var textRasterizer = require('./text-rasterizer');
+var imageRasterizer = require('./image-rasterizer');
 
 var CANVAS_WIDTH = epf1.EPF1_CONSTANTS.WIDTH;
 var CANVAS_HEIGHT = epf1.EPF1_CONSTANTS.HEIGHT;
@@ -13,6 +15,7 @@ function renderSequence2x2(content, options) {
   options = options || {};
   var width = options.width || 800;
   var height = options.height || 480;
+  var clock = options.clock;
 
   var cells = content.items.slice(0, 4).map(function(item, i) {
     var row = Math.floor(i / 2);
@@ -36,6 +39,7 @@ function renderSequence2x2(content, options) {
     width: width,
     height: height,
     cells: cells,
+    publishedAt: content.publishedAt || (clock != null ? String(clock) : ''),
     layout: {
       gridRows: 2,
       gridCols: 2,
@@ -88,29 +92,68 @@ function drawVLine(codes, x, y0, y1, code, thickness) {
   }
 }
 
-// 把 2x2 网格布局光栅化为 384000 个调色板码。
+// 把 2x2 网格布局光栅化为 384000 个调色板码(含真实文字像素)。
 function rasterizeSequence2x2(grid) {
   if (!grid) return null;
-  // 白色背景
   var codes = newCanvas(1);
   var half = Math.floor(CANVAS_WIDTH / 2);   // 400
   var midY = Math.floor(CANVAS_HEIGHT / 2);  // 240
 
-  // 左上(0-399, 0-239):红色背景 (code 3)
+  // 左上:红色背景 (code 3)
   fillRect(codes, 0, 0, half, midY, 3);
-  // 右上(400-799, 0-239):黄色背景 (code 2)
+  // 右上:黄色背景 (code 2)
   fillRect(codes, half, 0, CANVAS_WIDTH, midY, 2);
-  // 左下(0-399, 240-479):蓝色背景 (code 5)
+  // 左下:蓝色背景 (code 5)
   fillRect(codes, 0, midY, half, CANVAS_HEIGHT, 5);
-  // 右下(400-799, 240-479):绿色背景 (code 6)
+  // 右下:绿色背景 (code 6)
   fillRect(codes, half, midY, CANVAS_WIDTH, CANVAS_HEIGHT, 6);
 
-  // 网格线:x=400 全高黑色,3px 厚
+  // 网格线
   drawVLine(codes, half - 1, 0, CANVAS_HEIGHT, 0, 3);
-  // 网格线:y=240 全宽黑色,3px 厚
   drawHLine(codes, 0, CANVAS_WIDTH, midY - 1, 0, 3);
 
+  // === 文字内容 ===
+  var cells = grid.cells || [];
+  for (var i = 0; i < cells.length; i++) {
+    var c = cells[i];
+    var titleColor = 1; // 白色文字在彩色背景上对比好
+    var summaryColor = 0; // 黑色文字
+    var padX = 6;
+    var padY = 6;
+
+    textRasterizer.renderText(c.title || '', c.cellX + padX, c.cellY + padY, codes, CANVAS_WIDTH, CANVAS_HEIGHT, titleColor, {
+      scale: 1, maxWidth: c.cellWidth - 2 * padX, maxLines: 2,
+    });
+    textRasterizer.renderText(c.summary || '', c.cellX + padX, c.cellY + padY + 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, summaryColor, {
+      scale: 1, maxWidth: c.cellWidth - 2 * padX, maxLines: 3,
+    });
+  }
+
   return codes;
+}
+
+// 异步光栅化每个 cell 的图片(若有)。
+function rasterizeImages(grid, codes) {
+  var cells = (grid && grid.cells) || [];
+  var tasks = [];
+  var imgSize = 60; // 60x60 小图
+
+  for (var i = 0; i < cells.length; i++) {
+    var c = cells[i];
+    if (c.imageUrl) {
+      var imgX = c.cellX + c.cellWidth - imgSize - 8;
+      var imgY = c.cellY + c.cellHeight - imgSize - 8;
+      // IIFE to capture loop variable correctly.
+      (function(ix, iy) {
+        tasks.push(imageRasterizer.rasterizeImage(
+          c.imageUrl, ix, iy, imgSize, imgSize,
+          codes, CANVAS_WIDTH, CANVAS_HEIGHT, { mode: 'crop' }
+        ));
+      })(imgX, imgY);
+    }
+  }
+  if (tasks.length === 0) return Promise.resolve(null);
+  return Promise.all(tasks).then(function() { return null; });
 }
 
 function encodeAndValidate(codes) {
@@ -125,21 +168,30 @@ function encodeAndValidate(codes) {
 
 function createSequence2x2Renderer() {
   return {
-    render: function(content, profileId) {
-      var grid = renderSequence2x2(content);
+    render: function(content, profileId, clock) {
+      var grid = renderSequence2x2(content, { clock: clock });
       if (!grid) return Promise.resolve(null);
+      var codes;
       try {
-        var codes = rasterizeSequence2x2(grid);
-        var frame = encodeAndValidate(codes);
-        return Promise.resolve({
-          frame: frame,
-          frameId: 'sequence_2x2:' + Date.now().toString(36),
-          profileId: profileId || 'default',
-          layout: grid,
-        });
+        codes = rasterizeSequence2x2(grid);
       } catch (e) {
         return Promise.reject(e);
       }
+      return rasterizeImages(grid, codes).then(function() {
+        var frame;
+        try {
+          frame = encodeAndValidate(codes);
+        } catch (e) {
+          throw e;
+        }
+        var clockValue = (clock !== undefined && clock !== null) ? clock : '0';
+        return {
+          frame: frame,
+          frameId: 'sequence_2x2:' + clockValue,
+          profileId: profileId || 'default',
+          layout: grid,
+        };
+      });
     },
     canRender: function(content) {
       return !!(content && Array.isArray(content.items) && content.items.length >= 4);
