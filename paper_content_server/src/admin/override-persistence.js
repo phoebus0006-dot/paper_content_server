@@ -25,32 +25,42 @@ function createOverridePersistence(stateFile, logger) {
 
   function saveOverride(state) {
     // state: { mode, assetId, snapshotId, libraryType, theme?, albumId?, savedAt }
-    // Atomic write: write to tmp file in same directory, fsync, then rename.
-    // rename() is atomic on POSIX; on Windows it is atomic when the target
-    // does not exist or is replaced via MoveFileEx (Node uses this).
+    // Collision-safe atomic write:
+    //   1. Unique tmp filename (pid + ts + random) — concurrent saveOverride()
+    //      calls (e.g. multi-process) never share a tmp path.
+    //   2. openSync('wx') = O_CREAT|O_EXCL — fails if the tmp path already
+    //      exists, guaranteeing we own it.
+    //   3. fsync the file before rename so bytes are durable.
+    //   4. rename tmp → state (atomic on POSIX; on Windows atomic when target
+    //      is replaced via MoveFileEx, which Node uses).
+    //   5. Best-effort fsync of the parent directory so the rename entry
+    //      itself is durable. Some platforms do not support directory fsync —
+    //      silently ignore.
+    //   6. On any failure, unlink our tmp file so we never leak tmp litter.
     var envelope = Object.assign({}, state, { schemaVersion: SCHEMA_VERSION });
     var data = JSON.stringify(envelope, null, 2);
-    var tmpPath = stateFile + '.tmp';
+    var tmpPath = stateFile + '.tmp.' + process.pid + '.' + Date.now() + '.' +
+      Math.random().toString(36).slice(2, 8);
     var fd = -1;
     try {
-      fs.writeFileSync(tmpPath, data);
-      // Re-open for fsync to force the bytes to disk before rename.
-      fd = fs.openSync(tmpPath, 'r+');
+      fd = fs.openSync(tmpPath, 'wx'); // exclusive create
+      fs.writeFileSync(fd, data);
       fs.fsyncSync(fd);
       fs.closeSync(fd);
       fd = -1;
       fs.renameSync(tmpPath, stateFile);
+      try {
+        var dirFd = fs.openSync(path.dirname(stateFile), 'r');
+        fs.fsyncSync(dirFd);
+        fs.closeSync(dirFd);
+      } catch (_) {} // directory fsync unsupported on some systems — ignore
     } catch (e) {
       if (fd !== -1) {
         try { fs.closeSync(fd); } catch (closeErr) {
           logger.warn && logger.warn('Failed to close tmp fd after error: ' + closeErr.message);
         }
       }
-      try {
-        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-      } catch (unlinkErr) {
-        logger.warn && logger.warn('Failed to cleanup tmp file after error: ' + unlinkErr.message);
-      }
+      try { fs.unlinkSync(tmpPath); } catch (_) {}
       throw e;
     }
     logger.info && logger.info('Override saved: ' + state.mode + ' asset=' + state.assetId);
