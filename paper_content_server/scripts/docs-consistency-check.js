@@ -161,10 +161,12 @@ if (impl) {
     }
   }
 
-  // 6f. Verify SHA consistency across 3 truth baseline docs
+  // 6f. Verify SHA consistency across 4 truth baseline docs
+  //     (CURRENT_IMPLEMENTATION_MAP, GLOBAL_REFACTOR_BASELINE, GLOBAL_ARCHITECTURE_AUDIT, CURRENT_STATE_BASELINE)
   var gbl = readFile('GLOBAL_REFACTOR_BASELINE.md');
   var gaa = readFile('GLOBAL_ARCHITECTURE_AUDIT.md');
-  if (gbl && gaa) {
+  var csb = readFile('CURRENT_STATE_BASELINE.md');
+  if (gbl && gaa && csb) {
     function extractTruthSha(text) {
       var m = text.match(/AUDITED_CODE_SHA=([a-f0-9]{40})/);
       if (m) return m[1];
@@ -174,8 +176,13 @@ if (impl) {
     var mapShaVal = extractTruthSha(impl);
     var blShaVal = extractTruthSha(gbl);
     var aaShaVal = extractTruthSha(gaa);
-    var allSame = mapShaVal && blShaVal && aaShaVal && mapShaVal === blShaVal && blShaVal === aaShaVal;
-    check(allSame, 'Truth baseline SHA consistent across 3 docs: MAP=' + (mapShaVal||'MISS').substr(0,12) + ' BL=' + (blShaVal||'MISS').substr(0,12) + ' AA=' + (aaShaVal||'MISS').substr(0,12));
+    var csbShaVal = extractTruthSha(csb);
+    var allSame = mapShaVal && blShaVal && aaShaVal && csbShaVal &&
+      mapShaVal === blShaVal && blShaVal === aaShaVal && aaShaVal === csbShaVal;
+    check(allSame, 'Truth baseline SHA consistent across 4 docs: MAP=' + (mapShaVal||'MISS').substr(0,12) +
+      ' BL=' + (blShaVal||'MISS').substr(0,12) +
+      ' AA=' + (aaShaVal||'MISS').substr(0,12) +
+      ' CSB=' + (csbShaVal||'MISS').substr(0,12));
   }
 
   // 6g. Original map content checks (SHA-independent)
@@ -328,6 +335,187 @@ check(nasHasPort, 'NAS docker-compose port 18080:8787 present');
 if (runbook) {
   check(runbook.indexOf('18080') >= 0, 'DEPLOYMENT_RUNBOOK documents NAS port 18080');
 }
+
+// 12. Truth-doc state non-conflict & production-switch / classifier gates
+//     Four Truth Docs: CURRENT_STATE_BASELINE, CURRENT_IMPLEMENTATION_MAP,
+//     GLOBAL_ARCHITECTURE_AUDIT, GLOBAL_REFACTOR_BASELINE.
+//     (a) Status labels must not conflict across docs.
+//     (b) Production switch NOT_IMPLEMENTED ⇒ no "Advanced Render production ready" claim anywhere.
+//     (c) REAL_CLASSIFIER=BLOCKED ⇒ no "Custom/Learning production ready" claim anywhere.
+//     (d) DELETE path descriptions must reference AssetDeleteService.
+//     (e) No premature "ALL FEATURES COMPLETE" / "PRODUCTION READY" declarations.
+(function() {
+  var TRUTH_DOCS = {
+    'CURRENT_STATE_BASELINE.md': readFile('CURRENT_STATE_BASELINE.md') || '',
+    'CURRENT_IMPLEMENTATION_MAP.md': readFile('CURRENT_IMPLEMENTATION_MAP.md') || '',
+    'GLOBAL_ARCHITECTURE_AUDIT.md': readFile('GLOBAL_ARCHITECTURE_AUDIT.md') || '',
+    'GLOBAL_REFACTOR_BASELINE.md': readFile('GLOBAL_REFACTOR_BASELINE.md') || ''
+  };
+  var TRUTH_NAMES = Object.keys(TRUTH_DOCS);
+
+  function extractStatus(text, key) {
+    // Match `KEY=VALUE` at start of a line; VALUE = uppercase letters / underscores.
+    var re = new RegExp('^' + key + '=([A-Z_]+)\\s*$', 'm');
+    var m = text.match(re);
+    return m ? m[1] : null;
+  }
+
+  function uniqueValues(map) {
+    var seen = {};
+    Object.keys(map).forEach(function(k) {
+      if (!seen[map[k]]) seen[map[k]] = [];
+      seen[map[k]].push(k);
+    });
+    return Object.keys(seen).map(function(v) { return v + ' @ ' + seen[v].join('+'); });
+  }
+
+  // 12a. REAL_CJK_GLYPH_RENDER must be consistent across all truth docs that declare it
+  var cjkVals = {};
+  TRUTH_NAMES.forEach(function(n) {
+    var v = extractStatus(TRUTH_DOCS[n], 'REAL_CJK_GLYPH_RENDER');
+    if (v) cjkVals[n] = v;
+  });
+  var cjkUniq = uniqueValues(cjkVals);
+  check(cjkUniq.length <= 1, 'Truth docs REAL_CJK_GLYPH_RENDER non-conflict' +
+    (cjkUniq.length <= 1 ? '' : ' (CONFLICT: ' + cjkUniq.join(' | ') + ')'));
+
+  // 12b. REAL_CLASSIFIER must be consistent across all truth docs
+  var clfVals = {};
+  TRUTH_NAMES.forEach(function(n) {
+    var v = extractStatus(TRUTH_DOCS[n], 'REAL_CLASSIFIER');
+    if (v) clfVals[n] = v;
+  });
+  var clfUniq = uniqueValues(clfVals);
+  check(clfUniq.length <= 1, 'Truth docs REAL_CLASSIFIER non-conflict' +
+    (clfUniq.length <= 1 ? '' : ' (CONFLICT: ' + clfUniq.join(' | ') + ')'));
+
+  // 12c. ORCHESTRATOR_PRODUCTION_SWITCH must be consistent
+  var psVals = {};
+  TRUTH_NAMES.forEach(function(n) {
+    var v = extractStatus(TRUTH_DOCS[n], 'ORCHESTRATOR_PRODUCTION_SWITCH');
+    if (v) psVals[n] = v;
+  });
+  var psUniq = uniqueValues(psVals);
+  check(psUniq.length <= 1, 'Truth docs ORCHESTRATOR_PRODUCTION_SWITCH non-conflict' +
+    (psUniq.length <= 1 ? '' : ' (CONFLICT: ' + psUniq.join(' | ') + ')'));
+
+  // 12d. ORCHESTRATOR_SHADOW must be consistent
+  var shVals = {};
+  TRUTH_NAMES.forEach(function(n) {
+    var v = extractStatus(TRUTH_DOCS[n], 'ORCHESTRATOR_SHADOW');
+    if (v) shVals[n] = v;
+  });
+  var shUniq = uniqueValues(shVals);
+  check(shUniq.length <= 1, 'Truth docs ORCHESTRATOR_SHADOW non-conflict' +
+    (shUniq.length <= 1 ? '' : ' (CONFLICT: ' + shUniq.join(' | ') + ')'));
+
+  // 12e. CJK must not be simultaneously IMPLEMENTED and NOT_IMPLEMENTED across docs
+  //     (explicit pair-wise conflict — catches partial migrations / typos)
+  var cjkAnyImpl = TRUTH_NAMES.some(function(n) {
+    var v = extractStatus(TRUTH_DOCS[n], 'REAL_CJK_GLYPH_RENDER');
+    return v === 'IMPLEMENTED';
+  });
+  var cjkAnyNotImpl = TRUTH_NAMES.some(function(n) {
+    var v = extractStatus(TRUTH_DOCS[n], 'REAL_CJK_GLYPH_RENDER');
+    return v === 'NOT_IMPLEMENTED';
+  });
+  check(!(cjkAnyImpl && cjkAnyNotImpl),
+    'Truth docs: REAL_CJK_GLYPH_RENDER must not be both IMPLEMENTED and NOT_IMPLEMENTED');
+
+  // 12f. production switch NOT_IMPLEMENTED gate: no doc may claim Advanced Render / orchestrator
+  //      is production-ready (positive claim). Negated contexts ("NOT production-ready") are allowed.
+  var prodSwitchNotImpl = TRUTH_NAMES.some(function(n) {
+    return extractStatus(TRUTH_DOCS[n], 'ORCHESTRATOR_PRODUCTION_SWITCH') === 'NOT_IMPLEMENTED';
+  });
+  if (prodSwitchNotImpl) {
+    var prodReadyPatterns = [
+      /Advanced\s+Render\s+is\s+production\s+ready/i,
+      /Orchestrator\s+is\s+(?:the\s+)?default\s+production\s+path/i,
+      /Render\s+orchestrator\s+is\s+production\s+ready/i,
+      /Advanced\s+Render\s+production\s+ready:\s*yes/i
+    ];
+    var prodViolations = [];
+    var allMdFiles = fs.readdirSync(DOCS).filter(function(f) { return /\.md$/.test(f); });
+    allMdFiles.forEach(function(fname) {
+      var t = readFile(fname);
+      if (!t) return;
+      prodReadyPatterns.forEach(function(pat) {
+        if (pat.test(t)) prodViolations.push(fname + ' /' + pat.source + '/');
+      });
+    });
+    check(prodViolations.length === 0,
+      'ORCHESTRATOR_PRODUCTION_SWITCH=NOT_IMPLEMENTED gate: no positive "Advanced Render production ready" claim' +
+      (prodViolations.length === 0 ? '' : ' (VIOLATIONS: ' + prodViolations.join(', ') + ')'));
+  }
+
+  // 12g. REAL_CLASSIFIER=BLOCKED gate: no doc may claim Custom / Learning libraries are production-ready
+  //      (positive claim). Negated contexts are allowed.
+  var classifierBlocked = TRUTH_NAMES.some(function(n) {
+    return extractStatus(TRUTH_DOCS[n], 'REAL_CLASSIFIER') === 'BLOCKED';
+  });
+  if (classifierBlocked) {
+    var libReadyPatterns = [
+      /Custom\s+Library\s+is\s+production\s+ready/i,
+      /Learning\s+Library\s+is\s+production\s+ready/i,
+      /Custom\s+upload\s+is\s+production\s+ready/i,
+      /Learning\s+ingestion\s+is\s+production\s+ready/i,
+      /Custom\s+Library\s+production\s+ready:\s*yes/i,
+      /Learning\s+Library\s+production\s+ready:\s*yes/i
+    ];
+    var libViolations = [];
+    var allMdFiles2 = fs.readdirSync(DOCS).filter(function(f) { return /\.md$/.test(f); });
+    allMdFiles2.forEach(function(fname) {
+      var t = readFile(fname);
+      if (!t) return;
+      libReadyPatterns.forEach(function(pat) {
+        if (pat.test(t)) libViolations.push(fname + ' /' + pat.source + '/');
+      });
+    });
+    check(libViolations.length === 0,
+      'REAL_CLASSIFIER=BLOCKED gate: no positive "Custom/Learning production ready" claim' +
+      (libViolations.length === 0 ? '' : ' (VIOLATIONS: ' + libViolations.join(', ') + ')'));
+  }
+
+  // 12h. DELETE chain descriptions must reference AssetDeleteService.
+  //      Only enforced on docs that describe the DELETE chain (contain "markTombstoned").
+  var deleteChainDocs = [
+    'CURRENT_STATE_BASELINE.md', 'CURRENT_IMPLEMENTATION_MAP.md',
+    'GLOBAL_ARCHITECTURE_AUDIT.md', 'GLOBAL_REFACTOR_BASELINE.md',
+    'API_CONTRACT.md', 'CONTENT_SAFETY.md'
+  ];
+  var deleteViolations = [];
+  deleteChainDocs.forEach(function(fname) {
+    var t = readFile(fname);
+    if (!t) return;
+    if (/markTombstoned/.test(t) && !/AssetDeleteService/.test(t)) {
+      deleteViolations.push(fname);
+    }
+  });
+  check(deleteViolations.length === 0,
+    'DELETE chain docs must reference AssetDeleteService' +
+    (deleteViolations.length === 0 ? '' : ' (VIOLATIONS: ' + deleteViolations.join(', ') + ')'));
+
+  // 12i. No premature "ALL FEATURES COMPLETE" / "PRODUCTION READY" declarations
+  //      (case-insensitive; allows "production-ready" with hyphen, e.g. negated "NOT production-ready").
+  var prematurePatterns = [
+    /\bALL\s+FEATURES\s+COMPLETE\b/i,
+    /\bPRODUCTION\s+READY\b/i,
+    /\b全部功能完成\b/,
+    /\b生产就绪\b/
+  ];
+  var prematureViolations = [];
+  var allMdFiles3 = fs.readdirSync(DOCS).filter(function(f) { return /\.md$/.test(f); });
+  allMdFiles3.forEach(function(fname) {
+    var t = readFile(fname);
+    if (!t) return;
+    prematurePatterns.forEach(function(pat) {
+      if (pat.test(t)) prematureViolations.push(fname + ' /' + pat.source + '/');
+    });
+  });
+  check(prematureViolations.length === 0,
+    'No premature "ALL FEATURES COMPLETE" / "PRODUCTION READY" declarations' +
+    (prematureViolations.length === 0 ? '' : ' (VIOLATIONS: ' + prematureViolations.join(', ') + ')'));
+})();
 
 console.log('\n=== exitCode=' + exitCode + ' ===');
 if (!process.env.DOCS_CHECK_SELF_TEST) { process.exit(exitCode); }
