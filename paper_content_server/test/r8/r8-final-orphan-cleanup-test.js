@@ -15,14 +15,14 @@ var cleaned = [];
 
 async function run() {
   var svc = CLS(
-    { storeQuarantine: function() { return path.join(tmp, 'q_file'); }, decodeAndRecompute: function() { return { sha256: 'abc', mimeType: 'image/png', width: 100, height: 100 }; }, moveToAssets: function() { var f = path.join(tmp, 'moved'); fs.writeFileSync(f, ''); return f; }, cleanup: function(p) { cleaned.push(p); try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch(e) {} } },
+    { storeQuarantine: function(buf) { return path.join(tmp, 'q_file'); }, decodeAndRecompute: function() { return Promise.resolve({ sha256: 'abc', mimeType: 'image/png', width: 100, height: 100 }); }, computeSha256Stream: function() { return Promise.resolve('abc'); }, moveToAssets: function() { var f = path.join(tmp, 'moved'); fs.writeFileSync(f, ''); return f; }, cleanup: function(p) { cleaned.push(p); try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch(e) {} } },
     { validate: function() { return { ok: true }; } },
     { isDuplicate: function() { return Promise.resolve(false); } },
-    { isSafe: function() { return true; } },
+    { classify: function() { return Promise.resolve({ score: 0, category: 'safe', modelVersion: 'test', scores: { safe: 1.0 } }); }, isSafe: function(c) { return c && c.score !== undefined && c.score < 0.5; }, audit: function() { return Promise.resolve(); } },
     { create: function() { return Promise.reject(new Error('repo fail')); } },
     lg
   );
-  var result = await svc.processUpload({ filePath: '/tmp/upload.png', mimeType: 'image/png', width: 100, height: 100 });
+  var result = await svc.processUpload({ fileBuffer: Buffer.from('img'), mimeType: 'image/png', width: 100, height: 100 });
   t('REPOSITORY_FAILURE', result.status === 'ERROR', result.status);
   // The moved file should have been cleaned up
   var movedExists = fs.existsSync(path.join(tmp, 'moved'));

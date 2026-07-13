@@ -4,7 +4,7 @@ var FS=require(path.join(ROOT,'src','custom-library','custom-file-store')).creat
 var tmp=path.join(os.tmpdir(),'r8_fs_'+Date.now());fs.mkdirSync(tmp,{recursive:true});fs.mkdirSync(path.join(tmp,'quar'),{recursive:true});fs.mkdirSync(path.join(tmp,'assets'),{recursive:true});
 var store=FS(path.join(tmp,'quar'),path.join(tmp,'assets'),{});
 fs.writeFileSync(path.join(tmp,'src.jpg'),'img');
-var q=store.storeQuarantine(path.join(tmp,'src.jpg'));
+var q=store.storeQuarantine(Buffer.from('img'));
 t('QUARANTINE_EXISTS',fs.existsSync(q),'');
 var m=store.moveToAssets(q,'ast_test');
 t('MOVED_EXISTS',fs.existsSync(m),'');

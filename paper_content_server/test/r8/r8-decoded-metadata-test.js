@@ -21,11 +21,12 @@ async function run() {
   var sharp = require('sharp');
   var buf = await sharp({ create: { width: 10, height: 10, channels: 3, background: { r: 255, g: 0, b: 0 } } }).png().toBuffer();
   fs.writeFileSync(testFile, buf);
-  var qPath = store.storeQuarantine(testFile);
+  var qPath = store.storeQuarantine(buf);
   var decoded = await store.decodeAndRecompute(qPath);
+  var sha256 = await store.computeSha256Stream(qPath);
   t('DECODED_HAS_WIDTH', decoded.width > 0, 'width=' + decoded.width);
   t('DECODED_HAS_HEIGHT', decoded.height > 0, 'height=' + decoded.height);
-  t('DECODED_HAS_SHA256', decoded.sha256.length === 64, '');
+  t('DECODED_HAS_SHA256', sha256.length === 64, '');
   t('DECODED_HAS_MIME', decoded.mimeType === 'image/png', decoded.mimeType);
   store.cleanup(qPath);
   try { fs.rmdirSync(tmp, { recursive: true }); } catch(e) {}

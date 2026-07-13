@@ -13,14 +13,14 @@ var cleaned = [];
 
 async function run() {
   var svc = CLS(
-    { storeQuarantine: function() { return '/tmp/q'; }, decodeAndRecompute: function() { return { sha256: 'abc', mimeType: 'image/png', width: 100, height: 100 }; }, moveToAssets: function() { return '/tmp/final'; }, cleanup: function(p) { cleaned.push(p); } },
+    { storeQuarantine: function(buf) { return '/tmp/q'; }, decodeAndRecompute: function() { return Promise.resolve({ sha256: 'abc', mimeType: 'image/png', width: 100, height: 100 }); }, computeSha256Stream: function() { return Promise.resolve('abc'); }, moveToAssets: function() { return '/tmp/final'; }, cleanup: function(p) { cleaned.push(p); } },
     { validate: function() { return { ok: true }; } },
     { isDuplicate: function() { return Promise.resolve(false); } },
-    { isSafe: function() { return true; } },
+    { classify: function() { return Promise.resolve({ score: 0, category: 'safe', modelVersion: 'test', scores: { safe: 1.0 } }); }, isSafe: function(c) { return c && c.score !== undefined && c.score < 0.5; }, audit: function() { return Promise.resolve(); } },
     null,
     lg
   );
-  var result = await svc.processUpload({ filePath: '/tmp/upload.png', mimeType: 'image/png', width: 100, height: 100 });
+  var result = await svc.processUpload({ fileBuffer: Buffer.from('img'), mimeType: 'image/png', width: 100, height: 100 });
   t('MISSING_REPOSITORY_ERROR', result.status === 'ERROR' && result.reason === 'ASSET_REPOSITORY_MISSING', result.status + ':' + result.reason);
   t('CLEANED_FINAL_ORPHAN', cleaned.length > 0, 'cleaned=' + JSON.stringify(cleaned));
   console.log('\n=== Summary: ' + pass + ' passed, ' + fail + ' failed ===');

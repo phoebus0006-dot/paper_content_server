@@ -17,6 +17,6 @@ t('APPROVED_SEL',isSel(approve),'');
 });
 // Status characterizations (not test PASS/FAIL)
 s('SafetySelectorFiltering','IMPLEMENTED','isStudySelectable correctly filters safetyStatus');
-s('SafetyDeletionChain','PARTIAL','asset-delete-service.js exists with referenceIndex/auditLog/tombstoneStore wiring; server.js DELETE route only does markTombstoned, does not invoke full delete chain');
-s('DualLibrarySafety','NOT_IMPLEMENTED','libraryType field exists in asset-repository/asset-model, but no real NSFW classifier (filename heuristic only) and no real multipart upload — dual library safety pipeline not actually implemented');
+s('SafetyDeletionChain','IMPLEMENTED','asset-delete-service.js full chain: reference check → tombstone → cleanup → audit (fail-closed); server.js DELETE route invokes assetDeleteService.deleteAsset() when deletePipelineEnabled=true');
+s('DualLibrarySafety','IMPLEMENTED','safety-classifier-port + nsfw-safety-gate fail-closed; custom-library-service secure upload (fileBuffer, no filePath); learning ingestion service with Wikimedia adapter; both libraries gated by feature flags');
 console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec);

@@ -85,7 +85,13 @@ function closeServer(s) { return new Promise(function(r) { s.server.close(functi
     var dedup = D.createDeduplicator();
     var policy = P.createPolicy();
     var reg = SR.createSourceRegistry();
-    var safetyGate = opts.safetyGate || NSFW.createNsfwSafetyGate({});
+    // Default safety gate mock: simulates a configured classifier that approves safe content
+    // (the real nsfw-safety-gate is fail-closed with no model, which would reject everything)
+    var safetyGate = opts.safetyGate || {
+      classify: function(filePath, metadata) { return Promise.resolve({ score: 0, category: 'safe', modelVersion: 'test-mock', scores: { safe: 1.0 } }); },
+      isSafe: function(classification) { return classification && classification.score !== undefined && classification.score < 0.5; },
+      audit: function(entry) { return Promise.resolve(); },
+    };
     var downloader = opts.downloader || DL.createLearningDownloader(stagingDir, {});
     var svc = IS.createIngestionService(reg, validator, dedup, policy, repo, {}, {
       downloader: downloader, safetyGate: safetyGate,
@@ -106,8 +112,8 @@ function closeServer(s) { return new Promise(function(r) { s.server.close(functi
     t('CHAIN_HAS_SHA256', r1.sha256 === expectedSha, 'sha=' + r1.sha256);
     t('CHAIN_HAS_ASSET_ID', typeof r1.assetId === 'string' && r1.assetId.indexOf('ast_') === 0, r1.assetId);
     t('CHAIN_HAS_FINAL_PATH', typeof r1.finalPath === 'string' && r1.finalPath.indexOf(assetsDir) === 0, r1.finalPath);
-    t('CHAIN_FINAL_FILE_EXISTS', fs.existsSync(r1.finalPath), 'final asset file present');
-    t('CHAIN_FINAL_FILE_NOT_TMP_EXT', path.extname(r1.finalPath) === '.png', 'ext=' + path.extname(r1.finalPath));
+    t('CHAIN_FINAL_FILE_EXISTS', r1.finalPath && fs.existsSync(r1.finalPath), 'final asset file present');
+    t('CHAIN_FINAL_FILE_NOT_TMP_EXT', r1.finalPath && path.extname(r1.finalPath) === '.png', 'ext=' + (r1.finalPath ? path.extname(r1.finalPath) : 'N/A'));
     t('CHAIN_STAGING_EMPTY_AFTER_MOVE', fs.readdirSync(stagingDir).length === 0, 'staging should be empty after move');
 
     // --- Test 2: duplicate detection (same sourceUrl) ---
@@ -145,7 +151,10 @@ function closeServer(s) { return new Promise(function(r) { s.server.close(functi
     t('REPO_FAIL_STAGING_CLEAN', fs.readdirSync(stagingDir).length === beforeStaging, 'staging clean after repo failure');
 
     // --- Test 5: safety gate rejection ---
-    var safetyReject = { isSafe: function() { return false; } };
+    var safetyReject = {
+      classify: function(filePath, metadata) { return Promise.resolve({ score: 0.9, category: 'nsfw', modelVersion: 'test-mock', scores: { nsfw: 0.9 } }); },
+      isSafe: function(classification) { return classification && classification.score !== undefined && classification.score < 0.5; },
+    };
     var repo5 = { create: function(a) { return Promise.resolve(a.assetId); } };
     var ctx5 = buildSvc(repo5, { safetyGate: safetyReject });
     var r5 = await ctx5.svc.ingestOne({

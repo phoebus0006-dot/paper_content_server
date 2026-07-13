@@ -37,7 +37,7 @@
 
 ### POST /api/admin/publish/one-shot
 
-> Status: `PARTIAL` — 路由已挂载在 server.js,但 `assetId` 参数被接受后尚未真正用于资产选择(尚未生效 — assetId 被接受但不影响选择)。pin 当前 schedule 内容到下一个 HH:00 或 HH:30 边界。
+> Status: `IMPLEMENTED` — 路由使用 `assetSelectionService.selectForOneShot(libraryType, assetId)` 验证并选择显式资产。当 `assetId` 提供时,用选中资产生成 snapshot;选择失败返回 400。pin 到下一个 HH:00 或 HH:30 边界。
 
 示例：
 
@@ -67,7 +67,7 @@ expiresAt：
 
 ### PUT /api/admin/focus-lock
 
-> Status: `PARTIAL` — 路由已挂载在 server.js,但 `theme`/`albumId` 参数被接受后尚未真正查询资产(尚未生效 — 参数被接受但不查询资产)。锁定 photo snapshot 直到显式 DELETE。
+> Status: `IMPLEMENTED` — 路由使用 `assetSelectionService.selectForFocusLock({libraryType, theme, albumId})` 查询匹配资产。无匹配返回 404(不回退 schedule)。锁定 photo snapshot 直到显式 DELETE。
 
 示例：
 
@@ -99,7 +99,7 @@ expiresAt：
 
 ## 5. Library
 
-> Status: `PARTIAL` — GET / PATCH / DELETE / POST upload 路由均已挂载,但安全链路不完整。POST upload 当前不接受客户端 filePath,不调用真实 NSFW 分类器,不得称为完整 safety pipeline(只是文件名关键词匹配)。DELETE 只做 markTombstoned,尚未走完整 AssetDeleteService。
+> Status: `IMPLEMENTED` — GET / PATCH / DELETE / POST upload 路由均已挂载。POST upload 接受 `fileBuffer` (base64),走完整安全链路(quarantine → sharp decode → MIME mismatch → SHA256 → safety gate → dedup → atomic move),gated by `customLibraryEnabled`。DELETE 走完整 AssetDeleteService(reference check → tombstone → cleanup → audit),gated by `deletePipelineEnabled`。
 
 ### GET /api/admin/library?libraryType=learning
 
@@ -111,7 +111,7 @@ expiresAt：
 
 ### POST /api/admin/library/custom/upload
 
-> Status: `PARTIAL` — 通过 `customLibraryService.processUpload` 处理,但当前不接受客户端 filePath,不调用真实 NSFW 分类器,不得称为完整 safety pipeline(只是文件名关键词匹配,无真实 multipart,无真实图像内容分类器)。接受 JSON body `{ originalName, mimeType, fileSize, width, height, filePath }`。返回 202 ACCEPTED / 400 REJECTED / 409 DUPLICATE / 500 ERROR。
+> Status: `IMPLEMENTED` — 通过 `customLibraryService.processUpload` 处理,走完整安全链路:quarantine → sharp decode → MIME mismatch check → SHA256 → NSFW safety gate → dedup → atomic move。接受 JSON body `{ originalName, mimeType, fileBuffer(base64) }`,不接受 `filePath`。不返回 `finalPath`(避免泄露内部路径)。gated by `customLibraryEnabled` flag(flag=false 时返回 503 FEATURE_DISABLED)。返回 202 ACCEPTED (返回 assetId) / 400 REJECTED / 409 DUPLICATE / 500 ERROR。
 
 ### PATCH /api/admin/library/:id
 
@@ -119,7 +119,7 @@ expiresAt：
 
 ### DELETE /api/admin/library/:id
 
-> Status: `PARTIAL` — 尚未走完整 AssetDeleteService — 只做 `assetRepository.markTombstoned(id, 'admin delete via Library API')` + 清理 `cachedFrames` 中引用此 asset 的项(没走完整 delete chain:reference-cleaner / safety-audit-log / tombstone-store 完整链路未在 DELETE 路由中串联)。
+> Status: `IMPLEMENTED` — 当 `deletePipelineEnabled=true` 时走完整 `assetDeleteService.deleteAsset(id, reason)` 链路:reference check → tombstone → cleanup → audit (fail-closed)。当 flag=false 时回退到 legacy `markTombstoned` + cachedFrames 清理(PARTIAL)。
 
 ## 6. Legacy API (Current Admin Routes)
 
