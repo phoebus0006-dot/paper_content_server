@@ -17,6 +17,6 @@ t('APPROVED_SEL',isSel(approve),'');
 });
 // Status characterizations (not test PASS/FAIL)
 s('SafetySelectorFiltering','IMPLEMENTED','isStudySelectable correctly filters safetyStatus');
-s('SafetyDeletionChain','IMPLEMENTED','asset-delete-service.js full chain: reference check → tombstone → cleanup → audit (fail-closed); server.js DELETE route invokes assetDeleteService.deleteAsset() when deletePipelineEnabled=true');
-s('DualLibrarySafety','IMPLEMENTED','safety-classifier-port + nsfw-safety-gate fail-closed; custom-library-service secure upload (fileBuffer, no filePath); learning ingestion service with Wikimedia adapter; both libraries gated by feature flags');
+s('SafetyDeletionChain','IMPLEMENTED','asset-delete-service.js atomic chain: markBlocked → tombstone → cleanup → audit → markTombstoned (reason enum UNSAFE/SUSPICIOUS/POLICY_BLOCKED, fail-closed: no swallow); server.js DELETE route invokes assetDeleteService.deleteAsset() when deletePipelineEnabled=true, returns 503 FEATURE_DISABLED when flag off (no legacy fallback)');
+s('DualLibrarySafety','IMPLEMENTED','safety-classifier-port (ready=configured=!!modelPath&&existsSync) + nsfw-safety-gate fail-closed; custom-library-service streaming upload (processUploadStream, octet-stream, no filePath, no finalPath leak); learning ingestion service (HTTPS-only downloader, fail-closed decode, no path leak); scheduler gated by classifierReady; both libraries gated by feature flags + classifier readiness');
 console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec);

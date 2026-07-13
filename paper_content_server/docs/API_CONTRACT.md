@@ -37,7 +37,7 @@
 
 ### POST /api/admin/publish/one-shot
 
-> Status: `IMPLEMENTED` — 路由使用 `assetSelectionService.selectForOneShot(libraryType, assetId)` 验证并选择显式资产。当 `assetId` 提供时,用选中资产生成 snapshot;选择失败返回 400。pin 到下一个 HH:00 或 HH:30 边界。
+> Status: `IMPLEMENTED` — 路由使用 `assetSelectionService.selectForOneShot(libraryType, assetId)` 验证并选择显式资产(strict:不回退)。当 `assetId` 提供时,用选中资产生成 snapshot;选择失败返回 400。pin 到下一个 HH:00 或 HH:30 边界。override 通过 `overridePersistence.saveOverride()` 持久化;重启时 `validateOverrideAsync()` 重新校验资产仍 SAFE + SELECTABLE + 文件存在,无效则清除 override(不静默换资产)。
 
 示例：
 
@@ -67,7 +67,7 @@ expiresAt：
 
 ### PUT /api/admin/focus-lock
 
-> Status: `IMPLEMENTED` — 路由使用 `assetSelectionService.selectForFocusLock({libraryType, theme, albumId})` 查询匹配资产。无匹配返回 404(不回退 schedule)。锁定 photo snapshot 直到显式 DELETE。
+> Status: `IMPLEMENTED` — 路由使用 `assetSelectionService.selectForFocusLock({libraryType, theme, albumId})` 查询匹配资产(strict:无匹配返回 404,不回退 schedule)。锁定 photo snapshot 直到显式 DELETE。override 通过 `overridePersistence.saveOverride()` 持久化;重启时通过 `validateOverrideAsync()` 重新校验,无效则清除(不静默换资产)。
 
 示例：
 
@@ -99,7 +99,7 @@ expiresAt：
 
 ## 5. Library
 
-> Status: `IMPLEMENTED` — GET / PATCH / DELETE / POST upload 路由均已挂载。POST upload 接受 `fileBuffer` (base64),走完整安全链路(quarantine → sharp decode → MIME mismatch → SHA256 → safety gate → dedup → atomic move),gated by `customLibraryEnabled`。DELETE 走完整 AssetDeleteService(reference check → tombstone → cleanup → audit),gated by `deletePipelineEnabled`。
+> Status: `IMPLEMENTED` — GET / PATCH / DELETE / POST upload 路由均已挂载。POST upload 接受 `application/octet-stream` (流式上传),走完整安全链路(quarantine write stream → sharp stream decode → MIME mismatch → SHA256 → safety gate → dedup → atomic move),gated by `customLibraryEnabled` + classifierReady。DELETE 走完整原子 AssetDeleteService(markBlocked → tombstone → cleanup → audit → markTombstoned,reason enum),gated by `deletePipelineEnabled`,无 legacy 回退。
 
 ### GET /api/admin/library?libraryType=learning
 
@@ -111,7 +111,16 @@ expiresAt：
 
 ### POST /api/admin/library/custom/upload
 
-> Status: `IMPLEMENTED` — 通过 `customLibraryService.processUpload` 处理,走完整安全链路:quarantine → sharp decode → MIME mismatch check → SHA256 → NSFW safety gate → dedup → atomic move。接受 JSON body `{ originalName, mimeType, fileBuffer(base64) }`,不接受 `filePath`。不返回 `finalPath`(避免泄露内部路径)。gated by `customLibraryEnabled` flag(flag=false 时返回 503 FEATURE_DISABLED)。返回 202 ACCEPTED (返回 assetId) / 400 REJECTED / 409 DUPLICATE / 500 ERROR。
+> Status: `IMPLEMENTED` (streaming, fail-closed classifier) — 通过 `customLibraryService.processUploadStream(req, metadata, options)` 处理,走完整流式安全链路:createQuarantineWriteStream (O_EXCL) → 实时 bytesWritten 累计 + maxUploadBytes 中止 → sharp streamDecode → MIME mismatch check → NSFW safety gate (fail-closed: classifier 未 ready 时返回 REJECTED CLASSIFIER_UNAVAILABLE) → streamSha256 → dedup → atomic move → audit → repository。
+
+接受 `Content-Type: application/octet-stream`,metadata 通过 headers 传入:
+```
+X-Original-Name: filename.jpg
+X-Mime-Type: image/jpeg
+Content-Length: 12345
+```
+
+不接受 JSON body 中的 `fileBuffer`/`base64`(已移除旧逻辑)。不接受 `filePath`。不返回 `finalPath`(避免泄露内部路径)。gated by `customLibraryEnabled` flag(flag=false 时返回 503 FEATURE_DISABLED)。当 classifier 未 ready(无真实 NSFW 模型)时返回 503 (CLASSIFIER_UNAVAILABLE, fail-closed)。返回 202 ACCEPTED (返回 assetId) / 400 REJECTED (TOO_LARGE / DECODE_FAILED / MIME_MISMATCH / NSFW) / 409 DUPLICATE / 415 UNSUPPORTED_MEDIA_TYPE / 500 ERROR。
 
 ### PATCH /api/admin/library/:id
 
@@ -119,7 +128,7 @@ expiresAt：
 
 ### DELETE /api/admin/library/:id
 
-> Status: `IMPLEMENTED` — 当 `deletePipelineEnabled=true` 时走完整 `assetDeleteService.deleteAsset(id, reason)` 链路:reference check → tombstone → cleanup → audit (fail-closed)。当 flag=false 时回退到 legacy `markTombstoned` + cachedFrames 清理(PARTIAL)。
+> Status: `IMPLEMENTED` (atomic pipeline, reason enum) — 当 `deletePipelineEnabled=true` 时走完整 `assetDeleteService.deleteAsset(id, reason)` 原子链路:markBlocked → tombstone → cleanup → audit → markTombstoned (fail-closed:每步失败即 reject,不静默)。reason 必须是 enum `UNSAFE` / `SUSPICIOUS` / `POLICY_BLOCKED` 之一(从 body `{"reason":"..."}` 或 query `?reason=...` 获取)。flag=false 时返回 503 FEATURE_DISABLED(不再回退 legacy markTombstoned)。返回 200 OK / 400 INVALID_REASON / 404 ASSET_NOT_FOUND / 409 CONFLICT (有引用) / 500 ERROR。
 
 ## 6. Legacy API (Current Admin Routes)
 

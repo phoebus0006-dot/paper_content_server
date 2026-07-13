@@ -2,7 +2,7 @@
 
 > 本文件用于记录“当前真实状态”，不是目标架构。每个阶段完成后更新一次。
 
-AUDITED_CODE_SHA=faf88ba1d786613a7034b40045a7b04aa051bb8b
+AUDITED_CODE_SHA=PENDING_INTEGRATION
 ESP32_RUNTIME_STATUS=NOT TESTED
 NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 
@@ -43,15 +43,15 @@ NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 | News final dedupe | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | News layout | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | Last-good | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| Learning Library auto-fetch | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Wikimedia source adapter + downloader + scheduler + ingestion service wired behind learningLibraryEnabled flag | NOT VERIFIED | N/A |
+| Learning Library auto-fetch | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Wikimedia source adapter + HTTPS-only downloader (size/redirect/timeout guards) + scheduler with classifierReady gate + ingestion service (enabled guard, fail-closed decode); wired behind learningLibraryEnabled flag. Scheduler does NOT start when classifier not ready (zero network requests). | NOT TESTED | N/A |
 | Learning relevance gate | PARTIAL | | PARTIAL_LICENSE_ONLY — learning-policy.js 只检查 license,无主题/关键词/质量评分 | NOT VERIFIED | N/A |
-| Custom Library | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Secure upload pipeline (fileBuffer base64, no filePath), quarantine → sharp decode → MIME mismatch → SHA256 → safety gate → dedup → atomic move; gated by customLibraryEnabled | NOT VERIFIED | N/A |
-| Strict NSFW deletion | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | safety-classifier-port + nsfw-safety-gate fail-closed; asset-delete-service full chain (reference check → tombstone → cleanup → audit) gated by deletePipelineEnabled | NOT VERIFIED | N/A |
-| Analysis Card | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer producing 192010-byte frames; gated by renderShadowEnabled | NOT VERIFIED | N/A |
-| Comparison Pair | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer producing 192010-byte frames; gated by renderShadowEnabled | NOT VERIFIED | N/A |
-| Sequence 2×2 | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer producing 192010-byte frames; gated by renderShadowEnabled | NOT VERIFIED | N/A |
-| ONE_SHOT_OVERRIDE | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Route uses assetSelectionService.selectForOneShot() for explicit asset selection; 400 on selection failure | NOT VERIFIED | NOT TESTED |
-| FOCUS_LOCK | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Route uses assetSelectionService.selectForFocusLock() for theme/albumId matching; 404 on no match (no schedule fallback) | NOT VERIFIED | NOT TESTED |
+| Custom Library | BLOCKED | | Streaming upload (octet-stream → processUploadStream → quarantine → sharp decode → MIME mismatch → SHA256 → safety gate → dedup → atomic move) fully wired, but classifier has no real model → fail-closed (CLASSIFIER_UNAVAILABLE). Upload cannot ACCEPT until a real NSFW model is configured. Gated by customLibraryEnabled + classifierReady. | NOT TESTED | N/A |
+| Strict NSFW deletion | NOT_IMPLEMENTED | | No real NSFW classifier model. safety-classifier-port fail-closed (configured=false, ready=false). asset-delete-service atomic chain (markBlocked → tombstone → cleanup → audit → markTombstoned, reason enum) is IMPLEMENTED but cannot make a real deletion decision without a classifier. | NOT TESTED | N/A |
+| Analysis Card | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer (5x7 bitmap font + CJK fallback) producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
+| Comparison Pair | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer (sharp decode + quantize) producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
+| Sequence 2×2 | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
+| ONE_SHOT_OVERRIDE | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Route uses assetSelectionService.selectForOneShot() for strict explicit asset selection (no fallback); override persisted via overridePersistence.saveOverride() with restart validation (validateOverrideAsync re-checks asset safety/selectability/file existence; cleared if invalid, no silent swap) | NOT TESTED | NOT TESTED |
+| FOCUS_LOCK | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Route uses assetSelectionService.selectForFocusLock() for strict theme/albumId matching (404 on no match, no schedule fallback); override persisted + restart-validated same as ONE_SHOT | NOT TESTED | NOT TESTED |
 | MQTT immediate refresh | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | mqtt-message-test 16/16 covers schemaVersion=2 + reason field + v1 backward compat; mqtt-publisher/notification-adapter wiring present | NOT VERIFIED | NOT TESTED |
 | Admin production-path publication | PARTIAL | | admin-test covers one-shot photo valid/invalid assetId, expiry, frameId consistency, legacy publish/photo photoId propagation. MQTT reason 字段贯穿 snapshot-model → publication-service → mqtt-publisher. | NOT VERIFIED | NOT TESTED |
 
@@ -82,14 +82,14 @@ NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 | News final dedupe | server.js L1462-1483 | news-render-readability-test | NOT VERIFIED | NOT TESTED |
 | News layout | server.js L2106-2115 (layoutNewsCard) | news-render-readability-test 17/17 | NOT VERIFIED | NOT TESTED |
 | Last-good | server.js L1542 | rotation-test Phase B/C | NOT VERIFIED | N/A |
-| Learning Library auto-fetch | src/learning/learning-ingestion-service.js + wikimedia-source-adapter.js + learning-downloader.js + learning-scheduler.js | learning:test (ingestion-production, policy, scheduler, wikimedia adapter); compose-services wiring behind learningLibraryEnabled | NOT VERIFIED | N/A |
+| Learning Library auto-fetch | src/learning/learning-ingestion-service.js + wikimedia-source-adapter.js + learning-downloader.js + learning-scheduler.js + src/app/compose-services.js (classifierReady gate) | learning:test; v3:integration SECTION 2 (scheduler status=SAFETY_CLASSIFIER_NOT_READY when no model) | NOT TESTED | N/A |
 | Learning relevance gate | src/learning/learning-policy.js | learning-policy-test (license-only check, no topic/keyword/quality scoring — PARTIAL) | NOT VERIFIED | N/A |
-| Custom Library | src/custom-library/custom-library-service.js + custom-file-store.js + server.js /api/admin/library/custom/upload | custom-upload-security-test 46/46; r8 custom-library-service-test 3/3; r8-required-safety-gate-test 2/2 (fileBuffer API, no filePath, no finalPath leak) | NOT VERIFIED | N/A |
-| Strict NSFW deletion | src/safety/safety-classifier-port.js + nsfw-safety-gate.js + src/assets/asset-delete-service.js | safety-classifier-port-test; nsfw-safety-gate-test; asset-delete-service-test 37/37 (full delete chain: reference check → tombstone → cleanup → audit) | NOT VERIFIED | N/A |
-| Analysis Card | src/render/analysis-card-renderer.js | analysis-card-test (real EPF1 192010-byte frame); renderShadow gating | NOT VERIFIED | N/A |
-| Comparison Pair | src/render/comparison-pair-renderer.js | comparison-pair-test (real EPF1 192010-byte frame); renderShadow gating | NOT VERIFIED | N/A |
-| Sequence 2×2 | src/render/sequence-2x2-renderer.js | sequence-2x2-test (real EPF1 192010-byte frame); renderShadow gating | NOT VERIFIED | N/A |
-| ONE_SHOT_OVERRIDE | src/admin/asset-selection-service.js + server.js /api/admin/publish/one-shot | asset-selection-service-test 17/17; route uses selectForOneShot() for explicit asset validation | NOT VERIFIED | NOT TESTED |
-| FOCUS_LOCK | src/admin/asset-selection-service.js + server.js PUT /api/admin/focus-lock | asset-selection-service-test 17/17; route uses selectForFocusLock() for theme/albumId matching, 404 on no match | NOT VERIFIED | NOT TESTED |
+| Custom Library | src/custom-library/custom-library-service.js (processUploadStream) + custom-file-store.js (createQuarantineWriteStream/streamDecode/streamSha256) + server.js /api/admin/library/custom/upload (octet-stream) + src/app/compose-services.js (config.safety passthrough) | custom-upload-security-test; v3:integration SECTION 2 (streaming upload → fail-closed CLASSIFIER_UNAVAILABLE when no model; 415 on wrong Content-Type) | NOT TESTED | N/A |
+| Strict NSFW deletion | src/safety/safety-classifier-port.js + nsfw-safety-gate.js + src/assets/asset-delete-service.js (reason enum, markBlocked-before-tombstone) + server.js DELETE route (atomic, no legacy fallback) | safety-classifier-port-test; nsfw-safety-gate-test; asset-delete-service-test; v3:integration SECTION 2 (DELETE 400 no reason, 400 bad reason, 404 not found, 503 flag off) | NOT TESTED | N/A |
+| Analysis Card | src/render/analysis-card-renderer.js (5x7 bitmap font + CJK fallback) | analysis-card-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
+| Comparison Pair | src/render/comparison-pair-renderer.js (sharp decode + quantize) | comparison-pair-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
+| Sequence 2×2 | src/render/sequence-2x2-renderer.js | sequence-2x2-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
+| ONE_SHOT_OVERRIDE | src/admin/asset-selection-service.js + src/admin/override-persistence.js + server.js /api/admin/publish/one-shot + startup restore | asset-selection-service-test; v3:integration SECTION 3 (ONE_SHOT 200 + override file written + restart restored) + SECTION 6 (invalid override cleared on restart) | NOT TESTED | NOT TESTED |
+| FOCUS_LOCK | src/admin/asset-selection-service.js + src/admin/override-persistence.js + server.js PUT/DELETE /api/admin/focus-lock | asset-selection-service-test; v3:integration SECTION 3 (FOCUS_LOCK 200 + override written + exit clears override) | NOT TESTED | NOT TESTED |
 | MQTT immediate refresh | src/mqtt/mqtt-message.js (SCHEMA_VERSION=2, reason field) + mqtt-publisher + mqtt-notification-adapter + publication-service reason propagation | mqtt-message-test 16/16; r6 mqtt publisher/adapter tests | NOT VERIFIED | NOT TESTED |
 | Admin production-path pub | server.js one-shot + focus-lock + library routes + buildManualPhotoFromAsset + reason propagation through snapshot-model.publishReason | admin-test (one-shot valid/invalid, asset validation, expiry boundary, frameId consistency, library CRUD) | NOT VERIFIED | NOT TESTED |

@@ -49,7 +49,7 @@ async function main(){
       var c4=0;for(var bi=10;bi<fb.b.length;bi++){var h=(fb.b[bi]>>4)&0xF,l=fb.b[bi]&0xF;if(h===4)c4++;if(l===4)c4++}
       t('CODE4_ZERO',c4===0,'c4='+c4);
     }
-    s('ONE_SHOT_ROUTE','IMPLEMENTED','POST /api/admin/publish/one-shot route uses assetSelectionService.selectForOneShot() for explicit asset validation; 400 on selection failure');
+    s('ONE_SHOT_ROUTE','IMPLEMENTED','POST /api/admin/publish/one-shot route uses assetSelectionService.selectForOneShot() for strict explicit asset validation (no fallback); override persisted via overridePersistence.saveOverride() with restart validation (validateOverrideAsync re-checks asset safety/selectability/file existence; cleared if invalid); 400 on selection failure');
     s('ROLLBACK_SNAPSHOT_RESTORE','NOT_IMPLEMENTED','POST /api/admin/rollback route not fully implementing snapshot restore');
   }catch(e){t('TEST_FAIL',false,e.message)}
   srv.kill();setTimeout(function(){try{fs.rmdirSync(TMPDIR,{recursive:true})}catch(e){}console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec)},1000);
