@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 // safety-classifier-port-test.js — SafetyClassifierPort 单元测试
-// 选择 B:fail-closed。configured = !!modelPath && fs.existsSync(modelPath);
-// ready === configured。无模型或 modelPath 不存在 → classify reject(NO_CLASSIFIER_MODEL_CONFIGURED)。
-// 已配置但推理未实现 → classify reject(CLASSIFIER_NOT_IMPLEMENTED)。isSafe 基于 score vs threshold。
+// 5 级 readiness truth: configured / modelExists / loaded / inferenceReady / ready。
+//   configured = !!modelPath (path provided)
+//   modelExists = !!modelPath && fs.existsSync(modelPath)
+//   loaded = false (无 runtime 加载实现)
+//   inferenceReady = false (无 smoke inference 实现)
+//   ready = inferenceReady = false (当前始终 false,即使文件存在)
+// classify 行为不变:无模型文件 → NO_CLASSIFIER_MODEL_CONFIGURED;
+// 文件存在但无推理 → CLASSIFIER_NOT_IMPLEMENTED。isSafe 基于 score vs threshold。
 // audit 写入 append-only JSONL(auditFile);无 auditFile 时 resolve。
 var path = require('path');
 var fs = require('fs');
@@ -33,8 +38,12 @@ async function run() {
   t('NO_MODEL_IS_SAFE_UNDEFINED_FALSE', port.isSafe(undefined) === false, 'undefined classification');
   t('NO_MODEL_IS_SAFE_NOSCORE_FALSE', port.isSafe({}) === false, 'no score field');
 
-  // 3. 无 modelPath → configured=false, ready=false
+  // 3. 无 modelPath → configured=false, modelExists=false, loaded=false,
+  //    inferenceReady=false, ready=false (5-level truth; ready 永远跟随 inferenceReady)
   t('NO_MODEL_CONFIGURED_FALSE', port.configured === false, 'configured=' + port.configured);
+  t('NO_MODEL_MODEL_EXISTS_FALSE', port.modelExists === false, 'modelExists=' + port.modelExists);
+  t('NO_MODEL_LOADED_FALSE', port.loaded === false, 'loaded=' + port.loaded);
+  t('NO_MODEL_INFERENCE_READY_FALSE', port.inferenceReady === false, 'inferenceReady=' + port.inferenceReady);
   t('NO_MODEL_READY_FALSE', port.ready === false, 'ready=' + port.ready);
 
   // 4. 无 modelPath → modelVersion='NONE'
@@ -49,8 +58,12 @@ async function run() {
   t('NO_AUDITFILE_AUDIT_RESOLVES', auditOk, '');
 
   // ── modelPath 指向不存在的路径 ──
+  // configured=true (path provided), but modelExists=false (file missing) → ready=false
   var portMissing = createSafetyClassifierPort({ logger: logger, modelPath: '/definitely/not/exist/model.onnx' });
-  t('MISSING_MODELPATH_CONFIGURED_FALSE', portMissing.configured === false, '');
+  t('MISSING_MODELPATH_CONFIGURED_TRUE', portMissing.configured === true, 'configured=' + portMissing.configured);
+  t('MISSING_MODELPATH_MODEL_EXISTS_FALSE', portMissing.modelExists === false, 'modelExists=' + portMissing.modelExists);
+  t('MISSING_MODELPATH_LOADED_FALSE', portMissing.loaded === false, '');
+  t('MISSING_MODELPATH_INFERENCE_READY_FALSE', portMissing.inferenceReady === false, '');
   t('MISSING_MODELPATH_READY_FALSE', portMissing.ready === false, '');
   t('MISSING_MODELPATH_MODEL_VERSION_NONE', portMissing.modelVersion === 'NONE', '');
   var classifyErrMissing = null;
@@ -60,14 +73,20 @@ async function run() {
     classifyErrMissing ? classifyErrMissing.message : 'no error');
 
   // ── modelPath 指向真实存在的文件(仍 fail-closed,因为无推理引擎)──
+  // configured=true AND modelExists=true, BUT loaded=false / inferenceReady=false
+  // / ready=false — 文件存在不等于推理可用。
   var tmpModel = path.join(os.tmpdir(), 'fake-model-' + Date.now() + '-' + process.pid + '.onnx');
   fs.writeFileSync(tmpModel, 'FAKE_MODEL_BYTES');
   try {
     var port2 = createSafetyClassifierPort({ logger: logger, modelPath: tmpModel });
 
-    // 7. 有真实存在的 modelPath → configured=true, ready=true
+    // 7. 有真实存在的 modelPath → configured=true, modelExists=true,
+    //    但 loaded=false / inferenceReady=false / ready=false (无推理实现)
     t('WITH_MODELPATH_CONFIGURED_TRUE', port2.configured === true, 'configured=' + port2.configured);
-    t('WITH_MODELPATH_READY_TRUE', port2.ready === true, 'ready=' + port2.ready);
+    t('WITH_MODELPATH_MODEL_EXISTS_TRUE', port2.modelExists === true, 'modelExists=' + port2.modelExists);
+    t('WITH_MODELPATH_LOADED_FALSE', port2.loaded === false, 'loaded=' + port2.loaded);
+    t('WITH_MODELPATH_INFERENCE_READY_FALSE', port2.inferenceReady === false, 'inferenceReady=' + port2.inferenceReady);
+    t('WITH_MODELPATH_READY_FALSE', port2.ready === false, 'ready=' + port2.ready);
 
     // 8. 有 modelPath 但无推理引擎 → classify rejects (CLASSIFIER_NOT_IMPLEMENTED)
     var classifyErr2 = null;

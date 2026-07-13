@@ -83,9 +83,12 @@ function composeServices(deps) {
 
   // --- safetyClassifierPort: real NSFW classifier port (fail-closed when no model) ---
   // Pass-through config.safety fields (modelPath/modelType/threshold/auditFile).
-  // ready = configured = !!modelPath && fs.existsSync(modelPath); without a real
-  // model the classifier is created but never ready, so customLibrary/learning
-  // features stay fail-closed (BLOCKED) end-to-end.
+  // The port exposes a 5-level readiness truth: configured / modelExists / loaded /
+  // inferenceReady / ready. ready === inferenceReady and is false until a real
+  // inference implementation is wired in — even when a model file exists. The
+  // scheduler classifierReady gate below uses port.ready (NOT port.configured),
+  // so customLibrary/learning stay fail-closed (BLOCKED) end-to-end until real
+  // inference is available.
   try {
     var { createSafetyClassifierPort } = require('../safety/safety-classifier-port');
     safetyClassifierPort = createSafetyClassifierPort({

@@ -11,17 +11,28 @@
 //
 // Classifier-aware truth:
 //   customLibrary and learning both depend on the safety classifier being ready.
-//   When the classifier port is missing or has no model configured, those features
-//   report ready=false with reason=SAFETY_CLASSIFIER_NOT_READY even if their own
-//   service instance exists. This prevents the upload/ingest routes from accepting
-//   content that cannot be safety-checked.
+//   "ready" means the classifier port can actually run inference (port.ready === true),
+//   NOT merely that a model path was configured. When the classifier is missing or
+//   cannot run inference, those features report ready=false with reason=
+//   SAFETY_CLASSIFIER_NOT_READY even if their own service instance exists. This
+//   prevents the upload/ingest routes from accepting content that cannot be
+//   safety-checked.
+//
+//   The classifier port exposes a 5-level readiness truth:
+//     configured    — modelPath was provided
+//     modelExists   — the model file exists on disk
+//     loaded        — runtime loaded the model (false without a real loader)
+//     inferenceReady — smoke inference succeeded (false without a real engine)
+//     ready         — = inferenceReady; only true when inference is actually usable
+//   The customLibrary/learning gate uses `ready` (not `configured`), so a stub
+//   classifier that only has a model file but no inference never reports ready.
 //
 // options: {
 //   config,                         // APP_CONFIG (drives `configured`)
 //   mqttClient, newsPipeline,
 //   customLibraryService, learningIngestionService,
 //   renderShadow, assetDeleteService,
-//   safetyClassifierPort,           // { configured: boolean } — classifier readiness
+//   safetyClassifierPort,           // { configured, modelExists, loaded, inferenceReady, ready } — classifier readiness
 //   activeFrameIdProvider
 // }
 function getFeatureFlags(options) {
@@ -37,8 +48,13 @@ function getFeatureFlags(options) {
   var safetyClassifierPort = options.safetyClassifierPort || null;
   var activeFrameIdProvider = options.activeFrameIdProvider || function() { return null; };
 
-  // classifier ready = port exists AND port.configured === true (i.e. a model is loaded).
-  var classifierReady = !!(safetyClassifierPort && safetyClassifierPort.configured);
+  // classifier readiness uses port.ready (inference actually usable), NOT port.configured
+  // (which only means a modelPath was provided). Without a real inference implementation
+  // port.ready is always false, so customLibrary/learning stay fail-closed even when a
+  // model file exists.
+  var portConfigured = !!(safetyClassifierPort && safetyClassifierPort.configured);
+  var portReady = !!(safetyClassifierPort && safetyClassifierPort.ready);
+  var classifierReady = portReady;
 
   function flag(enabled, connected, reason) {
     enabled = !!enabled;
@@ -85,12 +101,17 @@ function getFeatureFlags(options) {
     // model surfaces ready=false with DELETE_SERVICE_NOT_CREATED.
     deletePipeline: flag(features.deletePipelineEnabled, assetDeleteService, 'DELETE_SERVICE_NOT_CREATED'),
     classifier: {
-      configured: classifierReady,
-      enabled: classifierReady,
-      connected: classifierReady,
-      ready: classifierReady,
+      // 5-level truth mirrored from the port: configured = modelPath provided,
+      // connected/ready = port.ready (inference usable). A stub classifier that
+      // only has a model file but no inference reports configured=true, ready=false,
+      // reason=SAFETY_CLASSIFIER_NOT_READY.
+      configured: portConfigured,
+      enabled: portConfigured,
+      connected: portReady,
+      ready: portReady,
       reason: !safetyClassifierPort ? 'CLASSIFIER_PORT_NOT_CREATED'
-              : (!safetyClassifierPort.configured ? 'NO_MODEL_CONFIGURED' : null),
+              : (!portConfigured ? 'NO_MODEL_CONFIGURED'
+              : (!portReady ? 'SAFETY_CLASSIFIER_NOT_READY' : null)),
     },
     adminReadOnly: { configured: true, enabled: true, connected: true, ready: true, reason: null },
     activeFrameId: safeActiveFrameId(activeFrameIdProvider),

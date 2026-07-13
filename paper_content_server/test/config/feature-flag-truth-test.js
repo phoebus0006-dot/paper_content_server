@@ -10,8 +10,9 @@
 //   - configured=true, connected=true  → reason = null
 //
 // Classifier-aware truth (customLibrary / learning):
-//   ready requires the safety classifier port to exist AND be configured.
-//   When classifier is not ready, reason = 'SAFETY_CLASSIFIER_NOT_READY'.
+//   ready requires the safety classifier port to exist AND be ready (port.ready === true,
+//   i.e. inference is actually usable — NOT merely port.configured which only means a
+//   modelPath was provided). When classifier is not ready, reason = 'SAFETY_CLASSIFIER_NOT_READY'.
 //
 // deletePipeline truth:
 //   connected = !!assetDeleteService (the real delete service instance).
@@ -53,10 +54,16 @@ var FAKE_CUSTOM = { name: 'custom' };
 var FAKE_LEARNING = { name: 'learning' };
 var FAKE_SHADOW = { name: 'shadow' };
 var FAKE_DELETE = { name: 'delete' };
-// classifier port that is fully configured (model loaded) — simulates a ready classifier.
-var CLASSIFIER_READY = { configured: true };
+// classifier port that is fully ready — simulates a classifier with working inference
+// (configured=true AND ready=true). The ready=true path is only reachable with a real
+// inference implementation; this stub exercises the propagation logic.
+var CLASSIFIER_READY = { configured: true, ready: true };
 // classifier port that exists but has no model loaded — simulates fail-closed.
-var CLASSIFIER_NO_MODEL = { configured: false };
+var CLASSIFIER_NO_MODEL = { configured: false, ready: false };
+// classifier stub: modelPath provided + file exists (configured=true), but no real
+// inference (ready=false). This is the CURRENT real state when a user sets
+// NSFW_MODEL_PATH to an existing file — truth must be ready=false.
+var CLASSIFIER_STUB = { configured: true, ready: false };
 
 // Feature keys that carry the 5-dimension shape.
 // adminReadOnly is constant-true; activeFrameId is a passthrough scalar; classifier is
@@ -388,6 +395,34 @@ console.log('=== Feature Flag Truth Model Test ===');
   eq('CASE11D_CUSTOM_REASON', f11d.customLibrary.reason, 'SAFETY_CLASSIFIER_NOT_READY');
   eq('CASE11D_LEARNING_READY', f11d.learning.ready, false);
   eq('CASE11D_LEARNING_REASON', f11d.learning.reason, 'SAFETY_CLASSIFIER_NOT_READY');
+})();
+
+// ─── Case 11e: stub classifier — configured=true (model file exists) but ready=false ───
+//      (no inference). This is the CURRENT real state when NSFW_MODEL_PATH points to an
+//      existing file. The classifier feature reports configured=true, ready=false,
+//      reason=SAFETY_CLASSIFIER_NOT_READY, and customLibrary/learning stay fail-closed.
+(function() {
+  var f11e = FV.getFeatureFlags({
+    config: makeConfig(),
+    safetyClassifierPort: CLASSIFIER_STUB,
+  });
+  eq('CASE11E_CLASSIFIER_CONFIGURED_TRUE', f11e.classifier.configured, true, 'model file exists → configured');
+  eq('CASE11E_CLASSIFIER_ENABLED_TRUE', f11e.classifier.enabled, true, '');
+  eq('CASE11E_CLASSIFIER_CONNECTED_FALSE', f11e.classifier.connected, false, 'no inference → not connected');
+  eq('CASE11E_CLASSIFIER_READY_FALSE', f11e.classifier.ready, false, 'no inference → not ready');
+  eq('CASE11E_CLASSIFIER_REASON', f11e.classifier.reason, 'SAFETY_CLASSIFIER_NOT_READY', '');
+
+  // 11e-b: stub classifier blocks customLibrary + learning even with services present
+  var f11e2 = FV.getFeatureFlags({
+    config: makeConfig({ customLibraryEnabled: true, learningLibraryEnabled: true }),
+    customLibraryService: FAKE_CUSTOM,
+    learningIngestionService: FAKE_LEARNING,
+    safetyClassifierPort: CLASSIFIER_STUB,
+  });
+  eq('CASE11E2_CUSTOM_READY_FALSE', f11e2.customLibrary.ready, false, 'stub classifier blocks customLibrary');
+  eq('CASE11E2_CUSTOM_REASON', f11e2.customLibrary.reason, 'SAFETY_CLASSIFIER_NOT_READY', '');
+  eq('CASE11E2_LEARNING_READY_FALSE', f11e2.learning.ready, false, 'stub classifier blocks learning');
+  eq('CASE11E2_LEARNING_REASON', f11e2.learning.reason, 'SAFETY_CLASSIFIER_NOT_READY', '');
 })();
 
 console.log('\n=== Summary: ' + pass + ' passed, ' + fail + ' failed ===');
