@@ -6,6 +6,9 @@ AUDITED_CODE_SHA=PENDING_INTEGRATION
 ESP32_RUNTIME_STATUS=NOT TESTED
 NAS_STAGING_PORT=18080:8787 (host 18080 → container 8787)
 REAL_CLASSIFIER=BLOCKED
+REAL_CJK_GLYPH_RENDER=IMPLEMENTED
+RENDER_SHADOW=IMPLEMENTED
+OVERRIDE_CONCURRENCY_SAFE=YES
 NAS_DYNAMIC_ACCEPTANCE=NOT_TESTED
 ESP32_DYNAMIC_ACCEPTANCE=NOT_TESTED
 
@@ -50,7 +53,7 @@ ESP32_DYNAMIC_ACCEPTANCE=NOT_TESTED
 | Learning relevance gate | PARTIAL | | PARTIAL_LICENSE_ONLY — learning-policy.js 只检查 license,无主题/关键词/质量评分 | NOT VERIFIED | N/A |
 | Custom Library | BLOCKED | | Streaming upload (octet-stream → processUploadStream → quarantine → sharp decode → MIME mismatch → SHA256 → safety gate → dedup → atomic move) fully wired, but classifier has no real model → fail-closed (CLASSIFIER_UNAVAILABLE). Upload cannot ACCEPT until a real NSFW model is configured. Gated by customLibraryEnabled + classifierReady. | NOT TESTED | N/A |
 | Strict NSFW deletion | NOT_IMPLEMENTED | | No real NSFW classifier model. safety-classifier-port fail-closed (configured=false, ready=false). asset-delete-service atomic chain (markBlocked → tombstone → cleanup → audit → markTombstoned, reason enum) is IMPLEMENTED but cannot make a real deletion decision without a classifier. | NOT TESTED | N/A |
-| Analysis Card | PARTIAL | | Real EPF1 rasterizer (5x7 ASCII bitmap font + CJK placeholder blocks; NOT real CJK glyphs) producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
+| Analysis Card | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer (5x7 ASCII bitmap font + real CJK glyphs via sharp SVG text / font-detector) producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
 | Comparison Pair | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer (sharp decode + quantize) producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
 | Sequence 2×2 | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
 | ONE_SHOT_OVERRIDE | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Route uses assetSelectionService.selectForOneShot() for strict explicit asset selection (no fallback); override persisted via overridePersistence.saveOverride() with restart validation (validateOverrideAsync re-checks asset safety/selectability/file existence; cleared if invalid, no silent swap) | NOT TESTED | NOT TESTED |
@@ -62,9 +65,9 @@ ESP32_DYNAMIC_ACCEPTANCE=NOT_TESTED
 
 ASCII_TEXT_RENDER=IMPLEMENTED
 CJK_PLACEHOLDER=IMPLEMENTED
-REAL_CJK_GLYPH_RENDER=NOT_IMPLEMENTED
+REAL_CJK_GLYPH_RENDER=IMPLEMENTED
 
-当前文字渲染器 (`src/render/text-rasterizer.js`) 使用内置 5x7 bitmap font，仅支持 ASCII 字母/数字/基本标点。CJK 字符回退到 `renderCJKPlaceholder` 绘制的占位方块 (填充轮廓)，不是真实 CJK 字形。Noto Sans CJK 路径仅被探测 (`CJK_FONT_AVAILABLE` flag) 但从不加载，因此不渲染任何真实 CJK glyph。`cjk=YES` 标签不正确 — 应为 `cjk=PLACEHOLDER_ONLY`。
+当前文字渲染器 (`src/render/text-rasterizer.js`) 使用内置 5x7 bitmap font 处理 ASCII 字母/数字/基本标点。CJK 字符通过 sharp SVG text 管线 (librsvg + pango + harfbuzz + freetype) 渲染真实字形 — `font-detector.js` 在模块加载时自动探测系统 CJK 字体 (Windows: Microsoft YaHei; Linux: Noto Sans CJK / Source Han Sans; macOS: PingFang SC)，`renderTextAsync` 将含 CJK 的文本路由到 sharp SVG 渲染器并将 alpha 像素 blit 到 EPF1 codes 数组。`CJK_PLACEHOLDER` 路径 (`renderCJKPlaceholder`) 仍保留作为 ASCII 同步路径的回退，但 `renderTextAsync` 不再静默回退到占位方块 — 无可用字体时返回 0 行。
 
 ## 4. 更新规则
 
@@ -97,7 +100,7 @@ REAL_CJK_GLYPH_RENDER=NOT_IMPLEMENTED
 | Learning relevance gate | src/learning/learning-policy.js | learning-policy-test (license-only check, no topic/keyword/quality scoring — PARTIAL) | NOT VERIFIED | N/A |
 | Custom Library | src/custom-library/custom-library-service.js (processUploadStream) + custom-file-store.js (createQuarantineWriteStream/streamDecode/streamSha256) + server.js /api/admin/library/custom/upload (octet-stream) + src/app/compose-services.js (config.safety passthrough) | custom-upload-security-test; v3:integration SECTION 2 (streaming upload → fail-closed CLASSIFIER_UNAVAILABLE when no model; 415 on wrong Content-Type) | NOT TESTED | N/A |
 | Strict NSFW deletion | src/safety/safety-classifier-port.js + nsfw-safety-gate.js + src/assets/asset-delete-service.js (reason enum, markBlocked-before-tombstone) + server.js DELETE route (atomic, no legacy fallback) | safety-classifier-port-test; nsfw-safety-gate-test; asset-delete-service-test; v3:integration SECTION 2 (DELETE 400 no reason, 400 bad reason, 404 not found, 503 flag off) | NOT TESTED | N/A |
-| Analysis Card | src/render/analysis-card-renderer.js (5x7 ASCII bitmap font + CJK placeholder blocks; real CJK glyphs NOT implemented) | analysis-card-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
+| Analysis Card | src/render/analysis-card-renderer.js (5x7 ASCII bitmap font + real CJK glyphs via sharp SVG text + font-detector) + src/render/legacy-shadow-adapter.js + orchestrator-shadow-adapter.js (independent shadow pipelines) | analysis-card-test; cjk-glyph-test; render-shadow-meaningful-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
 | Comparison Pair | src/render/comparison-pair-renderer.js (sharp decode + quantize) | comparison-pair-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
 | Sequence 2×2 | src/render/sequence-2x2-renderer.js | sequence-2x2-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
 | ONE_SHOT_OVERRIDE | src/admin/asset-selection-service.js + src/admin/override-persistence.js + server.js /api/admin/publish/one-shot + startup restore | asset-selection-service-test; v3:integration SECTION 3 (ONE_SHOT 200 + override file written + restart restored) + SECTION 6 (invalid override cleared on restart) | NOT TESTED | NOT TESTED |
