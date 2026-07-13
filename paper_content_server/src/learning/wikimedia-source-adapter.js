@@ -44,17 +44,30 @@ function createWikimediaSourceAdapter(config) {
           headers: { 'User-Agent': 'PaperContentServer/1.0 (educational use)' },
           timeout: timeout,
         }, function(res) {
+          // HTTP 状态校验:非 200 立即 reject,不解析正文
+          if (res.statusCode !== 200) {
+            res.resume();
+            reject(new Error('Wikimedia API HTTP ' + res.statusCode));
+            return;
+          }
           var data = '';
           res.on('data', function(chunk) { data += chunk; });
           res.on('end', function() {
             try {
               var json = JSON.parse(data);
+              // API 错误不得吞掉:Wikimedia 返回 { error: { code, info } }
+              if (json && json.error) {
+                reject(new Error('Wikimedia API error: ' + (json.error.code || 'unknown') + ' ' + (json.error.info || '')));
+                return;
+              }
               var pages = json.query && json.query.pages ? Object.values(json.query.pages) : [];
               var candidates = pages.map(function(pg) {
                 var ii = pg.imageinfo && pg.imageinfo[0];
-                if (!ii) return null;
+                if (!ii || !ii.url) return null;
                 var extmeta = ii.extmetadata || {};
+                var licenseVal = extmeta.LicenseShortName ? extmeta.LicenseShortName.value : null;
                 return {
+                  // stable ID:基于 pageid,跨调用确定
                   candidateId: 'wm:' + pg.pageid,
                   sourceUrl: ii.url,
                   source: 'wikimedia',
@@ -62,8 +75,8 @@ function createWikimediaSourceAdapter(config) {
                   mimeType: ii.mime,
                   width: ii.width,
                   height: ii.height,
-                  license: extmeta.LicenseShortName ? extmeta.LicenseShortName.value : null,
-                  rightsStatus: extmeta.LicenseShortName && extmeta.LicenseShortName.value === 'Public domain' ? 'PUBLIC_DOMAIN' : 'PERMITTED',
+                  license: licenseVal,
+                  rightsStatus: licenseVal === 'Public domain' ? 'PUBLIC_DOMAIN' : 'PERMITTED',
                   author: extmeta.Artist ? extmeta.Artist.value : null,
                 };
               }).filter(Boolean);

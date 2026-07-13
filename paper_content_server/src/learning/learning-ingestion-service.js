@@ -12,31 +12,59 @@ function createIngestionService(sourceRegistry, validator, deduplicator, policy,
   var safetyGate = deps.safetyGate || null;
   var stagingDir = deps.stagingDir || null;
   var assetsDir = deps.assetsDir || null;
+  // enabled 默认 true(本服务仅在 feature flag 开启时由 compose-services 构造);
+  // 显式传入 false 时,ingestAll 立即短路,不触发任何网络请求。
+  var enabled = deps.enabled !== undefined ? deps.enabled : true;
+  var ALLOWED_DECODE_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
-  async function decodeFile(filePath) {
-    var buf = fs.readFileSync(filePath);
-    var sha256 = crypto.createHash('sha256').update(buf).digest('hex');
-    var ext = path.extname(filePath).toLowerCase();
-    var mimeType = 'image/png';
-    if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
-    else if (ext === '.webp') mimeType = 'image/webp';
-    var width = 0, height = 0;
-    try {
-      var sharp = require('sharp');
-      var meta = await sharp(buf).metadata();
-      if (meta) { mimeType = meta.format ? 'image/' + meta.format : mimeType; width = meta.width || 0; height = meta.height || 0; }
-    } catch(e) { logger.warn && logger.warn('decode metadata failed: ' + e.message); }
-    return { sha256: sha256, mimeType: mimeType, width: width, height: height };
+  function mimeToExt(mimeType) {
+    if (mimeType === 'image/jpeg') return '.jpg';
+    if (mimeType === 'image/png') return '.png';
+    if (mimeType === 'image/webp') return '.webp';
+    return '.bin';
   }
 
-  function moveFinal(stagingPath, assetId) {
-    var ext = path.extname(stagingPath) || '.bin';
+  // decodeFile — fail-closed:sharp 不可用或解码失败立即抛出(由调用方转 REJECTED)。
+  // 不从扩展名推断 MIME;SHA256/ fileSize 走流式计算。
+  async function decodeFile(filePath) {
+    var sharp;
+    try { sharp = require('sharp'); }
+    catch(e) { throw new Error('decode dependency unavailable: sharp'); }
+    var hash = crypto.createHash('sha256');
+    var fileSize = 0;
+    await new Promise(function(resolve, reject) {
+      var rs = fs.createReadStream(filePath);
+      rs.on('data', function(chunk) { hash.update(chunk); fileSize += chunk.length; });
+      rs.on('end', resolve);
+      rs.on('error', reject);
+    });
+    var sha256 = hash.digest('hex');
+    var meta;
+    try { meta = await sharp(filePath).metadata(); }
+    catch(e) { throw new Error('decode failed: ' + e.message); }
+    if (!meta || !meta.format) throw new Error('decode failed: no image format detected');
+    var mimeType = 'image/' + meta.format;
+    if (ALLOWED_DECODE_MIME.indexOf(mimeType) < 0) {
+      throw new Error('decode failed: unsupported format ' + mimeType);
+    }
+    return {
+      sha256: sha256, mimeType: mimeType,
+      width: meta.width || 0, height: meta.height || 0,
+      fileSize: fileSize, format: meta.format,
+    };
+  }
+
+  function moveFinal(stagingPath, assetId, mimeType) {
+    var ext = mimeToExt(mimeType);
     var dest = path.join(assetsDir, assetId + ext);
     fs.renameSync(stagingPath, dest);
     return dest;
   }
 
   function ingestAll() {
+    if (!enabled) {
+      return Promise.resolve({ status: 'DISABLED', candidates: [] });
+    }
     return sourceRegistry.fetchAll().then(function(lists) {
       var all = lists.reduce(function(a,b){return a.concat(b);}, []);
       return Promise.all(all.map(function(c) { return ingestOne(c); }));
@@ -86,7 +114,7 @@ function createIngestionService(sourceRegistry, validator, deduplicator, policy,
       try { tempAsset = assetModel.createAsset({ sourceUrl: null, localPath: '/tmp', libraryType: 'LEARNING', safetyStatus: 'SAFE', lifecycleStatus: 'SELECTABLE' }); }
       catch(e) { downloader.cleanup(stagingPath); return { status: 'REJECTED', reason: 'ASSET_CREATE_FAILED', reasonCode: 'ASSET_CREATE', candidateId: candidate.candidateId }; }
       var finalPath;
-      try { finalPath = moveFinal(stagingPath, tempAsset.assetId); }
+      try { finalPath = moveFinal(stagingPath, tempAsset.assetId, decoded.mimeType); }
       catch(e) { downloader.cleanup(stagingPath); return { status: 'REJECTED', reason: 'MOVE_FAILED', reasonCode: 'MOVE', error: e.message, candidateId: candidate.candidateId }; }
       // 8. Create asset
       var asset;
@@ -104,7 +132,8 @@ function createIngestionService(sourceRegistry, validator, deduplicator, policy,
         var assetId = await assetRepository.create(asset);
         // Commit dedup only after successful repository write
         deduplicator.commit({ sha256: decoded.sha256, sourceUrl: candidate.sourceUrl });
-        return { status: 'ACCEPTED', assetId: assetId, candidateId: candidate.candidateId, sha256: decoded.sha256, finalPath: finalPath };
+        // ACCEPTED 摘要不包含内部路径(localPath/finalPath)
+        return { status: 'ACCEPTED', assetId: assetId, candidateId: candidate.candidateId, sha256: decoded.sha256 };
       } catch(e) {
         downloader.cleanup(finalPath);
         return { status: 'REJECTED', reason: 'REPOSITORY_WRITE_FAILED', reasonCode: 'REPO_WRITE', error: e.message, candidateId: candidate.candidateId };

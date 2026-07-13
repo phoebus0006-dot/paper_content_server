@@ -1,9 +1,12 @@
 // learning-scheduler.js — Learning library ingestion scheduler
-function createLearningScheduler(ingestionService, config, logger) {
+// 加固:classifier 未 ready 时 scheduler 不启动(零网络请求)。
+function createLearningScheduler(ingestionService, config, logger, deps) {
   config = config || {};
   logger = logger || {};
+  deps = deps || {};
   var intervalMs = config.intervalMs || 3600000; // 默认 1 小时
   var enabled = config.enabled || false;  // 默认 false
+  var classifierReady = deps.classifierReady || function() { return false; };
   var timer = null;
   var running = false;
   var lastRunAt = null;
@@ -11,6 +14,10 @@ function createLearningScheduler(ingestionService, config, logger) {
 
   function start() {
     if (!enabled) { logger.info && logger.info('LearningScheduler: disabled, not starting'); return; }
+    if (!classifierReady()) {
+      logger.warn && logger.warn('LearningScheduler: classifier not ready, not starting');
+      return;
+    }
     if (timer) return;  // 防并发:已运行
     timer = setInterval(tick, intervalMs);
     logger.info && logger.info('LearningScheduler: started, interval=' + intervalMs + 'ms');
@@ -27,7 +34,7 @@ function createLearningScheduler(ingestionService, config, logger) {
       lastRunAt = new Date().toISOString();
       lastResult = results;
       running = false;
-      logger.info && logger.info('LearningScheduler: completed, ' + results.length + ' candidates');
+      logger.info && logger.info('LearningScheduler: completed, ' + (Array.isArray(results) ? results.length : 1) + ' results');
     }).catch(function(e) {
       lastRunAt = new Date().toISOString();
       lastResult = { error: e.message };
@@ -37,7 +44,21 @@ function createLearningScheduler(ingestionService, config, logger) {
   }
 
   function getStatus() {
-    return { enabled: enabled, running: running, lastRunAt: lastRunAt, intervalMs: intervalMs };
+    var ready = enabled && classifierReady();
+    var status;
+    if (!enabled) status = 'DISABLED';
+    else if (!classifierReady()) status = 'SAFETY_CLASSIFIER_NOT_READY';
+    else if (running) status = 'RUNNING';
+    else status = 'IDLE';
+    return {
+      enabled: enabled,
+      running: running,
+      lastRunAt: lastRunAt,
+      intervalMs: intervalMs,
+      classifierReady: classifierReady(),
+      ready: ready,
+      status: status,
+    };
   }
 
   return { start: start, stop: stop, tick: tick, getStatus: getStatus };
