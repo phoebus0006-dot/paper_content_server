@@ -4,13 +4,17 @@
 // - processUpload 不接受客户端提供的任何路径(filePath / absolutePath /
 //   relativePath 全部拒绝)。上传内容必须通过 fileBuffer(Buffer)传入,
 //   fileBuffer 由 server.js 的 multipart 解析后注入。
+// - processUploadStream 接受 Readable stream(流式上传),同样不接受客户端路径。
+//   流式写入 quarantine,实时累计 bytesWritten,超限即 abort + cleanup。
 // - MIME / width / height / fileSize 一律以服务端真实解码(sharp)为准,
 //   不信任客户端声明。
-// - quarantine 路径由服务端随机生成(custom-file-store.storeQuarantine)。
+// - quarantine 路径由服务端随机生成(custom-file-store.storeQuarantine / createQuarantineWriteStream)。
 // - safety gate 必须存在且 classifier 可用,否则 fail-closed 拒绝。
 // - SHA256 流式计算,避免一次性 readFileSync 大文件。
 // - 成功响应只返回 assetId,不返回 finalPath(避免泄露内部路径)。
 var path = require('path');
+var crypto = require('crypto');
+var { MAX_FILE_SIZE } = require('./custom-validator');
 
 function createCustomLibraryService(fileStore, validator, deduplicator, safetyGate, assetRepository, logger) {
   logger = logger || {};
@@ -175,7 +179,218 @@ function createCustomLibraryService(fileStore, validator, deduplicator, safetyGa
     }
   }
 
-  return { processUpload: processUpload };
+  // ── 流式上传接口 ──
+  // processUploadStream(inputStream, metadata, options)
+  //   inputStream: Readable stream(上传的字节流)
+  //   metadata: { originalName, mimeType, expectedSize }(可选)
+  //   options:  { maxBytes }(可选,用于测试覆盖默认上限)
+  //
+  // 流程:
+  //   1. 预检 expectedSize > maxBytes → REJECTED TOO_LARGE(不创建文件)
+  //   2. 创建 quarantine write stream(服务端随机路径,O_EXCL)
+  //   3. pipe inputStream → writer.stream,实时累计 bytesWritten
+  //      - 超限 → abort(destroy 双向 stream)+ cleanup + REJECTED TOO_LARGE
+  //   4. 写完后校验 bytesWritten === expectedSize
+  //   5. processAfterQuarantine:decode → classifier → sha256 → dedup → move → audit → repo
+  //
+  // 返回值不包含 finalPath / quarantinePath(避免泄露内部路径)。
+  async function processUploadStream(inputStream, metadata, options) {
+    metadata = metadata || {};
+    options = options || {};
+
+    if (!inputStream || typeof inputStream.pipe !== 'function') {
+      return { status: 'REJECTED', reason: 'INVALID_INPUT', error: 'inputStream must be a Readable' };
+    }
+
+    var maxBytes = options.maxBytes || MAX_FILE_SIZE;
+
+    // 1. Content-Length 预检:超限直接拒绝,不创建任何文件
+    if (metadata.expectedSize && metadata.expectedSize > maxBytes) {
+      return { status: 'REJECTED', reason: 'TOO_LARGE', error: 'Content-Length exceeds limit' };
+    }
+
+    // 2. 创建 quarantine write stream
+    var writer = fileStore.createQuarantineWriteStream(metadata.expectedSize);
+    var bytesWritten = 0;
+    var tooLarge = false;
+
+    return new Promise(function (resolve) {
+      var settled = false;
+      function done(result) {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      }
+
+      // 实时累计已读字节;超限即 abort + cleanup
+      inputStream.on('data', function (chunk) {
+        bytesWritten += chunk.length;
+        if (bytesWritten > maxBytes) {
+          tooLarge = true;
+          try { inputStream.destroy(); } catch (e) { /* best-effort */ }
+          try { writer.stream.destroy(); } catch (e) { /* best-effort */ }
+          writer.cleanup(); // unlink 即使 FD 仍打开也能成功(Node 以 FILE_SHARE_DELETE 打开)
+          done({ status: 'REJECTED', reason: 'TOO_LARGE', bytesWritten: bytesWritten, limit: maxBytes });
+        }
+      });
+
+      inputStream.pipe(writer.stream);
+
+      writer.stream.on('finish', function () {
+        if (tooLarge) return; // 已 reject
+        if (metadata.expectedSize !== undefined && bytesWritten !== metadata.expectedSize) {
+          writer.cleanup();
+          done({ status: 'REJECTED', reason: 'SIZE_MISMATCH', expected: metadata.expectedSize, actual: bytesWritten });
+          return;
+        }
+        // 继续处理 decode → classify → sha256 → dedup → move → audit → repo
+        processAfterQuarantine(writer, metadata).then(done).catch(function (e) {
+          writer.cleanup();
+          done({ status: 'ERROR', error: e.message });
+        });
+      });
+
+      writer.stream.on('error', function (e) {
+        if (tooLarge) return;
+        if (!writer.stream.destroyed) { try { writer.stream.destroy(); } catch (x) { /* best-effort */ } }
+        // 等待 writeStream 完全关闭(FD 释放 / 文件已创建)再 cleanup,
+        // 否则若 error 在 fs.open 之前触发,unlink 会因文件不存在而静默失败,
+        // 随后异步 open 仍会创建 orphan 文件。
+        function finalize() {
+          writer.cleanup();
+          done({ status: 'ERROR', error: 'STREAM_WRITE_FAILED: ' + e.message });
+        }
+        if (writer.stream.closed) finalize();
+        else writer.stream.once('close', finalize);
+      });
+
+      inputStream.on('error', function (e) {
+        if (tooLarge) return;
+        if (!writer.stream.destroyed) { try { writer.stream.destroy(); } catch (x) { /* best-effort */ } }
+        function finalize() {
+          writer.cleanup();
+          done({ status: 'ERROR', error: 'STREAM_READ_FAILED: ' + e.message });
+        }
+        if (writer.stream.closed) finalize();
+        else writer.stream.once('close', finalize);
+      });
+    });
+  }
+
+  // processAfterQuarantine:quarantine 文件写完后的安全处理流水线
+  //   decode(fail-closed)→ MIME 校验 → classifier(fail-closed)→ sha256 → dedup → move → audit → repo
+  //   每个失败分支都 cleanup(quarantine 或 finalPath),不残留文件。
+  async function processAfterQuarantine(writer, metadata) {
+    var quarantinePath = writer.path;
+
+    // 1. Sharp decode(fail-closed:解码失败 → REJECTED DECODE_FAILED)
+    var decoded;
+    try {
+      decoded = await fileStore.streamDecode(quarantinePath);
+    } catch (e) {
+      writer.cleanup();
+      return { status: 'REJECTED', reason: 'DECODE_FAILED', error: e.message };
+    }
+
+    // MIME 来自解码,不是扩展名;客户端声明与解码不一致 → 拒绝(防伪装)
+    if (metadata.mimeType && decoded.mimeType !== metadata.mimeType) {
+      writer.cleanup();
+      return { status: 'REJECTED', reason: 'MIME_MISMATCH', expected: metadata.mimeType, actual: decoded.mimeType };
+    }
+
+    // 2. Classifier(fail-closed:无 gate / classifier 无 score → REJECTED CLASSIFIER_UNAVAILABLE)
+    if (!safetyGate) {
+      writer.cleanup();
+      return { status: 'ERROR', error: 'SAFETY_GATE_MISSING' };
+    }
+
+    var classification;
+    try {
+      classification = await safetyGate.classify(quarantinePath, decoded);
+    } catch (e) {
+      writer.cleanup();
+      return { status: 'REJECTED', reason: 'CLASSIFIER_UNAVAILABLE', error: e.message };
+    }
+
+    if (!classification || classification.score === undefined) {
+      writer.cleanup();
+      return { status: 'REJECTED', reason: 'CLASSIFIER_UNAVAILABLE', reasonCode: 'FAIL_CLOSED' };
+    }
+
+    if (!safetyGate.isSafe(classification)) {
+      writer.cleanup();
+      return { status: 'REJECTED', reason: 'NSFW', classification: classification };
+    }
+
+    // 3. SHA256 流式
+    var sha256;
+    try {
+      sha256 = await fileStore.streamSha256(quarantinePath);
+    } catch (e) {
+      writer.cleanup();
+      return { status: 'ERROR', error: 'SHA256_FAILED', reason: e.message };
+    }
+
+    // 4. Dedup
+    var dup = await deduplicator.isDuplicate(sha256);
+    if (dup) {
+      writer.cleanup();
+      return { status: 'DUPLICATE', sha256: sha256 };
+    }
+
+    // 5. Move to assets(生成 assetId,原子 rename)
+    var assetId = 'asset_' + Date.now().toString(36) + '_' + crypto.randomBytes(4).toString('hex');
+    var finalPath;
+    try {
+      finalPath = fileStore.moveToAssets(quarantinePath, assetId);
+    } catch (e) {
+      writer.cleanup();
+      return { status: 'ERROR', error: 'MOVE_FAILED', reason: e.message };
+    }
+
+    // 6. Audit(失败必须 rollback finalPath,不创建资产)
+    if (safetyGate.audit) {
+      try {
+        await safetyGate.audit({
+          assetId: assetId,
+          sha256: sha256,
+          model: classification.modelVersion,
+          scores: classification.scores,
+          decision: 'SAFE',
+          timestamp: new Date().toISOString(),
+        });
+      } catch (e) {
+        // audit 失败 → 删除已 move 的文件,不创建资产
+        fileStore.cleanup(finalPath);
+        return { status: 'ERROR', error: 'AUDIT_FAILED', reason: e.message };
+      }
+    }
+
+    // 7. Create asset(不返回 finalPath)
+    var am = require(path.join(__dirname, '..', 'assets', 'asset-model'));
+    try {
+      var asset = am.createAsset({
+        assetId: assetId,
+        localPath: finalPath,
+        libraryType: 'CUSTOM',
+        sourceType: 'upload',
+        sha256: sha256,
+        mimeType: decoded.mimeType,
+        width: decoded.width,
+        height: decoded.height,
+        safetyStatus: 'SAFE',
+        lifecycleStatus: 'SELECTABLE',
+      });
+      await assetRepository.create(asset);
+      // 不返回 finalPath(避免泄露内部路径)
+      return { status: 'ACCEPTED', assetId: assetId };
+    } catch (e) {
+      fileStore.cleanup(finalPath);
+      return { status: 'ERROR', error: 'REPOSITORY_FAILED', reason: e.message };
+    }
+  }
+
+  return { processUpload: processUpload, processUploadStream: processUploadStream };
 }
 
 module.exports = { createCustomLibraryService: createCustomLibraryService };

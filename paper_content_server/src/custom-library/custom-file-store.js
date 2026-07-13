@@ -162,6 +162,72 @@ function createFileStore(quarantineDir, assetsDir, logger) {
     return dest;
   }
 
+  // 流式写入 quarantine:返回一个 WriteStream 句柄,供 processUploadStream 使用。
+  // - 服务端生成随机文件名(crypto.randomBytes(16)),.tmp 后缀
+  // - 目标用 O_EXCL(wx)防止覆盖已存在文件
+  // - 返回 { stream, path, getBytesWritten, isAborted, cleanup }
+  //   bytesWritten 由上层 stream 通过 'data' 事件累计;此处仅在 finish 时校验大小是否匹配。
+  function createQuarantineWriteStream(expectedSize) {
+    var tempName = 'q_' + crypto.randomBytes(16).toString('hex') + '.tmp';
+    var tempPath = path.join(quarantineDir, tempName);
+
+    // 验证 quarantine 目录存在(不存在则创建)
+    if (!fs.existsSync(quarantineDir)) {
+      fs.mkdirSync(quarantineDir, { recursive: true });
+    }
+
+    var writeStream = fs.createWriteStream(tempPath, { flags: 'wx' }); // wx = O_EXCL
+    var bytesWritten = 0;
+    var aborted = false;
+
+    writeStream.on('finish', function () {
+      // 写完后验证大小(若上层未自行 abort)
+      if (expectedSize !== undefined && bytesWritten !== expectedSize) {
+        aborted = true;
+      }
+    });
+
+    return {
+      stream: writeStream,
+      path: tempPath,
+      getBytesWritten: function () { return bytesWritten; },
+      isAborted: function () { return aborted; },
+      cleanup: function () {
+        try { fs.unlinkSync(tempPath); } catch (e) { /* best-effort */ }
+      },
+    };
+  }
+
+  // 流式解码:用 sharp 读取 metadata(不一次性加载到内存)
+  // 返回 { mimeType, width, height, format, fileSize }
+  //   - mimeType 来自解码结果('image/' + format),不来自扩展名
+  //   - fileSize 来自 fs.statSync(真实大小)
+  // 注意:与 decodeAndRecompute 不同,本方法不做路径遍历/symlink 校验,
+  //       因调用方传入的 filePath 由 createQuarantineWriteStream 服务端生成。
+  function streamDecode(filePath) {
+    var sharp = require('sharp');
+    return sharp(filePath).metadata().then(function (metadata) {
+      return {
+        mimeType: 'image/' + metadata.format,
+        width: metadata.width,
+        height: metadata.height,
+        format: metadata.format,
+        fileSize: fs.statSync(filePath).size,
+      };
+    });
+  }
+
+  // 流式 SHA256(不一次性 readFileSync,对大文件友好)
+  function streamSha256(filePath) {
+    return new Promise(function (resolve, reject) {
+      var hash = crypto.createHash('sha256');
+      var stream = fs.createReadStream(filePath);
+      stream.on('data', function (chunk) { hash.update(chunk); });
+      stream.on('end', function () { resolve(hash.digest('hex')); });
+      stream.on('error', reject);
+    });
+  }
+
   // cleanup:只删除 quarantine 或 assets 目录内的文件,拒绝任意路径
   function cleanup(filePath) {
     try {
@@ -202,6 +268,10 @@ function createFileStore(quarantineDir, assetsDir, logger) {
     computeSha256Stream: computeSha256Stream,
     moveToAssets: moveToAssets,
     cleanup: cleanup,
+    // 流式接口(供 processUploadStream 使用)
+    createQuarantineWriteStream: createQuarantineWriteStream,
+    streamDecode: streamDecode,
+    streamSha256: streamSha256,
   };
 }
 
