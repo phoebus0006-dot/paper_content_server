@@ -82,7 +82,8 @@ function createCustomLibraryService(fileStore, validator, deduplicator, safetyGa
       originalName: upload.originalName,
     };
 
-    // classifier 返回 { score, category, modelVersion, scores }
+    // classifier 返回结构化结果 { decision, scores, modelType, ... } 或
+    // 不可用标记 { score: undefined, category: 'UNAVAILABLE', reason }
     var classification;
     try {
       classification = await safetyGate.classify(quarantinePath, metadata);
@@ -91,10 +92,17 @@ function createCustomLibraryService(fileStore, validator, deduplicator, safetyGa
       return { status: 'ERROR', error: 'CLASSIFIER_FAILED', reason: e.message };
     }
 
-    // fail-closed:classifier 返回空或无 score → 拒绝(FAIL_CLOSED)
-    if (!classification || classification.score === undefined) {
+    // fail-closed:classifier 不可用(无 decision 且无 score)→ FEATURE_NOT_READY
+    // 这是 feature 未就绪(无模型/runtime),不是内容拒绝
+    var hasDecision = classification && classification.decision !== undefined;
+    var hasScore = classification && classification.score !== undefined;
+    if (!hasDecision && !hasScore) {
       fileStore.cleanup(quarantinePath);
-      return { status: 'REJECTED', reason: 'CLASSIFIER_UNAVAILABLE', reasonCode: 'FAIL_CLOSED' };
+      return {
+        status: 'FEATURE_NOT_READY',
+        reason: 'CLASSIFIER_UNAVAILABLE',
+        reasonCode: classification ? classification.reason : 'NO_CLASSIFICATION',
+      };
     }
 
     if (!safetyGate.isSafe(classification)) {
@@ -309,12 +317,19 @@ function createCustomLibraryService(fileStore, validator, deduplicator, safetyGa
       classification = await safetyGate.classify(quarantinePath, decoded);
     } catch (e) {
       writer.cleanup();
-      return { status: 'REJECTED', reason: 'CLASSIFIER_UNAVAILABLE', error: e.message };
+      return { status: 'FEATURE_NOT_READY', reason: 'CLASSIFIER_UNAVAILABLE', error: e.message };
     }
 
-    if (!classification || classification.score === undefined) {
+    // fail-closed:classifier 不可用(无 decision 且无 score)→ FEATURE_NOT_READY
+    var hasDecision = classification && classification.decision !== undefined;
+    var hasScore = classification && classification.score !== undefined;
+    if (!hasDecision && !hasScore) {
       writer.cleanup();
-      return { status: 'REJECTED', reason: 'CLASSIFIER_UNAVAILABLE', reasonCode: 'FAIL_CLOSED' };
+      return {
+        status: 'FEATURE_NOT_READY',
+        reason: 'CLASSIFIER_UNAVAILABLE',
+        reasonCode: classification ? classification.reason : 'NO_CLASSIFICATION',
+      };
     }
 
     if (!safetyGate.isSafe(classification)) {

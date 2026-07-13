@@ -4,11 +4,16 @@
 // 新版本改为委托给 SafetyClassifierPort:真实分类由 classifier 完成,
 // 文件名启发式只作为附加规则(快速拒绝明显违规的文件名,不作为主判断)。
 //
-// 未配置真实 classifier 时 fail-closed:classify 返回无 score 的分类,
-// processUpload 会据此返回 REJECTED + FAIL_CLOSED。
+// classifier 不可用时 fail-closed:classify 返回无 decision / 无 score 的标记,
+// processUpload 据此返回 FEATURE_NOT_READY(classifier 未就绪,非内容拒绝)。
+//
+// classify 返回值:
+//   - 启发式拒绝 → { decision: 'UNSAFE', reason: 'HEURISTIC_REJECT', scores: { heuristic: 1.0 }, ... }
+//   - classifier 未就绪 → { score: undefined, category: 'UNAVAILABLE', reason: 'CLASSIFIER_NOT_READY'|'NO_RUNTIME_AVAILABLE' }
+//   - classifier 就绪 → 结构化推理结果 { decision, scores: {safe,adult,racy,violence}, modelType, ... }
 //
 // 接口:
-//   classify(filePath, metadata) -> Promise<{ score?, category, modelVersion, scores?, reason? }>
+//   classify(filePath, metadata) -> Promise<{ decision?, score?, category?, modelVersion, scores?, reason? }>
 //   isSafe(classification) -> bool  (接受 classification 对象,不再接受 filePath)
 //   audit(entry) -> Promise<void>
 //   configured -> bool
@@ -55,21 +60,28 @@ function createNsfwSafetyGate(options) {
   });
 
   // isSafe 现在接受 classification 对象(不是 filePath)
-  // fail-closed:无 classification 或无 score → false
+  // fail-closed:无 classification、无 decision 且无 score → false
   function isSafe(classification) {
-    if (!classification || classification.score === undefined) return false;
+    if (!classification) return false;
+    // 新结构:有 decision 字段 → decision === 'SAFE'
+    if (classification.decision !== undefined) {
+      return classification.decision === 'SAFE';
+    }
+    // 旧结构:有 score 字段 → score < threshold
+    if (classification.score === undefined) return false;
     return classifierPort.isSafe(classification);
   }
 
   // classify:先跑附加启发式,再委托给真实 classifier
-  // - 启发式拒绝 → 返回 score=1.0 的 UNSAFE 分类
-  // - classifier 不可用/未配置 → 返回无 score 的分类(由上层 fail-closed)
+  // - 启发式拒绝 → 返回 decision='UNSAFE' 的分类(含 score=1.0 向后兼容)
+  // - classifier 不可用/未就绪 → 返回无 decision / 无 score 的标记(由上层 fail-closed)
   // - 其他异常 → 重新抛出(由上层走 ERROR CLASSIFIER_FAILED)
   async function classify(filePath, metadata) {
     var heuristic = heuristicCheck(metadata);
     if (!heuristic.ok) {
       logger.warn('NSFW gate: heuristic reject: ' + heuristic.reason);
       return {
+        decision: 'UNSAFE',
         score: 1.0,
         category: 'HEURISTIC_REJECT',
         modelVersion: classifierPort.modelVersion || 'HEURISTIC',
@@ -80,9 +92,10 @@ function createNsfwSafetyGate(options) {
     try {
       return await classifierPort.classify(filePath, metadata);
     } catch (e) {
-      // classifier 未配置或未实现 → fail-closed:返回无 score 的分类
-      if (e.message === 'NO_CLASSIFIER_MODEL_CONFIGURED' ||
-          e.message === 'CLASSIFIER_NOT_IMPLEMENTED') {
+      // classifier 未就绪(无模型/无 runtime/加载失败/smoke 失败)→ fail-closed 标记
+      // 上层(custom-library-service)据此返回 FEATURE_NOT_READY
+      if (e.message === 'CLASSIFIER_NOT_READY' ||
+          e.message === 'NO_RUNTIME_AVAILABLE') {
         return {
           score: undefined,
           category: 'UNAVAILABLE',

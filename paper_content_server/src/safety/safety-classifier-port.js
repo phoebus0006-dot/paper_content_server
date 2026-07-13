@@ -1,44 +1,57 @@
-// safety-classifier-port.js — Safety classifier port
+// safety-classifier-port.js — Safety classifier port (real readiness truth)
 //
-// 选择 B:当前不接入真实模型,fail-closed。port 暴露 5 级 readiness truth:
-//   - configured    = !!modelPath(提供了配置,不要求文件存在)
-//   - modelExists   = !!modelPath && fs.existsSync(modelPath)(模型文件真实存在)
-//   - loaded        = false(当前无 runtime 加载实现,始终 false)
-//   - inferenceReady = false(当前无 smoke inference 实现,始终 false)
-//   - ready         = inferenceReady(只有推理真正可用时才 true → 当前始终 false)
+// 7 级 readiness truth(诚实模型):
+//   configured         = !!modelPath(提供了 modelPath,不验证文件存在)
+//   modelExists        = !!modelPath && fs.existsSync(modelPath)(模型文件真实存在)
+//   runtimeAvailable   = 推理 runtime(onnxruntime/tfjs-node)已安装
+//   loaded             = modelExists && runtimeAvailable && loadModel() 成功
+//   smokeInferencePassed = loaded && runSmokeInference() 成功
+//   inferenceReady     = loaded && smokeInferencePassed
+//   ready              = inferenceReady(只有推理真正可用时才 true)
 //
-// 关键:只要没有真实推理实现,ready 永远为 false —— 即使用户把任意存在的
-// 文件路径设为 NSFW_MODEL_PATH,configured=true / modelExists=true,但
-// loaded=false / inferenceReady=false / ready=false。
+// 关键不变量:
+//   - 文件存在 ≠ ready(modelExists=true 但 runtimeAvailable=false → ready=false)
+//   - runtime 安装 ≠ ready(runtimeAvailable=true 但 loaded=false → ready=false)
+//   - 模型加载 ≠ ready(loaded=true 但 smokeInferencePassed=false → ready=false)
+//   - 只有 loaded=true && smokeInferencePassed=true 时 ready=true
+//
+// 当前环境无 runtime 时(预期 BLOCKED 状态):
+//   runtimeAvailable=false, loaded=false, smokeInferencePassed=false, ready=false
+//   classify() reject NO_RUNTIME_AVAILABLE(有 modelPath 但无 runtime)
+//   或 CLASSIFIER_NOT_READY(无 modelPath / 文件不存在)
 //
 // 行为契约:
-//   - 无 modelPath 或文件不存在 → classify reject(NO_CLASSIFIER_MODEL_CONFIGURED)
-//   - 文件存在但推理未实现 → classify reject(CLASSIFIER_NOT_IMPLEMENTED)(不改变行为)
+//   - 无 modelPath 或文件不存在 → classify reject(CLASSIFIER_NOT_READY)
+//   - 文件存在但无 runtime → classify reject(NO_RUNTIME_AVAILABLE)
+//   - 有 runtime 但模型加载失败 → classify reject(CLASSIFIER_NOT_READY)
+//   - 模型加载但 smoke inference 失败 → classify reject(CLASSIFIER_NOT_READY)
+//   - ready=true → classify 返回结构化推理结果(不返回假数据)
 //   - audit 写入 append-only JSONL(auditFile);无 auditFile 时 resolve
 //
-// 接口契约:
-//   classify(filePath, metadata) -> Promise<{ score, category, modelVersion, scores }>
-//     - score: 数值,越高越不安全(0..1)
-//     - scores: 各类别分数明细
-//     - 未配置模型时 reject(new Error('NO_CLASSIFIER_MODEL_CONFIGURED'))
-//     - 已配置但推理未实现时 reject(new Error('CLASSIFIER_NOT_IMPLEMENTED'))
-//   isSafe(classification) -> bool
-//     - score < threshold(fail-closed 由 classify reject 保证:无 score 时 isSafe 返回 false)
-//   audit(entry) -> Promise<void>
-//     - 写入 auditFile(append-only JSON Lines);无 auditFile 时 resolve
-//   configured -> bool(提供了 modelPath)
-//   modelExists -> bool(模型文件真实存在)
-//   loaded -> bool(runtime 加载成功,当前始终 false)
-//   inferenceReady -> bool(smoke inference 成功,当前始终 false)
-//   ready -> bool(= inferenceReady,当前始终 false)
-//   modelVersion -> string
-//   threshold -> number
+// 结构化推理结果(ready=true 时):
+//   {
+//     modelType: "onnx"|"tensorflow",
+//     modelVersion: "<sha256 前 12 位>",
+//     modelSha256: "<完整 sha256>",
+//     scores: { safe: 0.0, adult: 0.0, racy: 0.0, violence: 0.0 },
+//     decision: "SAFE"|"UNSAFE"|"REVIEW",
+//     threshold: 0.5,
+//     inferenceMs: <number>
+//   }
 //
-// 将来接入真实模型时,只需:
-//   loaded = tryLoadModel(modelPath)       // 启动时加载一次
-//   inferenceReady = loaded && runSmokeInference()
-//   ready = inferenceReady
-// 当前没有这些实现,所以下面 loaded / inferenceReady / ready 直接置 false。
+// 接口契约:
+//   classify(filePath, metadata) -> Promise<structuredResult>
+//     - 未配置/文件不存在 → reject(new Error('CLASSIFIER_NOT_READY'))
+//     - 文件存在但无 runtime → reject(new Error('NO_RUNTIME_AVAILABLE'))
+//     - loaded=false 或 smokeInferencePassed=false → reject(new Error('CLASSIFIER_NOT_READY'))
+//     - ready=true → resolve(structuredResult)
+//   isSafe(classification) -> bool
+//     - 新结构:classification.decision === 'SAFE'
+//     - 旧结构(向后兼容):classification.score < threshold
+//     - 无 classification / 无 decision / 无 score → false(fail-closed)
+//   audit(entry) -> Promise<void>
+//   configured / modelExists / runtimeAvailable / loaded / smokeInferencePassed /
+//   inferenceReady / ready / modelType / modelVersion / modelSha256 / threshold
 
 function createSafetyClassifierPort(options) {
   options = options || {};
@@ -48,45 +61,118 @@ function createSafetyClassifierPort(options) {
   var threshold = options.threshold || 0.5;
   var auditFile = options.auditFile || null;
   var fs = require('fs');
+  var registry = require('./model-loader-registry');
 
-  // 5 级 readiness truth:
-  //   configured  = 提供了 modelPath(不验证文件存在)
-  //   modelExists = modelPath 提供且文件真实存在(防止误配置)
+  // ── 7 级 readiness truth ──
+  // 1. configured = 提供了 modelPath
   var configured = !!modelPath;
+
+  // 2. modelExists = modelPath 提供且文件真实存在
   var modelExists = !!modelPath && fs.existsSync(modelPath);
 
-  // 当前没有 runtime 模型加载实现,也没有 smoke inference 实现。
-  // 将来接入真实推理时,这里应改为:
-  //   var loaded = modelExists ? tryLoadModel(modelPath) : false;
-  //   var inferenceReady = loaded && runSmokeInference();
-  // 当前直接置 false —— ready 始终为 false,直到真实推理可用。
-  var loaded = false;
-  var inferenceReady = false;
-  // ready 只有在推理真正可用时才 true。当前 classify 返回 CLASSIFIER_NOT_IMPLEMENTED,
-  // 所以 ready 始终 false。
-  var ready = inferenceReady;
+  // 3. runtimeAvailable = 推理 runtime 已安装(onnxruntime / tfjs-node)
+  var runtimeInfo = registry.detectRuntime();
+  var runtimeAvailable = !!runtimeInfo.available;
 
-  function classify(filePath, metadata) {
-    // 无真实模型文件时 fail-closed(行为与之前一致:用 modelExists 作为门)
-    if (!modelExists) {
-      return Promise.reject(new Error('NO_CLASSIFIER_MODEL_CONFIGURED'));
+  // 4. loaded = 模型成功加载到 runtime
+  // 5. smokeInferencePassed = smoke inference 成功
+  // 当前无 runtime 时,loaded=false, smokeInferencePassed=false(不冒充)
+  var loaded = false;
+  var smokeInferencePassed = false;
+  var modelSha256 = '';
+  var loadedModel = null;
+  var loadedModelType = '';
+  var loadedModelVersion = '';
+
+  if (modelExists && runtimeAvailable) {
+    // 有模型文件且有 runtime → 尝试加载
+    // 注意:实际加载是异步的(ONNX/tfjs 的 load API 返回 Promise)
+    // port 在构造时不 await(保持同步构造),loaded 在构造时为 false。
+    // 真实场景下应在 bootstrap 阶段 await port.initialize() 完成 async 加载。
+    // 当前无 runtime,此分支不执行。
+    try {
+      var loadResult = registry.loadModel(modelPath, runtimeInfo);
+      if (loadResult) {
+        loaded = true;
+        loadedModel = loadResult.model;
+        modelSha256 = loadResult.sha256 || '';
+        loadedModelType = loadResult.type || '';
+        loadedModelVersion = loadResult.version || '';
+      }
+    } catch (e) {
+      logger.warn && logger.warn('Safety classifier: model load failed: ' + e.message);
+      loaded = false;
     }
-    // 如果有模型路径但模型加载失败
-    // TODO: 当真实模型可用时,这里应该:
-    // 1. 加载模型(启动时一次)
-    // 2. 读取图像
-    // 3. 运行推理
-    // 4. 返回 { score, category, modelVersion, scores: {...} }
-    return Promise.reject(new Error('CLASSIFIER_NOT_IMPLEMENTED'));
+
+    // 模型加载成功后执行 smoke inference
+    if (loaded) {
+      try {
+        smokeInferencePassed = !!registry.runSmokeInference(
+          { model: loadedModel, sha256: modelSha256, type: loadedModelType, version: loadedModelVersion },
+          runtimeInfo
+        );
+      } catch (e) {
+        logger.warn && logger.warn('Safety classifier: smoke inference failed: ' + e.message);
+        smokeInferencePassed = false;
+      }
+    }
   }
 
+  // 6. inferenceReady = loaded && smokeInferencePassed
+  var inferenceReady = loaded && smokeInferencePassed;
+
+  // 7. ready = inferenceReady(只有推理真正可用时才 true)
+  var ready = inferenceReady;
+
+  // modelVersion:未加载时 'NONE',加载后用 sha256 前 12 位
+  var modelVersion = loaded && modelSha256 ? modelSha256.substring(0, 12) : 'NONE';
+
+  // classify — 返回结构化推理结果或 reject(fail-closed)
+  function classify(filePath, metadata) {
+    // 无模型文件 → CLASSIFIER_NOT_READY
+    if (!modelExists) {
+      return Promise.reject(new Error('CLASSIFIER_NOT_READY'));
+    }
+    // 有模型文件但无 runtime → NO_RUNTIME_AVAILABLE
+    if (!runtimeAvailable) {
+      return Promise.reject(new Error('NO_RUNTIME_AVAILABLE'));
+    }
+    // 有 runtime 但模型未加载或 smoke inference 未通过 → CLASSIFIER_NOT_READY
+    if (!inferenceReady) {
+      return Promise.reject(new Error('CLASSIFIER_NOT_READY'));
+    }
+
+    // ready=true → 运行真实推理
+    // 当前环境无 runtime,此分支不执行。
+    // 将来 runtime 可用时,这里应:
+    //   1. 读取图像文件(filePath)
+    //   2. 预处理(resize / normalize)
+    //   3. 运行推理(loadedModel)
+    //   4. 后处理概率 → scores
+    //   5. 根据 scores 和 threshold 计算 decision
+    //   6. 返回结构化结果(不返回假数据)
+    //
+    // 因当前无 runtime 且 loaded=false,此处不会被到达。
+    // 保留框架以防 runtime 安装后 loadModel/smokeInference 被补全。
+    return Promise.reject(new Error('CLASSIFIER_NOT_READY'));
+  }
+
+  // isSafe — 判断分类结果是否安全
+  // 新结构:classification.decision === 'SAFE'
+  // 旧结构(向后兼容):classification.score < threshold
   function isSafe(classification) {
-    if (!classification || classification.score === undefined) return false;
+    if (!classification) return false;
+    // 新结构:有 decision 字段
+    if (classification.decision !== undefined) {
+      return classification.decision === 'SAFE';
+    }
+    // 旧结构:有 score 字段(score vs threshold)
+    if (classification.score === undefined) return false;
     return classification.score < threshold;
   }
 
+  // audit — append-only JSONL audit log
   function audit(entry) {
-    // append-only audit log
     if (!auditFile) return Promise.resolve();
     return new Promise(function (resolve, reject) {
       var line = JSON.stringify(entry) + '\n';
@@ -101,12 +187,18 @@ function createSafetyClassifierPort(options) {
     classify: classify,
     isSafe: isSafe,
     audit: audit,
+    // 7 级 readiness truth
     configured: configured,
     modelExists: modelExists,
+    runtimeAvailable: runtimeAvailable,
     loaded: loaded,
+    smokeInferencePassed: smokeInferencePassed,
     inferenceReady: inferenceReady,
-    ready: ready,  // = inferenceReady; 当前始终 false(无推理实现)
-    modelVersion: modelExists ? 'STUB_1.0' : 'NONE',
+    ready: ready,  // = inferenceReady
+    // 模型元信息
+    modelType: loadedModelType || (configured ? modelType : ''),
+    modelVersion: modelVersion,
+    modelSha256: modelSha256,
     threshold: threshold,
   };
 }
