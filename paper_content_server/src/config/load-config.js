@@ -30,6 +30,15 @@ function resolvePath(configured, defaultPath, cwd) {
   return p;
 }
 
+// parseBoolEnv — strict boolean env parser.
+// Accepts 'true' / '1' / 'yes' (case-insensitive) as true; everything else is false.
+// Used for feature flags which must fail-closed (default false) when unset or malformed.
+function parseBoolEnv(raw, fallback) {
+  if (raw === undefined || raw === null || raw === '') return !!fallback;
+  var v = String(raw).trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+}
+
 function loadConfig(opts) {
   opts = opts || {};
   var cwd = opts.cwd || process.cwd();
@@ -147,6 +156,18 @@ function loadConfig(opts) {
   config.lifecycle = {
     shutdownTimeoutMs: Number(env.BOOTSTRAP_SHUTDOWN_TIMEOUT_MS) || 10000,
     forceExitTimeoutMs: Number(env.PROCESS_FORCE_EXIT_TIMEOUT_MS) || 12000,
+  };
+
+  // Feature flags — all default to false (fail-closed). This is the single source
+  // of truth for whether a feature is CONFIGURED. Runtime readiness additionally
+  // requires the dependency instance to exist (see src/admin/feature-flag-view.js).
+  config.features = {
+    customLibraryEnabled: parseBoolEnv(env.CUSTOM_LIBRARY_ENABLED, false),
+    learningLibraryEnabled: parseBoolEnv(env.LEARNING_LIBRARY_ENABLED, false),
+    advancedRenderEnabled: parseBoolEnv(env.R9_ADVANCED_RENDER_ENABLED, false),
+    renderShadowEnabled: parseBoolEnv(env.R9_RENDER_SHADOW_ENABLED, false),
+    deletePipelineEnabled: parseBoolEnv(env.DELETE_PIPELINE_ENABLED, false),
+    mqttEnabled: parseBoolEnv(env.MQTT_ENABLED, false),
   };
 
   // Validate
