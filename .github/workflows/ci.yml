@@ -46,3 +46,4 @@ jobs:
       - run: npm run custom-library:test
       - run: npm run learning:test
       - run: npm run selection:test
+      - run: npm run v3:integration

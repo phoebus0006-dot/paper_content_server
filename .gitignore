@@ -45,6 +45,7 @@ paper_content_server/test_cntr_*/
 paper_content_server/test_lg_*/
 paper_content_server/test_night_*/
 paper_content_server/test_shutdown_*/
+paper_content_server/test_v3_*/
 # Audit checkpoints
 audit-checkpoint/
 # Editor swap files
