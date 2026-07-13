@@ -186,10 +186,13 @@ function loadConfig(opts) {
 
   // Safety classifier 配置 — drives safetyClassifierPort / safetyGate.
   // modelPath=null → classifier port is created but not configured (fail-closed).
+  // timeout bounds inference calls (forward-compatible: consumed when a real
+  // runtime is wired in; the current port accepts but does not enforce it).
   config.safety = {
     modelPath: env.NSFW_MODEL_PATH || null,
     modelType: env.NSFW_MODEL_TYPE || 'tensorflow',
     threshold: parseFloat(env.NSFW_THRESHOLD || '0.5'),
+    timeout: parseInt(env.NSFW_MODEL_TIMEOUT || '5000', 10),
     auditFile: env.NSFW_AUDIT_FILE || path.join(dataDir, 'safety-audit.jsonl'),
   };
 

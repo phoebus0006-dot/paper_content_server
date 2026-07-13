@@ -136,10 +136,13 @@ async function run() {
     !!result && Buffer.isBuffer(result.frame) && result.frame.length > 0,
     'frameLen=' + (result && result.frame ? result.frame.length : 0));
 
-  // The shadow records a match when legacy and orchestrator produce identical
-  // bytes (which they do, since both delegate to the same renderWithLayouts).
+  // The shadow records a mismatch when legacy and orchestrator use genuinely
+  // independent adapters (legacy = color-block fills, orchestrator = real text
+  // rasterizers). A mismatch is the expected, meaningful outcome — it proves
+  // the two pipelines are truly independent rather than two closures over one
+  // shared function.
   var metrics = services.renderShadow.getMetrics();
-  t('SHADOW_MATCH_RECORDED', metrics.runs >= 1 && metrics.matches >= 1, 'runs=' + metrics.runs + ' matches=' + metrics.matches);
+  t('SHADOW_MISMATCH_RECORDED', metrics.runs >= 1 && metrics.mismatches >= 1, 'runs=' + metrics.runs + ' mismatches=' + metrics.mismatches);
 
   // Cleanup temp dir.
   try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch (e) {}

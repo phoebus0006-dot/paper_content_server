@@ -120,6 +120,7 @@ function composeServices(deps) {
       modelType: (config.safety && config.safety.modelType) || 'tensorflow',
       threshold: (config.safety && config.safety.threshold) != null ? config.safety.threshold : 0.5,
       auditFile: (config.safety && config.safety.auditFile) || null,
+      timeout: (config.safety && config.safety.timeout) || null,
     });
   } catch (e) { logger.warn('safetyClassifierPort init: ' + e.message); }
 
@@ -219,31 +220,28 @@ function composeServices(deps) {
   // --- renderShadow: real EPF1 rasterizers for analysis/comparison/sequence ---
   // Gated by config.features.renderShadowEnabled — when false, no shadow is
   // created and the render route uses the legacy renderer only.
+  //
+  // Lane E: the shadow now uses two genuinely INDEPENDENT adapter modules
+  // instead of two closures over one shared renderWithLayouts function.
+  //   - legacy-shadow-adapter: direct color-block fills (no text pixels)
+  //   - orchestrator-shadow-adapter: real text/image rasterizers via the
+  //     analysis/comparison/sequence layout renderers
+  // Both adapters expose a distinct `render` function object, so render-shadow
+  // accepts them. productionSide stays 'legacy' (default) — the legacy frame is
+  // served while the orchestrator pipeline is exercised for comparison.
   if (features.renderShadowEnabled) {
     try {
       var { createRenderShadow } = require('../render/render-shadow');
-      var { createAnalysisCardRenderer } = require('../render/analysis-card-renderer');
-      var { createComparisonPairRenderer } = require('../render/comparison-pair-renderer');
-      var { createSequence2x2Renderer } = require('../render/sequence-2x2-renderer');
-      var analysisRenderer = createAnalysisCardRenderer();
-      var comparisonRenderer = createComparisonPairRenderer();
-      var sequenceRenderer = createSequence2x2Renderer();
-      function renderWithLayouts(content, profileId, clock) {
-        if (analysisRenderer.canRender(content)) return analysisRenderer.render(content, profileId, clock);
-        if (comparisonRenderer.canRender(content)) return comparisonRenderer.render(content, profileId, clock);
-        if (sequenceRenderer.canRender(content)) return sequenceRenderer.render(content, profileId, clock);
-        return Promise.resolve(null);
-      }
-      // Two distinct function objects (different closures) — render-shadow.js
-      // rejects same-reference legacy/orchestrator pairs. Behavior can match;
-      // shadow compares outputs and records match/mismatch either way.
-      var legacyRenderFn = function (content, profileId, clock) {
-        return renderWithLayouts(content, profileId, clock);
-      };
-      var orchestratorRenderFn = function (content, profileId, clock) {
-        return renderWithLayouts(content, profileId, clock);
-      };
-      renderShadow = createRenderShadow(legacyRenderFn, orchestratorRenderFn, logger, { disable: false });
+      var { createLegacyShadowAdapter } = require('../render/legacy-shadow-adapter');
+      var { createOrchestratorShadowAdapter } = require('../render/orchestrator-shadow-adapter');
+      var legacyAdapter = createLegacyShadowAdapter({ logger: logger, clock: clock });
+      var orchestratorAdapter = createOrchestratorShadowAdapter({ logger: logger, clock: clock });
+      renderShadow = createRenderShadow(
+        legacyAdapter.render,
+        orchestratorAdapter.render,
+        logger,
+        { disable: !config.features.renderShadowEnabled }
+      );
     } catch (e) { logger.warn('renderShadow init: ' + e.message); }
   }
 
