@@ -91,8 +91,9 @@ function drawVLine(codes, x, y0, y1, code, thickness) {
 }
 
 // 把分析卡片布局光栅化为 384000 个调色板码(含真实文字像素)。
+// 返回 Promise<codes>,因为 CJK 文字光栅化是异步的(sharp SVG text)。
 function rasterizeAnalysisCard(card) {
-  if (!card) return null;
+  if (!card) return Promise.resolve(null);
   // 白色背景
   var codes = newCanvas(1);
 
@@ -124,16 +125,18 @@ function rasterizeAnalysisCard(card) {
 
   // === 文字内容 ===
   // 标题:蓝色背景上白色文字, scale=2
-  textRasterizer.renderText(card.title || '', 20, 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
-    scale: 2, maxWidth: CANVAS_WIDTH - 40, maxLines: 2,
-  });
-
   // 摘要:白色背景上黑色文字, scale=1
-  textRasterizer.renderText(card.summary || '', 20, 100, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
-    scale: 1, maxWidth: CANVAS_WIDTH - 40, maxLines: 5,
-  });
-
   // 数据点:每个 dataPoint 一行,label: value
+  // 来源:黑色背景上白色文字
+  // 所有文字通过 renderTextAsync 渲染,以支持真实 CJK 字形。
+  var textTasks = [];
+  textTasks.push(textRasterizer.renderTextAsync(card.title || '', 20, 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
+    scale: 2, maxWidth: CANVAS_WIDTH - 40, maxLines: 2,
+  }));
+  textTasks.push(textRasterizer.renderTextAsync(card.summary || '', 20, 100, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
+    scale: 1, maxWidth: CANVAS_WIDTH - 40, maxLines: 5,
+  }));
+
   var regionStartY = 210;
   var regionEndY = 435;
   var usableH = regionEndY - regionStartY;
@@ -144,17 +147,16 @@ function rasterizeAnalysisCard(card) {
     var label = dp.label || ('Point ' + (j + 1));
     var value = dp.value || '';
     var text = label + (value ? ': ' + value : '');
-    textRasterizer.renderText(text, 36, dpY + 4, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
+    textTasks.push(textRasterizer.renderTextAsync(text, 36, dpY + 4, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
       scale: 1, maxWidth: CANVAS_WIDTH - 60, maxLines: 1,
-    });
+    }));
   }
 
-  // 来源:黑色背景上白色文字
-  textRasterizer.renderText(card.source || '', 20, CANVAS_HEIGHT - 30, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
+  textTasks.push(textRasterizer.renderTextAsync(card.source || '', 20, CANVAS_HEIGHT - 30, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
     scale: 1, maxWidth: CANVAS_WIDTH - 40, maxLines: 1,
-  });
+  }));
 
-  return codes;
+  return Promise.all(textTasks).then(function () { return codes; });
 }
 
 // 分析卡片不直接绑定图片(按规范);此钩子保留扩展位。
@@ -182,26 +184,23 @@ function createAnalysisCardRenderer() {
     render: function(content, profileId, clock) {
       var card = renderAnalysisCard(content, { clock: clock });
       if (!card) return Promise.resolve(null);
-      var codes;
-      try {
-        codes = rasterizeAnalysisCard(card);
-      } catch (e) {
-        return Promise.reject(e);
-      }
-      return rasterizeImages(content, codes).then(function() {
-        var frame;
-        try {
-          frame = encodeAndValidate(codes);
-        } catch (e) {
-          throw e;
-        }
-        var clockValue = (clock !== undefined && clock !== null) ? clock : '0';
-        return {
-          frame: frame,
-          frameId: 'analysis_card:' + clockValue,
-          profileId: profileId || 'default',
-          layout: card,
-        };
+      return rasterizeAnalysisCard(card).then(function(codes) {
+        if (!codes) return null;
+        return rasterizeImages(content, codes).then(function() {
+          var frame;
+          try {
+            frame = encodeAndValidate(codes);
+          } catch (e) {
+            throw e;
+          }
+          var clockValue = (clock !== undefined && clock !== null) ? clock : '0';
+          return {
+            frame: frame,
+            frameId: 'analysis_card:' + clockValue,
+            profileId: profileId || 'default',
+            layout: card,
+          };
+        });
       });
     },
     canRender: function(content) {

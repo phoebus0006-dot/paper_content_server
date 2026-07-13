@@ -93,8 +93,9 @@ function drawVLine(codes, x, y0, y1, code, thickness) {
 }
 
 // 把 2x2 网格布局光栅化为 384000 个调色板码(含真实文字像素)。
+// 返回 Promise<codes>,因为 CJK 文字光栅化是异步的(sharp SVG text)。
 function rasterizeSequence2x2(grid) {
-  if (!grid) return null;
+  if (!grid) return Promise.resolve(null);
   var codes = newCanvas(1);
   var half = Math.floor(CANVAS_WIDTH / 2);   // 400
   var midY = Math.floor(CANVAS_HEIGHT / 2);  // 240
@@ -113,7 +114,9 @@ function rasterizeSequence2x2(grid) {
   drawHLine(codes, 0, CANVAS_WIDTH, midY - 1, 0, 3);
 
   // === 文字内容 ===
+  // 所有文字通过 renderTextAsync 渲染,以支持真实 CJK 字形。
   var cells = grid.cells || [];
+  var textTasks = [];
   for (var i = 0; i < cells.length; i++) {
     var c = cells[i];
     var titleColor = 1; // 白色文字在彩色背景上对比好
@@ -121,15 +124,15 @@ function rasterizeSequence2x2(grid) {
     var padX = 6;
     var padY = 6;
 
-    textRasterizer.renderText(c.title || '', c.cellX + padX, c.cellY + padY, codes, CANVAS_WIDTH, CANVAS_HEIGHT, titleColor, {
+    textTasks.push(textRasterizer.renderTextAsync(c.title || '', c.cellX + padX, c.cellY + padY, codes, CANVAS_WIDTH, CANVAS_HEIGHT, titleColor, {
       scale: 1, maxWidth: c.cellWidth - 2 * padX, maxLines: 2,
-    });
-    textRasterizer.renderText(c.summary || '', c.cellX + padX, c.cellY + padY + 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, summaryColor, {
+    }));
+    textTasks.push(textRasterizer.renderTextAsync(c.summary || '', c.cellX + padX, c.cellY + padY + 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, summaryColor, {
       scale: 1, maxWidth: c.cellWidth - 2 * padX, maxLines: 3,
-    });
+    }));
   }
 
-  return codes;
+  return Promise.all(textTasks).then(function () { return codes; });
 }
 
 // 异步光栅化每个 cell 的图片(若有)。
@@ -171,26 +174,23 @@ function createSequence2x2Renderer() {
     render: function(content, profileId, clock) {
       var grid = renderSequence2x2(content, { clock: clock });
       if (!grid) return Promise.resolve(null);
-      var codes;
-      try {
-        codes = rasterizeSequence2x2(grid);
-      } catch (e) {
-        return Promise.reject(e);
-      }
-      return rasterizeImages(grid, codes).then(function() {
-        var frame;
-        try {
-          frame = encodeAndValidate(codes);
-        } catch (e) {
-          throw e;
-        }
-        var clockValue = (clock !== undefined && clock !== null) ? clock : '0';
-        return {
-          frame: frame,
-          frameId: 'sequence_2x2:' + clockValue,
-          profileId: profileId || 'default',
-          layout: grid,
-        };
+      return rasterizeSequence2x2(grid).then(function(codes) {
+        if (!codes) return null;
+        return rasterizeImages(grid, codes).then(function() {
+          var frame;
+          try {
+            frame = encodeAndValidate(codes);
+          } catch (e) {
+            throw e;
+          }
+          var clockValue = (clock !== undefined && clock !== null) ? clock : '0';
+          return {
+            frame: frame,
+            frameId: 'sequence_2x2:' + clockValue,
+            profileId: profileId || 'default',
+            layout: grid,
+          };
+        });
       });
     },
     canRender: function(content) {

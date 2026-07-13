@@ -90,8 +90,9 @@ function drawVLine(codes, x, y0, y1, code, thickness) {
 }
 
 // 把对比布局光栅化为 384000 个调色板码(含真实文字像素)。
+// 返回 Promise<codes>,因为 CJK 文字光栅化是异步的(sharp SVG text)。
 function rasterizeComparisonPair(pair) {
-  if (!pair) return null;
+  if (!pair) return Promise.resolve(null);
   var codes = newCanvas(1);
   var half = Math.floor(CANVAS_WIDTH / 2); // 400
 
@@ -115,25 +116,27 @@ function rasterizeComparisonPair(pair) {
   drawVLine(codes, half - 1, 0, CANVAS_HEIGHT, 0, 3);
 
   // === 文字内容 ===
+  // 所有文字通过 renderTextAsync 渲染,以支持真实 CJK 字形。
+  var textTasks = [];
   // 左标题(红色背景上白色文字)
-  textRasterizer.renderText(pair.left.title || '', 20, 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
+  textTasks.push(textRasterizer.renderTextAsync(pair.left.title || '', 20, 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
     scale: 2, maxWidth: half - 40, maxLines: 2,
-  });
+  }));
   // 左摘要(白色背景上黑色文字)
-  textRasterizer.renderText(pair.left.summary || '', 20, 100, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
+  textTasks.push(textRasterizer.renderTextAsync(pair.left.summary || '', 20, 100, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
     scale: 1, maxWidth: half - 40, maxLines: 6,
-  });
+  }));
 
   // 右标题(绿色背景上白色文字)
-  textRasterizer.renderText(pair.right.title || '', half + 20, 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
+  textTasks.push(textRasterizer.renderTextAsync(pair.right.title || '', half + 20, 20, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 1, {
     scale: 2, maxWidth: half - 40, maxLines: 2,
-  });
+  }));
   // 右摘要(白色背景上黑色文字)
-  textRasterizer.renderText(pair.right.summary || '', half + 20, 100, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
+  textTasks.push(textRasterizer.renderTextAsync(pair.right.summary || '', half + 20, 100, codes, CANVAS_WIDTH, CANVAS_HEIGHT, 0, {
     scale: 1, maxWidth: half - 40, maxLines: 6,
-  });
+  }));
 
-  return codes;
+  return Promise.all(textTasks).then(function () { return codes; });
 }
 
 // 异步光栅化两侧图片(若有 imageUrl)。
@@ -176,26 +179,23 @@ function createComparisonPairRenderer() {
     render: function(content, profileId, clock) {
       var pair = renderComparisonPair(content, { clock: clock });
       if (!pair) return Promise.resolve(null);
-      var codes;
-      try {
-        codes = rasterizeComparisonPair(pair);
-      } catch (e) {
-        return Promise.reject(e);
-      }
-      return rasterizeImages(pair, codes).then(function() {
-        var frame;
-        try {
-          frame = encodeAndValidate(codes);
-        } catch (e) {
-          throw e;
-        }
-        var clockValue = (clock !== undefined && clock !== null) ? clock : '0';
-        return {
-          frame: frame,
-          frameId: 'comparison_pair:' + clockValue,
-          profileId: profileId || 'default',
-          layout: pair,
-        };
+      return rasterizeComparisonPair(pair).then(function(codes) {
+        if (!codes) return null;
+        return rasterizeImages(pair, codes).then(function() {
+          var frame;
+          try {
+            frame = encodeAndValidate(codes);
+          } catch (e) {
+            throw e;
+          }
+          var clockValue = (clock !== undefined && clock !== null) ? clock : '0';
+          return {
+            frame: frame,
+            frameId: 'comparison_pair:' + clockValue,
+            profileId: profileId || 'default',
+            layout: pair,
+          };
+        });
       });
     },
     canRender: function(content) {
