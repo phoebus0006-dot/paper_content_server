@@ -170,6 +170,34 @@ function loadConfig(opts) {
     mqttEnabled: parseBoolEnv(env.MQTT_ENABLED, false),
   };
 
+  // Safety classifier 配置 — drives safetyClassifierPort / safetyGate.
+  // modelPath=null → classifier port is created but not configured (fail-closed).
+  config.safety = {
+    modelPath: env.NSFW_MODEL_PATH || null,
+    modelType: env.NSFW_MODEL_TYPE || 'tensorflow',
+    threshold: parseFloat(env.NSFW_THRESHOLD || '0.5'),
+    auditFile: env.NSFW_AUDIT_FILE || path.join(dataDir, 'safety-audit.jsonl'),
+  };
+
+  // Learning 配置 — Wikimedia source adapter + ingestion policy.
+  config.learning = {
+    sourceEnabled: parseBoolEnv(env.LEARNING_SOURCE_ENABLED, false),
+    sources: ['wikimedia'],
+    topics: (env.LEARNING_TOPICS || '').split(',').filter(Boolean),
+    relevanceThreshold: parseInt(env.LEARNING_RELEVANCE_THRESHOLD || '1', 10),
+    qualityThreshold: parseInt(env.LEARNING_QUALITY_THRESHOLD || '2', 10),
+    intervalMs: parseInt(env.LEARNING_INTERVAL_MS || '3600000', 10),
+    maxCandidates: parseInt(env.LEARNING_MAX_CANDIDATES || '50', 10),
+    maxDownloadBytes: parseInt(env.LEARNING_MAX_DOWNLOAD_BYTES || (20 * 1024 * 1024).toString(), 10),
+    requestTimeoutMs: parseInt(env.LEARNING_REQUEST_TIMEOUT_MS || '10000', 10),
+  };
+
+  // Upload 配置 — used by custom-library upload route guards.
+  config.upload = {
+    maxUploadBytes: parseInt(env.MAX_UPLOAD_BYTES || (50 * 1024 * 1024).toString(), 10),
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+  };
+
   // Validate
   var errors = [];
   if (config.translation.provider === 'openai' && !config.translation.openaiApiKey) {
