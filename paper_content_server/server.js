@@ -291,6 +291,10 @@ async function main() {
   runtime.customLibraryService = boot.services.customLibraryService || null;
   runtime.safetyGate = boot.services.safetyGate || null;
   runtime.learningIngestionService = boot.services.learningIngestionService || null;
+  runtime.learningScheduler = boot.services.learningScheduler || null;
+  runtime.assetSelectionService = boot.services.assetSelectionService || null;
+  runtime.assetDeleteService = boot.services.assetDeleteService || null;
+  runtime.config = boot.config || null;
   runtime.mqttClient = boot.deps.mqttClient || null;
   await runtime.snapshotStore.ensureDirs();
 
@@ -337,6 +341,12 @@ async function main() {
       process.exitCode = 1;
       process.exit(1);
     }, forceExitMs);
+    // Stop learning scheduler (if running) before tearing down the server
+    try {
+      if (boot.services && boot.services.learningScheduler) {
+        boot.services.learningScheduler.stop();
+      }
+    } catch(e) { r1Logger.warn('learningScheduler stop failed: ' + e.message); }
     boot.shutdown().then(function() {
       clearTimeout(forceExit);
       process.exit(0);
@@ -2167,6 +2177,31 @@ async function buildPhotoSnapshot(now) {
   };
 }
 
+// buildPhotoSnapshotFromAsset — construct a photo snapshot from an explicit
+// selected asset (used by ONE_SHOT and FOCUS_LOCK when assetId is provided).
+// Bypasses schedule selection; uses the asset's localPath as the image source.
+async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
+  var snap = selectPhotoSnapshot(now);
+  var assetTheme = (asset.metadata && asset.metadata.theme) || asset.libraryType || 'PHOTO';
+  var frameId = (prefix || 'photo:asset') + ':' + asset.assetId + ':' + Date.now().toString(36);
+  return {
+    mode: 'photo',
+    kind: 'shot',
+    slotKey: snap.slotKey,
+    nextSwitchAt: snap.nextSwitchAt.toISOString(),
+    nextSwitchLocal: formatLocalTimeLabel(snap.nextSwitchAt),
+    timezone: TIMEZONE,
+    frameId: frameId,
+    title: assetTheme,
+    imageStatus: 'ready',
+    imageName: asset.originalName || path.basename(asset.localPath || 'asset'),
+    imageSource: asset.sourceType || asset.libraryType || '',
+    imageTheme: assetTheme,
+    imagePath: asset.localPath,
+    epfPath: (asset.metadata && asset.metadata.epfPath) || null,
+  };
+}
+
 function createSvgHeader(width, height, body) {
   return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${body}</svg>`);
 }
@@ -3173,10 +3208,18 @@ async function handleRequest(req, res) {
         var osContent;
         if (contentType === 'news') {
           osContent = await buildNewsSnapshot(osNow);
+        } else if (assetId) {
+          // Explicit asset selection via assetSelectionService
+          if (!runtime.assetSelectionService) {
+            failJson(res, 400, 'assetSelectionService unavailable — cannot select explicit asset'); return;
+          }
+          try {
+            var osSelection = await runtime.assetSelectionService.selectForOneShot(libraryType, assetId);
+            osContent = await buildPhotoSnapshotFromAsset(osSelection.asset, osNow, 'one-shot:photo');
+          } catch(selErr) {
+            failJson(res, 400, 'asset selection failed: ' + selErr.message); return;
+          }
         } else {
-          // Photo: libraryType + assetId support deferred to Phase 5 (Library API)
-          // For now, build schedule-based photo snapshot; libraryType logged for future use
-          r1Logger.info('one-shot photo: libraryType=' + libraryType + ' assetId=' + (assetId || '<schedule>') + ' (Phase 5 will honor explicit asset)');
           osContent = await buildPhotoSnapshot(osNow);
         }
         var osFrameId = 'one-shot:' + contentType + ':' + Date.now().toString(36);
@@ -3220,11 +3263,21 @@ async function handleRequest(req, res) {
         var flAlbumId = flBody.albumId || null;
         var flNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
         var flContent;
-        if (flTheme || flAlbumId) {
-          // Phase 5 will honor theme/albumId via Library API; for now, log and use schedule
-          r1Logger.info('focus-lock: libraryType=' + flLibraryType + ' theme=' + (flTheme || '<none>') + ' albumId=' + (flAlbumId || '<none>') + ' (Phase 5 will honor explicit selection)');
+        // Use assetSelectionService to find a matching asset (no schedule fallback)
+        if (!runtime.assetSelectionService) {
+          failJson(res, 503, 'assetSelectionService unavailable'); return;
         }
-        flContent = await buildPhotoSnapshot(flNow);
+        try {
+          var flSelection = await runtime.assetSelectionService.selectForFocusLock({
+            libraryType: flLibraryType,
+            theme: flTheme,
+            albumId: flAlbumId,
+          });
+          flContent = await buildPhotoSnapshotFromAsset(flSelection.asset, flNow, 'focus-lock:photo');
+        } catch(selErr) {
+          // No matching asset → 404 (no schedule fallback)
+          failJson(res, 404, 'no matching asset found: ' + selErr.message); return;
+        }
         var flFrameId = 'focus-lock:' + Date.now().toString(36);
         var flSnap = R3_snapshotModel.createSnapshot(flFrameId, flContent.snapshot, flContent.frame, 'photo', { publishReason: 'focus_change' });
         await runtime.publicationService.publish(flSnap);
@@ -3232,6 +3285,7 @@ async function handleRequest(req, res) {
           libraryType: flLibraryType,
           theme: flTheme,
           albumId: flAlbumId,
+          resolvedAssetId: flSelection.assetId,
         });
         respondJson(res, {
           snapshotId: flSnap.snapshotId,
@@ -3240,6 +3294,7 @@ async function handleRequest(req, res) {
           libraryType: flLibraryType,
           theme: flTheme,
           albumId: flAlbumId,
+          resolvedAssetId: flSelection.assetId,
         });
       } catch(e) {
         r1Logger.warn('focus-lock enter failed: ' + e.message);
@@ -3421,27 +3476,25 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/library/custom/upload' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      // POST upload 通过 customLibraryService 走完整 safety gate 链路
-      // (quarantine → decode → NSFW safety gate → dedup → persist)。
-      // 当 customLibraryService 未配置时仍返回 503。
+      // Feature flag gate: customLibraryEnabled must be true (configured in load-config)
+      if (!runtime.config || !runtime.config.features || !runtime.config.features.customLibraryEnabled) {
+        failJson(res, 503, 'FEATURE_DISABLED: customLibraryEnabled is false'); return;
+      }
       if (!runtime.customLibraryService) { failJson(res, 503, 'SAFETY_GATE_REQUIRED: custom library service unavailable'); return; }
       try {
         var uploadBody = JSON.parse(await readBody(req) || '{}');
-        // 简化 JSON body: { originalName, mimeType, fileSize, width, height, filePath }
-        // filePath 是临时文件路径(真实环境由 multipart 解析写入)。
-        if (!uploadBody.filePath) { failJson(res, 400, 'filePath required'); return; }
+        // Secure upload: accept fileBuffer (base64) instead of filePath
+        // No NAS internal path is accepted or returned
+        if (!uploadBody.fileBuffer) { failJson(res, 400, 'fileBuffer required (base64-encoded)'); return; }
         var upload = {
           originalName: uploadBody.originalName || 'upload.bin',
           mimeType: uploadBody.mimeType || '',
-          fileSize: uploadBody.fileSize || 0,
-          width: uploadBody.width || 0,
-          height: uploadBody.height || 0,
-          filePath: uploadBody.filePath,
+          fileBuffer: Buffer.from(uploadBody.fileBuffer, 'base64'),
         };
         var uploadResult = await runtime.customLibraryService.processUpload(upload);
         if (uploadResult.status === 'ACCEPTED') {
           res.writeHead(202, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'accepted', assetId: uploadResult.assetId, finalPath: uploadResult.finalPath }));
+          res.end(JSON.stringify({ status: 'accepted', assetId: uploadResult.assetId }));
         } else if (uploadResult.status === 'REJECTED') {
           failJson(res, 400, 'upload rejected: ' + (uploadResult.reason || uploadResult.errors && uploadResult.errors.join('; ') || 'unknown'));
         } else if (uploadResult.status === 'DUPLICATE') {
@@ -3456,6 +3509,10 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/learning/ingest' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      // Feature flag gate: learningLibraryEnabled must be true (configured in load-config)
+      if (!runtime.config || !runtime.config.features || !runtime.config.features.learningLibraryEnabled) {
+        failJson(res, 503, 'FEATURE_DISABLED: learningLibraryEnabled is false'); return;
+      }
       // 触发 learning 摄取(自动 fetch sources → validate → dedup → persist)
       if (!runtime.learningIngestionService) { failJson(res, 503, 'learning ingestion service unavailable'); return; }
       try {
@@ -3476,11 +3533,19 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/learning/status' && req.method === 'GET') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      // 返回 learning 摄取服务状态(简化为 configured + lastIngestAt)
-      respondJson(res, {
+      // Feature flag gate: learningLibraryEnabled must be true (configured in load-config)
+      if (!runtime.config || !runtime.config.features || !runtime.config.features.learningLibraryEnabled) {
+        failJson(res, 503, 'FEATURE_DISABLED: learningLibraryEnabled is false'); return;
+      }
+      // 返回 learning 摄取服务状态 + scheduler status (if available)
+      var learningStatus = {
         configured: !!runtime.learningIngestionService,
         lastIngestAt: runtime.learningLastIngestAt || null,
-      });
+      };
+      if (runtime.learningScheduler) {
+        try { learningStatus.scheduler = runtime.learningScheduler.getStatus(); } catch(e) {}
+      }
+      respondJson(res, learningStatus);
       return;
     }
 
@@ -3507,17 +3572,23 @@ async function handleRequest(req, res) {
       if (!delAssetId) { failJson(res, 400, 'assetId required'); return; }
       try {
         var delReason = 'admin delete via Library API';
-        // Mark tombstoned (assetRepository.update with lifecycle transition)
-        await runtime.assetRepository.markTombstoned(delAssetId, delReason);
-        // Invalidate cached frames referencing this asset (simplified cleanup)
-        if (runtime.cachedFrames && runtime.cachedFrames.forEach) {
-          var toInvalidate = [];
-          runtime.cachedFrames.forEach(function(val, key) {
-            if (val && val.payload && val.payload.assetId === delAssetId) toInvalidate.push(key);
-          });
-          toInvalidate.forEach(function(k) { runtime.cachedFrames.delete(k); });
+        // Full delete chain: reference check → tombstone → cleanup → audit
+        if (runtime.assetDeleteService && runtime.config && runtime.config.features && runtime.config.features.deletePipelineEnabled) {
+          await runtime.assetDeleteService.deleteAsset(delAssetId, delReason);
+          respondJson(res, { status: 'ok', assetId: delAssetId, pipeline: 'full_delete_chain' });
+        } else {
+          // Legacy fallback: markTombstoned only (PARTIAL — no reference check or audit)
+          await runtime.assetRepository.markTombstoned(delAssetId, delReason);
+          // Invalidate cached frames referencing this asset
+          if (runtime.cachedFrames && runtime.cachedFrames.forEach) {
+            var toInvalidate = [];
+            runtime.cachedFrames.forEach(function(val, key) {
+              if (val && val.payload && val.payload.assetId === delAssetId) toInvalidate.push(key);
+            });
+            toInvalidate.forEach(function(k) { runtime.cachedFrames.delete(k); });
+          }
+          respondJson(res, { status: 'ok', assetId: delAssetId, invalidatedCaches: true, pipeline: 'legacy_tombstone_only_PARTIAL' });
         }
-        respondJson(res, { status: 'ok', assetId: delAssetId, invalidatedCaches: true });
       } catch(e) { failJson(res, 500, 'asset delete failed: ' + e.message); }
       return;
     }

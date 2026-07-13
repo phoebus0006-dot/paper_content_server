@@ -71,9 +71,13 @@ function createIngestionService(sourceRegistry, validator, deduplicator, policy,
         downloader.cleanup(stagingPath);
         return { status: 'DUPLICATE', candidateId: candidate.candidateId, reasonCode: 'DUPLICATE_SHA' };
       }
-      // 6. Safety gate — required
+      // 6. Safety gate — required (classify first, then isSafe on classification result)
       if (!safetyGate) { downloader.cleanup(stagingPath); return { status: 'REJECTED', reason: 'DEPENDENCY_UNAVAILABLE', reasonCode: 'NO_SAFETY_GATE', candidateId: candidate.candidateId }; }
-      if (!safetyGate.isSafe(stagingPath, { width: decoded.width, height: decoded.height })) {
+      var safetyMetadata = { width: decoded.width, height: decoded.height, fileSize: decoded.fileSize, mimeType: decoded.mimeType, originalName: candidate.title };
+      var classification;
+      try { classification = await safetyGate.classify(stagingPath, safetyMetadata); }
+      catch(e) { downloader.cleanup(stagingPath); return { status: 'REJECTED', reason: 'SAFETY', reasonCode: 'SAFETY', error: e.message, candidateId: candidate.candidateId }; }
+      if (!safetyGate.isSafe(classification)) {
         downloader.cleanup(stagingPath);
         return { status: 'REJECTED', reason: 'SAFETY', reasonCode: 'SAFETY', candidateId: candidate.candidateId };
       }
