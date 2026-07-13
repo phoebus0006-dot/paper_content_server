@@ -1,13 +1,20 @@
-// safety-classifier-port.js — Safety classifier port (real readiness truth)
+// safety-classifier-port.js — Safety classifier port (async lifecycle, real readiness truth)
+//
+// 异步生命周期:
+//   async initialize()  — 加载模型 + smoke inference(幂等,并发安全)
+//   async shutdown()    — 释放资源(幂等)
+//   async classify(fp)  — 真实推理(自动 initialize 若未初始化且 runtime+model 存在)
 //
 // 7 级 readiness truth(诚实模型):
 //   configured         = !!modelPath(提供了 modelPath,不验证文件存在)
 //   modelExists        = !!modelPath && fs.existsSync(modelPath)(模型文件真实存在)
 //   runtimeAvailable   = 推理 runtime(onnxruntime/tfjs-node)已安装
+//   loading            = 正在加载(initialize 进行中)
 //   loaded             = modelExists && runtimeAvailable && loadModel() 成功
 //   smokeInferencePassed = loaded && runSmokeInference() 成功
 //   inferenceReady     = loaded && smokeInferencePassed
 //   ready              = inferenceReady(只有推理真正可用时才 true)
+//   error              = 错误信息(如果有)
 //
 // 关键不变量:
 //   - 文件存在 ≠ ready(modelExists=true 但 runtimeAvailable=false → ready=false)
@@ -26,7 +33,16 @@
 //   - 有 runtime 但模型加载失败 → classify reject(CLASSIFIER_NOT_READY)
 //   - 模型加载但 smoke inference 失败 → classify reject(CLASSIFIER_NOT_READY)
 //   - ready=true → classify 返回结构化推理结果(不返回假数据)
-//   - audit 写入 append-only JSONL(auditFile);无 auditFile 时 resolve
+//   - audit 写入 append-only JSONL(auditFile);失败时 reject(不创建资产)
+//
+// 安全保证:
+//   - NaN/Infinity 输出 → reject
+//   - 输出长度错误 → reject
+//   - 推理超时 → reject
+//   - 模型缺失 → fail-closed
+//   - runtime 缺失 → fail-closed
+//   - 并发调用安全(initialize 幂等,用 shared promise;classify 并发安全)
+//   - Audit append-only JSONL,失败时 reject(不创建资产)
 //
 // 结构化推理结果(ready=true 时):
 //   {
@@ -44,14 +60,19 @@
 //     - 未配置/文件不存在 → reject(new Error('CLASSIFIER_NOT_READY'))
 //     - 文件存在但无 runtime → reject(new Error('NO_RUNTIME_AVAILABLE'))
 //     - loaded=false 或 smokeInferencePassed=false → reject(new Error('CLASSIFIER_NOT_READY'))
+//     - 推理超时 → reject(new Error('INFERENCE_TIMEOUT'))
+//     - 输出含 NaN/Infinity → reject(new Error('INVALID_OUTPUT'))
 //     - ready=true → resolve(structuredResult)
 //   isSafe(classification) -> bool
 //     - 新结构:classification.decision === 'SAFE'
 //     - 旧结构(向后兼容):classification.score < threshold
 //     - 无 classification / 无 decision / 无 score → false(fail-closed)
 //   audit(entry) -> Promise<void>
-//   configured / modelExists / runtimeAvailable / loaded / smokeInferencePassed /
-//   inferenceReady / ready / modelType / modelVersion / modelSha256 / threshold
+//   initialize() -> Promise<void>  (幂等,并发安全)
+//   shutdown() -> Promise<void>    (幂等,并发安全)
+//   configured / modelExists / runtimeAvailable / loading / loaded /
+//   smokeInferencePassed / inferenceReady / ready / modelType / modelVersion /
+//   modelSha256 / threshold / error
 
 function createSafetyClassifierPort(options) {
   options = options || {};
@@ -60,101 +81,249 @@ function createSafetyClassifierPort(options) {
   var modelType = options.modelType || 'tensorflow';
   var threshold = options.threshold || 0.5;
   var auditFile = options.auditFile || null;
+  var timeoutMs = options.timeout || 5000;
   var fs = require('fs');
-  var registry = require('./model-loader-registry');
+  // 可注入 registry(测试用);默认使用真实 model-loader-registry
+  var registry = options.registry || require('./model-loader-registry');
 
-  // ── 7 级 readiness truth ──
-  // 1. configured = 提供了 modelPath
+  // ── 同步可定的 readiness(构造时即可知)──
   var configured = !!modelPath;
-
-  // 2. modelExists = modelPath 提供且文件真实存在
   var modelExists = !!modelPath && fs.existsSync(modelPath);
-
-  // 3. runtimeAvailable = 推理 runtime 已安装(onnxruntime / tfjs-node)
   var runtimeInfo = registry.detectRuntime();
   var runtimeAvailable = !!runtimeInfo.available;
 
-  // 4. loaded = 模型成功加载到 runtime
-  // 5. smokeInferencePassed = smoke inference 成功
-  // 当前无 runtime 时,loaded=false, smokeInferencePassed=false(不冒充)
-  var loaded = false;
-  var smokeInferencePassed = false;
-  var modelSha256 = '';
-  var loadedModel = null;
-  var loadedModelType = '';
-  var loadedModelVersion = '';
+  // ── 异步状态(由 initialize/shutdown 更新)──
+  var state = {
+    loading: false,
+    loaded: false,
+    smokeInferencePassed: false,
+    error: null,
+    modelSha256: '',
+    loadedModelType: '',
+    loadedModelVersion: '',
+  };
 
-  if (modelExists && runtimeAvailable) {
-    // 有模型文件且有 runtime → 尝试加载
-    // 注意:实际加载是异步的(ONNX/tfjs 的 load API 返回 Promise)
-    // port 在构造时不 await(保持同步构造),loaded 在构造时为 false。
-    // 真实场景下应在 bootstrap 阶段 await port.initialize() 完成 async 加载。
-    // 当前无 runtime,此分支不执行。
-    try {
-      var loadResult = registry.loadModel(modelPath, runtimeInfo);
-      if (loadResult) {
-        loaded = true;
-        loadedModel = loadResult.model;
-        modelSha256 = loadResult.sha256 || '';
-        loadedModelType = loadResult.type || '';
-        loadedModelVersion = loadResult.version || '';
-      }
-    } catch (e) {
-      logger.warn && logger.warn('Safety classifier: model load failed: ' + e.message);
-      loaded = false;
+  // 加载后的模型句柄(registry.loadModel 返回的 { model, sha256, type, version, ... })
+  var loadedModelHandle = null;
+  // initialize 的共享 promise(幂等 + 并发安全)
+  var initPromise = null;
+  // shutdown 的共享 promise
+  var shutdownPromise = null;
+
+  // ── initialize — 异步加载模型 + smoke inference ──
+  // 幂等:多次调用返回同一个 promise
+  // 并发安全:并发调用只触发一次真实加载
+  function initialize() {
+    if (initPromise) return initPromise;
+    if (shutdownPromise) {
+      // shutdown 后再次 initialize — 允许重新初始化
+      shutdownPromise = null;
     }
+    initPromise = doInitialize().catch(function (e) {
+      // 出错后允许重试(清除 initPromise)
+      initPromise = null;
+      throw e;
+    });
+    return initPromise;
+  }
 
-    // 模型加载成功后执行 smoke inference
-    if (loaded) {
-      try {
-        smokeInferencePassed = !!registry.runSmokeInference(
-          { model: loadedModel, sha256: modelSha256, type: loadedModelType, version: loadedModelVersion },
-          runtimeInfo
-        );
-      } catch (e) {
-        logger.warn && logger.warn('Safety classifier: smoke inference failed: ' + e.message);
-        smokeInferencePassed = false;
+  async function doInitialize() {
+    state.loading = true;
+    state.error = null;
+    try {
+      // 无 modelPath — 不是错误,只是未配置
+      if (!configured) {
+        state.loading = false;
+        return;
       }
+      // 模型文件不存在
+      if (!modelExists) {
+        state.error = 'MODEL_FILE_NOT_FOUND';
+        state.loading = false;
+        return;
+      }
+      // 无 runtime
+      if (!runtimeAvailable) {
+        state.error = 'NO_RUNTIME_AVAILABLE';
+        state.loading = false;
+        return;
+      }
+
+      // 加载模型
+      try {
+        loadedModelHandle = await registry.loadModel(modelPath, runtimeInfo);
+        state.loaded = true;
+        state.modelSha256 = loadedModelHandle.sha256 || '';
+        state.loadedModelType = loadedModelHandle.type || '';
+        state.loadedModelVersion = loadedModelHandle.version || '';
+        if (logger.info) logger.info('Safety classifier: model loaded (sha256=' + state.modelSha256.substring(0, 12) + ')');
+      } catch (e) {
+        state.loaded = false;
+        state.smokeInferencePassed = false;
+        state.error = e && e.message || 'LOAD_FAILED';
+        if (logger.warn) logger.warn('Safety classifier: model load failed: ' + state.error);
+        return;
+      }
+
+      // smoke inference
+      try {
+        var smokeOk = await registry.runSmokeInference(loadedModelHandle, runtimeInfo);
+        state.smokeInferencePassed = !!smokeOk;
+        if (state.smokeInferencePassed) {
+          if (logger.info) logger.info('Safety classifier: smoke inference passed');
+        } else {
+          state.error = 'SMOKE_INFERENCE_FAILED';
+          if (logger.warn) logger.warn('Safety classifier: smoke inference returned false');
+        }
+      } catch (e) {
+        state.smokeInferencePassed = false;
+        state.error = e && e.message || 'SMOKE_INFERENCE_FAILED';
+        if (logger.warn) logger.warn('Safety classifier: smoke inference failed: ' + state.error);
+      }
+    } finally {
+      state.loading = false;
     }
   }
 
-  // 6. inferenceReady = loaded && smokeInferencePassed
-  var inferenceReady = loaded && smokeInferencePassed;
+  // ── shutdown — 释放资源 ──
+  // 幂等:多次调用返回同一个 promise
+  function shutdown() {
+    if (shutdownPromise) return shutdownPromise;
+    shutdownPromise = doShutdown();
+    return shutdownPromise;
+  }
 
-  // 7. ready = inferenceReady(只有推理真正可用时才 true)
-  var ready = inferenceReady;
+  async function doShutdown() {
+    // 等待正在进行的 initialize 完成(避免资源竞争)
+    if (initPromise) {
+      try { await initPromise; } catch (e) { /* ignore */ }
+    }
 
-  // modelVersion:未加载时 'NONE',加载后用 sha256 前 12 位
-  var modelVersion = loaded && modelSha256 ? modelSha256.substring(0, 12) : 'NONE';
+    // 释放模型句柄
+    if (loadedModelHandle && loadedModelHandle.model) {
+      var model = loadedModelHandle.model;
+      // ONNX session.release() / TFJS model.dispose()
+      try {
+        if (typeof model.release === 'function') await model.release();
+        else if (typeof model.dispose === 'function') await model.dispose();
+      } catch (e) {
+        if (logger.warn) logger.warn('Safety classifier: shutdown release error: ' + (e && e.message));
+      }
+    }
+    loadedModelHandle = null;
+    state.loaded = false;
+    state.smokeInferencePassed = false;
+    state.loading = false;
+    state.error = null;
+    state.modelSha256 = '';
+    state.loadedModelType = '';
+    state.loadedModelVersion = '';
+    initPromise = null;
+  }
 
-  // classify — 返回结构化推理结果或 reject(fail-closed)
-  function classify(filePath, metadata) {
+  // ── classify — 真实推理或 reject(fail-closed)──
+  async function classify(filePath, metadata) {
     // 无模型文件 → CLASSIFIER_NOT_READY
     if (!modelExists) {
-      return Promise.reject(new Error('CLASSIFIER_NOT_READY'));
+      throw new Error('CLASSIFIER_NOT_READY');
     }
     // 有模型文件但无 runtime → NO_RUNTIME_AVAILABLE
     if (!runtimeAvailable) {
-      return Promise.reject(new Error('NO_RUNTIME_AVAILABLE'));
-    }
-    // 有 runtime 但模型未加载或 smoke inference 未通过 → CLASSIFIER_NOT_READY
-    if (!inferenceReady) {
-      return Promise.reject(new Error('CLASSIFIER_NOT_READY'));
+      throw new Error('NO_RUNTIME_AVAILABLE');
     }
 
-    // ready=true → 运行真实推理
-    // 当前环境无 runtime,此分支不执行。
-    // 将来 runtime 可用时,这里应:
-    //   1. 读取图像文件(filePath)
-    //   2. 预处理(resize / normalize)
-    //   3. 运行推理(loadedModel)
-    //   4. 后处理概率 → scores
-    //   5. 根据 scores 和 threshold 计算 decision
-    //   6. 返回结构化结果(不返回假数据)
-    //
-    // 因当前无 runtime 且 loaded=false,此处不会被到达。
-    // 保留框架以防 runtime 安装后 loadModel/smokeInference 被补全。
-    return Promise.reject(new Error('CLASSIFIER_NOT_READY'));
+    // 如果 model+runtime 都在但还没加载,自动 initialize
+    if (!state.loaded && !state.loading && !state.error && !shutdownPromise) {
+      await initialize();
+    } else if (state.loading && initPromise) {
+      // 等待正在进行的 initialize
+      await initPromise;
+    }
+
+    // 有 runtime 但模型未加载或 smoke inference 未通过 → CLASSIFIER_NOT_READY
+    if (!state.loaded) {
+      throw new Error('CLASSIFIER_NOT_READY');
+    }
+    if (!state.smokeInferencePassed) {
+      throw new Error('CLASSIFIER_NOT_READY');
+    }
+
+    // ready=true → 运行真实推理(带超时)
+    var startTime = Date.now();
+    var inferenceResult;
+    try {
+      inferenceResult = await runInferenceWithTimeout(filePath);
+    } catch (e) {
+      if (e && e.message === 'INFERENCE_TIMEOUT') throw e;
+      // 推理失败 → fail-closed
+      throw new Error('CLASSIFIER_NOT_READY');
+    }
+    var inferenceMs = Date.now() - startTime;
+
+    // 安全保证:校验输出
+    var scores = inferenceResult.scores;
+    var rawOutput = inferenceResult.rawOutput;
+
+    // 输出长度错误 → reject
+    if (!Array.isArray(rawOutput) || rawOutput.length === 0) {
+      throw new Error('INVALID_OUTPUT');
+    }
+    // NaN/Infinity 在 rawOutput → reject
+    for (var i = 0; i < rawOutput.length; i++) {
+      var v = Number(rawOutput[i]);
+      if (isNaN(v) || !isFinite(v)) {
+        throw new Error('INVALID_OUTPUT');
+      }
+    }
+    // scores 校验(4 字段,无 NaN/Inf,值在 [0,1])
+    if (!registry.validateScores(scores)) {
+      throw new Error('INVALID_OUTPUT');
+    }
+
+    // 计算 decision
+    var decision = computeDecision(scores, threshold);
+
+    return {
+      modelType: state.loadedModelType || (configured ? modelType : ''),
+      modelVersion: state.modelSha256 ? state.modelSha256.substring(0, 12) : 'NONE',
+      modelSha256: state.modelSha256,
+      scores: scores,
+      decision: decision,
+      threshold: threshold,
+      inferenceMs: inferenceMs,
+    };
+  }
+
+  // runInferenceWithTimeout — 带超时的推理
+  function runInferenceWithTimeout(filePath) {
+    var inferencePromise = registry.runRealInference(loadedModelHandle, runtimeInfo, filePath);
+    var timer = null;
+    var timeoutPromise = new Promise(function (resolve, reject) {
+      timer = setTimeout(function () {
+        reject(new Error('INFERENCE_TIMEOUT'));
+      }, timeoutMs);
+    });
+    return Promise.race([
+      inferencePromise.then(function (result) {
+        if (timer) clearTimeout(timer);
+        return result;
+      }, function (err) {
+        if (timer) clearTimeout(timer);
+        throw err;
+      }),
+      timeoutPromise,
+    ]);
+  }
+
+  // computeDecision — 根据 scores 和 threshold 计算 decision
+  // adult + racy + violence > threshold → UNSAFE
+  // 否则 → SAFE
+  function computeDecision(scores, thresh) {
+    var unsafeScore = (scores.adult || 0) + (scores.racy || 0) + (scores.violence || 0);
+    if (unsafeScore >= thresh) return 'UNSAFE';
+    // 边界情况:unsafe 接近 threshold → REVIEW
+    if (unsafeScore >= thresh * 0.8) return 'REVIEW';
+    return 'SAFE';
   }
 
   // isSafe — 判断分类结果是否安全
@@ -162,16 +331,15 @@ function createSafetyClassifierPort(options) {
   // 旧结构(向后兼容):classification.score < threshold
   function isSafe(classification) {
     if (!classification) return false;
-    // 新结构:有 decision 字段
     if (classification.decision !== undefined) {
       return classification.decision === 'SAFE';
     }
-    // 旧结构:有 score 字段(score vs threshold)
     if (classification.score === undefined) return false;
     return classification.score < threshold;
   }
 
   // audit — append-only JSONL audit log
+  // 失败时 reject(不静默丢弃,由上层 rollback 资产)
   function audit(entry) {
     if (!auditFile) return Promise.resolve();
     return new Promise(function (resolve, reject) {
@@ -183,24 +351,48 @@ function createSafetyClassifierPort(options) {
     });
   }
 
-  return {
+  // ── 返回 port 对象(getters 反映实时状态)──
+  var port = {
+    initialize: initialize,
+    shutdown: shutdown,
     classify: classify,
     isSafe: isSafe,
     audit: audit,
-    // 7 级 readiness truth
-    configured: configured,
-    modelExists: modelExists,
-    runtimeAvailable: runtimeAvailable,
-    loaded: loaded,
-    smokeInferencePassed: smokeInferencePassed,
-    inferenceReady: inferenceReady,
-    ready: ready,  // = inferenceReady
     // 模型元信息
-    modelType: loadedModelType || (configured ? modelType : ''),
-    modelVersion: modelVersion,
-    modelSha256: modelSha256,
     threshold: threshold,
+    timeoutMs: timeoutMs,
   };
+
+  // 用 getter 暴露实时状态
+  Object.defineProperty(port, 'configured', { get: function () { return configured; }, enumerable: true });
+  Object.defineProperty(port, 'modelExists', { get: function () { return modelExists; }, enumerable: true });
+  Object.defineProperty(port, 'runtimeAvailable', { get: function () { return runtimeAvailable; }, enumerable: true });
+  Object.defineProperty(port, 'loading', { get: function () { return state.loading; }, enumerable: true });
+  Object.defineProperty(port, 'loaded', { get: function () { return state.loaded; }, enumerable: true });
+  Object.defineProperty(port, 'smokeInferencePassed', { get: function () { return state.smokeInferencePassed; }, enumerable: true });
+  Object.defineProperty(port, 'inferenceReady', {
+    get: function () { return state.loaded && state.smokeInferencePassed; },
+    enumerable: true,
+  });
+  Object.defineProperty(port, 'ready', {
+    get: function () { return state.loaded && state.smokeInferencePassed; },
+    enumerable: true,
+  });
+  Object.defineProperty(port, 'error', { get: function () { return state.error; }, enumerable: true });
+  Object.defineProperty(port, 'modelType', {
+    get: function () { return state.loadedModelType || (configured ? modelType : ''); },
+    enumerable: true,
+  });
+  Object.defineProperty(port, 'modelVersion', {
+    get: function () { return state.loaded && state.modelSha256 ? state.modelSha256.substring(0, 12) : 'NONE'; },
+    enumerable: true,
+  });
+  Object.defineProperty(port, 'modelSha256', {
+    get: function () { return state.modelSha256 || ''; },
+    enumerable: true,
+  });
+
+  return port;
 }
 
 module.exports = { createSafetyClassifierPort: createSafetyClassifierPort };
