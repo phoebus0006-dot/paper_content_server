@@ -98,37 +98,76 @@ renderer.render(content, 'p').then(function(result) {
   t('CODE4_COUNT_ZERO', code4Count === 0, 'code4 count: ' + code4Count);
   t('CODE4_COUNT', code4Count === 0 || code4Count > 0, 'code4 count: ' + code4Count);
 
-  // deterministic
-  return renderer.render(content, 'p').then(function(result2) {
-    t('DETERMINISTIC', result.frame.compare(result2.frame) === 0, '');
+  // === 文字像素验证 ===
+  function decodeCodes(frame) {
+    var codes = new Array(800 * 480);
+    for (var i = 0; i < 192000; i++) {
+      var b = frame[10 + i];
+      codes[i * 2] = (b >> 4) & 0x0F;
+      codes[i * 2 + 1] = b & 0x0F;
+    }
+    return codes;
+  }
+  function countCodeInRegion(codes, x0, y0, x1, y1, target) {
+    var n = 0;
+    for (var y = y0; y < y1; y++) {
+      for (var x = x0; x < x1; x++) {
+        if (codes[y * 800 + x] === target) n++;
+      }
+    }
+    return n;
+  }
+  var decoded = decodeCodes(result.frame);
+  // Cell0 (左上,红色 code 3 背景) 标题应有白色(code 1)文字
+  var cell0TitleWhite = countCodeInRegion(decoded, 8, 8, 200, 45, 1);
+  t('CELL0_TITLE_HAS_TEXT_PIXELS', cell0TitleWhite > 0, 'cell0TitleWhite=' + cell0TitleWhite);
+  // Cell0 摘要应有黑色(code 0)文字
+  var cell0SummaryBlack = countCodeInRegion(decoded, 8, 28, 200, 65, 0);
+  t('CELL0_SUMMARY_HAS_TEXT_PIXELS', cell0SummaryBlack > 0, 'cell0SummaryBlack=' + cell0SummaryBlack);
+  // Cell1 (右上,黄色 code 2 背景) 标题应有白色(code 1)文字
+  var cell1TitleWhite = countCodeInRegion(decoded, 408, 8, 600, 45, 1);
+  t('CELL1_TITLE_HAS_TEXT_PIXELS', cell1TitleWhite > 0, 'cell1TitleWhite=' + cell1TitleWhite);
+  // Cell3 (右下,绿色 code 6 背景) 标题应有白色(code 1)文字
+  var cell3TitleWhite = countCodeInRegion(decoded, 408, 248, 600, 285, 1);
+  t('CELL3_TITLE_HAS_TEXT_PIXELS', cell3TitleWhite > 0, 'cell3TitleWhite=' + cell3TitleWhite);
 
-    // canRender
-    t('CAN_RENDER_4', renderer.canRender({ items: [1,2,3,4] }) === true, '');
-    t('CAN_RENDER_5', renderer.canRender({ items: [1,2,3,4,5] }) === true, '');
-    t('CANNOT_RENDER_3', renderer.canRender({ items: [1,2,3] }) === false, '');
-    t('CANNOT_RENDER_NULL', renderer.canRender(null) === false, '');
+  // === clock 注入 ===
+  return renderer.render(content, 'p', 'seq-clock-1').then(function(clockResult) {
+    t('FRAMEID_USES_CLOCK', clockResult.frameId === 'sequence_2x2:seq-clock-1', 'frameId=' + clockResult.frameId);
+    t('FRAME_BYTES_INDEPENDENT_OF_CLOCK', result.frame.compare(clockResult.frame) === 0, '');
+  }).then(function() {
+    // deterministic
+    return renderer.render(content, 'p').then(function(result2) {
+      t('DETERMINISTIC', result.frame.compare(result2.frame) === 0, '');
 
-    // 文字溢出处理(超长中英文标题不崩溃)
-    var longContent = { items: [
-      { title: '一'.repeat(300), summary: 's'.repeat(500) },
-      { title: '二'.repeat(300), summary: 's'.repeat(500) },
-      { title: '三'.repeat(300), summary: 's'.repeat(500) },
-      { title: '四'.repeat(300), summary: 's'.repeat(500) },
-    ] };
-    return renderer.render(longContent, 'x');
-  }).then(function(overflowResult) {
-    t('OVERFLOW_NO_CRASH', overflowResult !== null && Buffer.isBuffer(overflowResult.frame) && overflowResult.frame.length === 192010, '');
+      // canRender
+      t('CAN_RENDER_4', renderer.canRender({ items: [1,2,3,4] }) === true, '');
+      t('CAN_RENDER_5', renderer.canRender({ items: [1,2,3,4,5] }) === true, '');
+      t('CANNOT_RENDER_3', renderer.canRender({ items: [1,2,3] }) === false, '');
+      t('CANNOT_RENDER_NULL', renderer.canRender(null) === false, '');
 
-    // 图片缺失 fallback:全部 imageUrl 为 null 时仍渲染成功
-    var noImgContent = { items: [
-      { title: 'NoImg1' }, { title: 'NoImg2' }, { title: 'NoImg3' }, { title: 'NoImg4' },
-    ] };
-    return renderer.render(noImgContent, 'x');
-  }).then(function(fallbackResult) {
-    t('IMAGE_MISSING_FALLBACK', fallbackResult !== null && Buffer.isBuffer(fallbackResult.frame) && fallbackResult.frame.length === 192010, '');
+      // 文字溢出处理(超长中英文标题不崩溃)
+      var longContent = { items: [
+        { title: '一'.repeat(300), summary: 's'.repeat(500) },
+        { title: '二'.repeat(300), summary: 's'.repeat(500) },
+        { title: '三'.repeat(300), summary: 's'.repeat(500) },
+        { title: '四'.repeat(300), summary: 's'.repeat(500) },
+      ] };
+      return renderer.render(longContent, 'x');
+    }).then(function(overflowResult) {
+      t('OVERFLOW_NO_CRASH', overflowResult !== null && Buffer.isBuffer(overflowResult.frame) && overflowResult.frame.length === 192010, '');
 
-    // render null 返回 null
-    return renderer.render(null, 'x');
+      // 图片缺失 fallback:全部 imageUrl 为 null 时仍渲染成功
+      var noImgContent = { items: [
+        { title: 'NoImg1' }, { title: 'NoImg2' }, { title: 'NoImg3' }, { title: 'NoImg4' },
+      ] };
+      return renderer.render(noImgContent, 'x');
+    }).then(function(fallbackResult) {
+      t('IMAGE_MISSING_FALLBACK', fallbackResult !== null && Buffer.isBuffer(fallbackResult.frame) && fallbackResult.frame.length === 192010, '');
+
+      // render null 返回 null
+      return renderer.render(null, 'x');
+    });
   });
 }).then(function(r) {
   t('RENDER_NULL_RETURNS_NULL', r === null, '');

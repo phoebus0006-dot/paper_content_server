@@ -88,36 +88,75 @@ renderer.render(content, 'prof').then(function(result) {
   t('CODE4_COUNT_ZERO', code4Count === 0, 'code4 count: ' + code4Count);
   t('CODE4_COUNT', code4Count === 0 || code4Count > 0, 'code4 count: ' + code4Count);
 
-  // deterministic
-  return renderer.render(content, 'prof').then(function(result2) {
-    t('DETERMINISTIC', result.frame.compare(result2.frame) === 0, '');
+  // === 文字像素验证 ===
+  function decodeCodes(frame) {
+    var codes = new Array(800 * 480);
+    for (var i = 0; i < 192000; i++) {
+      var b = frame[10 + i];
+      codes[i * 2] = (b >> 4) & 0x0F;
+      codes[i * 2 + 1] = b & 0x0F;
+    }
+    return codes;
+  }
+  function countCodeInRegion(codes, x0, y0, x1, y1, target) {
+    var n = 0;
+    for (var y = y0; y < y1; y++) {
+      for (var x = x0; x < x1; x++) {
+        if (codes[y * 800 + x] === target) n++;
+      }
+    }
+    return n;
+  }
+  var decoded = decodeCodes(result.frame);
+  // 左标题区(红色 code 3 背景条带 y=10-80)应有白色(code 1)文字
+  var leftTitleWhite = countCodeInRegion(decoded, 20, 20, 380, 60, 1);
+  t('LEFT_TITLE_HAS_TEXT_PIXELS', leftTitleWhite > 0, 'leftTitleWhite=' + leftTitleWhite);
+  // 右标题区(绿色 code 6 背景条带 y=10-80)应有白色(code 1)文字
+  var rightTitleWhite = countCodeInRegion(decoded, 420, 20, 780, 60, 1);
+  t('RIGHT_TITLE_HAS_TEXT_PIXELS', rightTitleWhite > 0, 'rightTitleWhite=' + rightTitleWhite);
+  // 左摘要区(白色 code 1 背景 y=90-280)应有黑色(code 0)文字
+  var leftSummaryBlack = countCodeInRegion(decoded, 20, 100, 380, 290, 0);
+  t('LEFT_SUMMARY_HAS_TEXT_PIXELS', leftSummaryBlack > 0, 'leftSummaryBlack=' + leftSummaryBlack);
+  // 右摘要区(白色 code 1 背景 y=90-280)应有黑色(code 0)文字
+  var rightSummaryBlack = countCodeInRegion(decoded, 420, 100, 780, 290, 0);
+  t('RIGHT_SUMMARY_HAS_TEXT_PIXELS', rightSummaryBlack > 0, 'rightSummaryBlack=' + rightSummaryBlack);
 
-    // canRender
-    t('CAN_RENDER_2_ITEMS', renderer.canRender({ items: [{}, {}] }) === true, '');
-    t('CAN_RENDER_4_ITEMS', renderer.canRender({ items: [1,2,3,4] }) === true, '');
-    t('CANNOT_RENDER_1_ITEM', renderer.canRender({ items: [1] }) === false, '');
-    t('CANNOT_RENDER_NULL', renderer.canRender(null) === false, '');
+  // === clock 注入 ===
+  return renderer.render(content, 'prof', 'cp-clock-1').then(function(clockResult) {
+    t('FRAMEID_USES_CLOCK', clockResult.frameId === 'comparison_pair:cp-clock-1', 'frameId=' + clockResult.frameId);
+    t('FRAME_BYTES_INDEPENDENT_OF_CLOCK', result.frame.compare(clockResult.frame) === 0, '');
+  }).then(function() {
+    // deterministic
+    return renderer.render(content, 'prof').then(function(result2) {
+      t('DETERMINISTIC', result.frame.compare(result2.frame) === 0, '');
 
-    // 文字溢出处理(超长中英文标题不崩溃)
-    var longContent = { items: [
-      { title: '左'.repeat(300), summary: 's'.repeat(500) },
-      { title: '右'.repeat(300), summary: 's'.repeat(500) },
-    ] };
-    return renderer.render(longContent, 'x');
-  }).then(function(overflowResult) {
-    t('OVERFLOW_NO_CRASH', overflowResult !== null && Buffer.isBuffer(overflowResult.frame) && overflowResult.frame.length === 192010, '');
+      // canRender
+      t('CAN_RENDER_2_ITEMS', renderer.canRender({ items: [{}, {}] }) === true, '');
+      t('CAN_RENDER_4_ITEMS', renderer.canRender({ items: [1,2,3,4] }) === true, '');
+      t('CANNOT_RENDER_1_ITEM', renderer.canRender({ items: [1] }) === false, '');
+      t('CANNOT_RENDER_NULL', renderer.canRender(null) === false, '');
 
-    // 图片缺失 fallback:imageUrl 为 null 时仍渲染成功(返回有效帧)
-    var noImgContent = { items: [
-      { title: 'No Image Left', summary: 'sum' },
-      { title: 'No Image Right', summary: 'sum' },
-    ] };
-    return renderer.render(noImgContent, 'x');
-  }).then(function(fallbackResult) {
-    t('IMAGE_MISSING_FALLBACK', fallbackResult !== null && Buffer.isBuffer(fallbackResult.frame) && fallbackResult.frame.length === 192010, '');
+      // 文字溢出处理(超长中英文标题不崩溃)
+      var longContent = { items: [
+        { title: '左'.repeat(300), summary: 's'.repeat(500) },
+        { title: '右'.repeat(300), summary: 's'.repeat(500) },
+      ] };
+      return renderer.render(longContent, 'x');
+    }).then(function(overflowResult) {
+      t('OVERFLOW_NO_CRASH', overflowResult !== null && Buffer.isBuffer(overflowResult.frame) && overflowResult.frame.length === 192010, '');
 
-    // render null 返回 null
-    return renderer.render(null, 'x');
+      // 图片缺失 fallback:imageUrl 为 null 时仍渲染成功(返回有效帧)
+      var noImgContent = { items: [
+        { title: 'No Image Left', summary: 'sum' },
+        { title: 'No Image Right', summary: 'sum' },
+      ] };
+      return renderer.render(noImgContent, 'x');
+    }).then(function(fallbackResult) {
+      t('IMAGE_MISSING_FALLBACK', fallbackResult !== null && Buffer.isBuffer(fallbackResult.frame) && fallbackResult.frame.length === 192010, '');
+
+      // render null 返回 null
+      return renderer.render(null, 'x');
+    });
   });
 }).then(function(r) {
   t('RENDER_NULL_RETURNS_NULL', r === null, '');

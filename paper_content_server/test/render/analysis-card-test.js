@@ -24,7 +24,7 @@ t('BASIC_DEFAULT_DIMS', card.width === 800 && card.height === 480, '');
 // 4. 自定义维度
 var card2 = renderAnalysisCard({ title: 'T' }, { width: 600, height: 400 });
 t('CUSTOM_DIMS', card2.width === 600 && card2.height === 400, '');
-t('CUSTOM_LAYOUT_SOURCE_Y', card2.layout.sourceY === 360, '');
+t('CUSTOM_LAYOUT_SOURCE_Y', card2.layout.sourceY === card2.height - 30, 'sourceY=' + card2.layout.sourceY);
 
 // 5. dataPoints 从 content.items 转换
 var card3 = renderAnalysisCard({ title: 'T', items: [
@@ -87,9 +87,49 @@ renderer.render(content, 'prof1').then(function(result) {
   // 兼容任务模板断言
   t('CODE4_COUNT', code4Count === 0 || code4Count > 0, 'code4 count: ' + code4Count);
 
-  // deterministic: same input → same output
-  return renderer.render(content, 'prof1').then(function(result2) {
-    t('DETERMINISTIC', result.frame.compare(result2.frame) === 0, '');
+  // === 文字像素验证:解码 frame 到 codes,检查特定区域有非背景色像素 ===
+  function decodeCodes(frame) {
+    var codes = new Array(800 * 480);
+    for (var i = 0; i < 192000; i++) {
+      var b = frame[10 + i];
+      codes[i * 2] = (b >> 4) & 0x0F;
+      codes[i * 2 + 1] = b & 0x0F;
+    }
+    return codes;
+  }
+  function countCodeInRegion(codes, x0, y0, x1, y1, target) {
+    var n = 0;
+    for (var y = y0; y < y1; y++) {
+      for (var x = x0; x < x1; x++) {
+        if (codes[y * 800 + x] === target) n++;
+      }
+    }
+    return n;
+  }
+
+  var decoded = decodeCodes(result.frame);
+  // 标题区(y=0-80,蓝色 code 5 背景)应有白色(code 1)文字像素
+  var titleWhite = countCodeInRegion(decoded, 20, 20, 780, 60, 1);
+  t('TITLE_HAS_TEXT_PIXELS', titleWhite > 0, 'titleWhite=' + titleWhite);
+  // 摘要区(y=82-200,白色 code 1 背景)应有黑色(code 0)文字像素
+  var summaryBlack = countCodeInRegion(decoded, 20, 100, 780, 195, 0);
+  t('SUMMARY_HAS_TEXT_PIXELS', summaryBlack > 0, 'summaryBlack=' + summaryBlack);
+  // 数据点区(y=202-440,黄色 code 2 背景)应有黑色(code 0)文字像素
+  var dpBlack = countCodeInRegion(decoded, 36, 210, 780, 435, 0);
+  t('DATAPOINTS_HAVE_TEXT_PIXELS', dpBlack > 0, 'dpBlack=' + dpBlack);
+  // 来源区(y=442-480,黑色 code 0 背景)应有白色(code 1)文字像素
+  var srcWhite = countCodeInRegion(decoded, 20, 450, 780, 478, 1);
+  t('SOURCE_HAS_TEXT_PIXELS', srcWhite > 0, 'srcWhite=' + srcWhite);
+
+  // === clock 注入:frameId 包含 clock 值 ===
+  return renderer.render(content, 'prof1', 'fixed-clock-XYZ').then(function(clockResult) {
+    t('FRAMEID_USES_CLOCK', clockResult.frameId === 'analysis_card:fixed-clock-XYZ', 'frameId=' + clockResult.frameId);
+    // frame 字节不应依赖 clock
+    t('FRAME_BYTES_INDEPENDENT_OF_CLOCK', result.frame.compare(clockResult.frame) === 0, '');
+
+    // deterministic: same input → same output (no clock)
+    return renderer.render(content, 'prof1').then(function(result2) {
+      t('DETERMINISTIC', result.frame.compare(result2.frame) === 0, '');
 
     // canRender
     t('CAN_RENDER_WITH_TITLE_AND_ITEMS', renderer.canRender({ title: 'X', items: [] }) === true, '');
@@ -105,6 +145,7 @@ renderer.render(content, 'prof1').then(function(result) {
 
     // render null content 返回 null Promise
     return renderer.render(null, 'x');
+  });
   });
 }).then(function(r) {
   t('RENDER_NULL_RETURNS_NULL', r === null, '');
