@@ -3662,10 +3662,9 @@ async function handleRequest(req, res) {
         } else if (streamResult.status === 'REJECTED') {
           // TOO_LARGE / DECODE_FAILED / MIME_MISMATCH / NSFW / CLASSIFIER_UNAVAILABLE etc.
           var rejCode = streamResult.reason || 'unknown';
-          // CLASSIFIER_UNAVAILABLE / FAIL_CLOSED is a server-side gate failure (503),
-          // not a client input error. MIME_MISMATCH / TOO_LARGE / SIZE_MISMATCH /
-          // DECODE_FAILED are client input errors (400). NSFW is policy rejection (400).
-          if (rejCode === 'CLASSIFIER_UNAVAILABLE' || rejCode === 'FAIL_CLOSED') {
+          // CLASSIFIER_UNAVAILABLE / FAIL_CLOSED / FEATURE_NOT_READY is a server-side
+          // gate failure (503), not a client input error.
+          if (rejCode === 'CLASSIFIER_UNAVAILABLE' || rejCode === 'FAIL_CLOSED' || rejCode === 'FEATURE_NOT_READY') {
             failJson(res, 503, 'upload rejected: ' + rejCode + ' (classifier not ready, fail-closed)');
           } else {
             failJson(res, 400, 'upload rejected: ' + rejCode + (streamResult.error ? ' — ' + streamResult.error : ''));
@@ -3673,6 +3672,8 @@ async function handleRequest(req, res) {
         } else if (streamResult.status === 'DUPLICATE') {
           res.writeHead(409, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'duplicate', sha256: streamResult.sha256 }));
+        } else if (streamResult.status === 'FEATURE_NOT_READY') {
+          failJson(res, 503, 'FEATURE_NOT_READY: classifier not ready, fail-closed');
         } else {
           failJson(res, 500, 'upload error: ' + (streamResult.error || streamResult.status || 'unknown'));
         }

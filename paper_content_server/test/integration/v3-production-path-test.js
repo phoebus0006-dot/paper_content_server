@@ -260,7 +260,7 @@ async function main() {
     }
 
     // 2b. Streaming upload — octet-stream accepted at HTTP layer,
-    //     fails-closed at classifier gate (503 CLASSIFIER_UNAVAILABLE)
+    //     fails-closed at classifier gate (classifier not ready → FEATURE_NOT_READY)
     var upOn = await request('POST', port2, '/api/admin/library/custom/upload', PNG_1x1, TOKEN, {
       'content-type': 'application/octet-stream',
       'x-original-name': 'test.png',
@@ -268,7 +268,7 @@ async function main() {
       'content-length': PNG_1x1.length,
     });
     t('S2_STREAMING_UPLOAD_FAIL_CLOSED', upOn.s === 503 || upOn.s === 400, 'http=' + upOn.s + ' body=' + upOn.b.toString().slice(0, 120));
-    t('S2_STREAMING_UPLOAD_CLASSIFIER_GATE', /CLASSIFIER_UNAVAILABLE|FAIL_CLOSED|classifier/i.test(upOn.b.toString()), '');
+    t('S2_STREAMING_UPLOAD_CLASSIFIER_GATE', /FEATURE_NOT_READY|CLASSIFIER_NOT_READY|classifier|NOT_READY/i.test(upOn.b.toString()), 'body=' + upOn.b.toString().slice(0, 150));
 
     // 2c. Streaming upload — wrong Content-Type → 415
     var upBadCt = await request('POST', port2, '/api/admin/library/custom/upload', { fileBuffer: 'dGVzdA==' }, TOKEN, {
