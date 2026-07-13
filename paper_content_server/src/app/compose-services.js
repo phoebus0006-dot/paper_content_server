@@ -193,13 +193,22 @@ function composeServices(deps) {
       var analysisRenderer = createAnalysisCardRenderer();
       var comparisonRenderer = createComparisonPairRenderer();
       var sequenceRenderer = createSequence2x2Renderer();
-      function renderWithLayouts(content, profileId) {
-        if (analysisRenderer.canRender(content)) return analysisRenderer.render(content, profileId);
-        if (comparisonRenderer.canRender(content)) return comparisonRenderer.render(content, profileId);
-        if (sequenceRenderer.canRender(content)) return sequenceRenderer.render(content, profileId);
+      function renderWithLayouts(content, profileId, clock) {
+        if (analysisRenderer.canRender(content)) return analysisRenderer.render(content, profileId, clock);
+        if (comparisonRenderer.canRender(content)) return comparisonRenderer.render(content, profileId, clock);
+        if (sequenceRenderer.canRender(content)) return sequenceRenderer.render(content, profileId, clock);
         return Promise.resolve(null);
       }
-      renderShadow = createRenderShadow(renderWithLayouts, renderWithLayouts, logger, { disable: false });
+      // Two distinct function objects (different closures) — render-shadow.js
+      // rejects same-reference legacy/orchestrator pairs. Behavior can match;
+      // shadow compares outputs and records match/mismatch either way.
+      var legacyRenderFn = function (content, profileId, clock) {
+        return renderWithLayouts(content, profileId, clock);
+      };
+      var orchestratorRenderFn = function (content, profileId, clock) {
+        return renderWithLayouts(content, profileId, clock);
+      };
+      renderShadow = createRenderShadow(legacyRenderFn, orchestratorRenderFn, logger, { disable: false });
     } catch (e) { logger.warn('renderShadow init: ' + e.message); }
   }
 
@@ -223,37 +232,42 @@ function composeServices(deps) {
       var { SafetyAuditLog } = require('../safety/safety-audit-log');
       var { ReferenceCleaner } = require('../safety/reference-cleaner');
 
-      // referenceIndex adapter: AssetReferenceIndex.findReferences → getReferences(assetId) → refs[]
+      // Adapters delegate to the real services using the exact method names
+      // AssetDeleteService calls: findReferences / write / cleanCache / append.
+      // No result transformation — the service expects the raw result shapes
+      // ({ references: [...] } from AssetReferenceIndex, etc.).
       var refIndex = AssetReferenceIndex(config.paths.dataDir, snapshotStore, publicationHistory, null);
       var referenceIndexAdapter = {
-        getReferences: function (assetId) {
-          return refIndex.findReferences(assetId).then(function (result) {
-            return (result && result.references) || [];
-          });
+        findReferences: function (assetId) {
+          return refIndex.findReferences(assetId);
         },
       };
 
-      // tombstoneStore adapter: TombstoneStore.write(record) → record(assetId, data)
       var tombstoneDir = path.join(config.paths.dataDir, 'tombstones');
       try { fs.mkdirSync(tombstoneDir, { recursive: true }); } catch (e) {}
       var tombstoneStoreRaw = TombstoneStore(tombstoneDir, logger);
       var tombstoneStoreAdapter = {
-        record: function (assetId, data) {
-          return tombstoneStoreRaw.write(Object.assign({ assetId: assetId }, data || {}));
+        write: function (record) {
+          return tombstoneStoreRaw.write(record);
         },
       };
 
-      // safetyAuditLog adapter: SafetyAuditLog.append(entry) → record(entry)
       var auditLogFile = path.join(config.paths.dataDir, 'safety-audit.log');
       var auditLogRaw = SafetyAuditLog(auditLogFile, logger);
-      var safetyAuditLogAdapter = { record: function (entry) { return auditLogRaw.append(entry); } };
+      var safetyAuditLogAdapter = {
+        append: function (entry) {
+          return auditLogRaw.append(entry);
+        },
+      };
 
-      // referenceCleaner adapter: cleanCache + cleanLegacyIndexes → cleanForAsset(assetId)
+      // referenceCleaner adapter: cleanCache(assetId) — exception propagation.
+      // The service awaits this; raw cleanCache + cleanLegacyIndexes are
+      // synchronous and any throw surfaces as CLEANUP_FAILED upstream.
       var referenceCleanerRaw = ReferenceCleaner(snapshotStore, snapshotCache, publicationHistory, config.paths.dataDir, logger);
       var referenceCleanerAdapter = {
-        cleanForAsset: function (assetId) {
-          try { referenceCleanerRaw.cleanCache(assetId); } catch (e) {}
-          try { referenceCleanerRaw.cleanLegacyIndexes(assetId, null); } catch (e) {}
+        cleanCache: function (assetId) {
+          referenceCleanerRaw.cleanCache(assetId);
+          referenceCleanerRaw.cleanLegacyIndexes(assetId, null);
           return Promise.resolve();
         },
       };
