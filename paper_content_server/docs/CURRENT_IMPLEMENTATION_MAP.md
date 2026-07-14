@@ -67,11 +67,11 @@ ESP32_DYNAMIC_ACCEPTANCE=NOT_TESTED
 |------|--------|------|-------------|
 | fetch | server.js | server.js | HTTP fetch from RSS/JSON feeds |
 | parse | server.js | server.js | RSS/JSON feed parsing |
-| translate | server.js | server.js | OpenAI/DeepL/Gemini translation |
+| translate | server.js | server.js | OpenAI/DeepL/Gemini translation (declared in config, NOT wired — translation-gate.js is a stub) |
 | normalize | news-normalizer | src/news/news-normalizer.js | Normalize feed items |
 | identity | article-identity | src/news/article-identity.js | Article identity extraction |
 | deduplicate | news-deduplicator | src/news/news-deduplicator.js | URL + content dedup |
-| translate | translation-gate | src/news/translation-gate.js | Translation provider dispatch |
+| translate | translation-gate | src/news/translation-gate.js | Translation provider dispatch (STUB: translate() returns null — no real HTTP call) |
 | edit | news-editor | src/news/news-editor.js | Title/summary rewrite |
 | layout | news-layout | src/news/news-layout.js | Card layout computation |
 | last-good | last-good-store | src/news/last-good-store.js | Fallback persistence |

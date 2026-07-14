@@ -17,7 +17,7 @@
     "soak:test": "node scripts/soak-test.js",
     "lifecycle:test": "node test/app/graceful-shutdown-test.js",
     "mqtt:port-test": "node test/mqtt/mqtt-client-port-test.js",
-    "config:test": "node test/config/feature-flag-truth-test.js",
+    "config:test": "node test/config/feature-flag-truth-test.js && node test/config/translation-config-validation-test.js",
     "custom-library:test": "node test/custom-library/custom-upload-security-test.js",
     "learning:test": "node test/learning/learning-ingestion-production-test.js && node test/learning/learning-policy-test.js && node test/learning/learning-scheduler-test.js && node test/learning/wikimedia-source-adapter-test.js",
     "selection:test": "node test/admin/asset-selection-service-test.js && node test/assets/asset-delete-service-test.js",
@@ -69,5 +69,8 @@
   "devDependencies": {
     "aedes": "^0.51.0",
     "playwright": "^1.61.1"
+  },
+  "engines": {
+    "node": ">=20 <21"
   }
 }

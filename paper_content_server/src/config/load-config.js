@@ -19,9 +19,24 @@ function loadDotEnvFile(filePath) {
 }
 
 function readJSONConfig(configPath) {
+  // Distinguish three failure modes:
+  //   - file does not exist → return {} (allowed; defaults apply)
+  //   - file exists but unreadable → return { _configError: '...' }
+  //   - file exists and readable but JSON malformed → return { _configError: '...' }
+  // The caller (loadConfig) surfaces _configError into config.errors so the
+  // process fails fast instead of silently falling back to defaults.
+  var raw;
   try {
-    return JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  } catch(e) { return {}; }
+    raw = fs.readFileSync(configPath, 'utf8');
+  } catch(e) {
+    if (e.code === 'ENOENT') return {}; // file not present — defaults apply
+    return { _configError: 'config file unreadable (' + configPath + '): ' + e.message };
+  }
+  try {
+    return JSON.parse(raw);
+  } catch(e) {
+    return { _configError: 'config file JSON syntax error (' + configPath + '): ' + e.message };
+  }
 }
 
 function resolvePath(configured, defaultPath, cwd) {
@@ -243,8 +258,23 @@ function loadConfig(opts) {
 
   // Validate
   var errors = [];
+  // Config file errors (missing/unreadable/malformed JSON) — surface from readJSONConfig
+  if (fileConfig && fileConfig._configError) {
+    errors.push(fileConfig._configError);
+  }
+  // Translation provider key validation
+  var validProviders = ['none', 'openai', 'deepl', 'gemini'];
+  if (validProviders.indexOf(config.translation.provider) < 0) {
+    errors.push('TRANSLATION_PROVIDER="' + config.translation.provider + '" is not a known provider (allowed: none, openai, deepl, gemini)');
+  }
   if (config.translation.provider === 'openai' && !config.translation.openaiApiKey) {
     errors.push('TRANSLATION_PROVIDER=openai but OPENAI_API_KEY is not set');
+  }
+  if (config.translation.provider === 'deepl' && !config.translation.deeplApiKey) {
+    errors.push('TRANSLATION_PROVIDER=deepl but DEEPL_API_KEY is not set');
+  }
+  if (config.translation.provider === 'gemini' && !config.translation.geminiApiKey) {
+    errors.push('TRANSLATION_PROVIDER=gemini but GEMINI_API_KEY is not set');
   }
   if (!config.server.port || config.server.port < 1) {
     errors.push('PORT must be a positive number');

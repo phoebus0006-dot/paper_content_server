@@ -25,7 +25,9 @@
 | Comparison pair (studySetId + pairRole) | render/comparison-renderer.js | pair integrity test | preview smoke | Required | Planned |
 | 2x2 sequence (sequenceIndex 1-4) | render/sequence-grid-renderer.js | ordering test | preview smoke | Required | Planned |
 | 6 unique news (URL, articleId, title) | news/ news-service.js | news contract | /api/news.json | Required | Planned |
-| Translation fidelity (subject, action, negation, numbers, entities) | news/translation/fidelity.js | fidelity test | original-final audit | User sample review | Planned |
+| Translation semantic fidelity (subject, action, negation, numbers, entities) | news/translation/fidelity.js (does NOT exist — target only) | fidelity test (none — no real algorithm) | original-final audit | User sample review | NOT_IMPLEMENTED |
+| Translation provider integration (OpenAI/DeepL/Gemini HTTP call) | src/news/translation-gate.js | translate() is a stub returning null | N/A — no real HTTP call made at runtime | N/A | NOT_IMPLEMENTED |
+| Translation format gate (length, period, hanging-end, CJK presence, HTML residue, photo-credit) | server.js (isTextSemanticallyComplete / rewriteNewsTitle / rewriteNewsSummary / normalizeEntitiesAndAcronyms / evaluateNewsItemQuality) | translation-quality-test 31/31 (helper path) | N/A | N/A | IMPLEMENTED_NOT_PRODUCTION_VERIFIED |
 | Final dedupe (canonical URL, article ID, original title, final title) | news/final-dedupe.js | dedupe contract | live smoke | N/A | Planned |
 | Title one line | render/news-layout.js | layout contract | debug layout | Required | Planned |
 | Summary 2-3 lines | render/news-layout.js | layout contract | debug layout | Required | Planned |

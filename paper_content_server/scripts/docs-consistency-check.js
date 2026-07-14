@@ -515,6 +515,50 @@ if (runbook) {
   check(prematureViolations.length === 0,
     'No premature "ALL FEATURES COMPLETE" / "PRODUCTION READY" declarations' +
     (prematureViolations.length === 0 ? '' : ' (VIOLATIONS: ' + prematureViolations.join(', ') + ')'));
+
+  // 12j. TRANSLATION_PROVIDER_INTEGRATION / TRANSLATION_FORMAT_GATE / TRANSLATION_SEMANTIC_FIDELITY
+  //      — three orthogonal translation capability layers; each must be consistent
+  //      across all truth docs that declare it. Same capability, conflicting status
+  //      across docs is a documentation bug.
+  ['TRANSLATION_PROVIDER_INTEGRATION', 'TRANSLATION_FORMAT_GATE', 'TRANSLATION_SEMANTIC_FIDELITY'].forEach(function(key) {
+    var vals = {};
+    TRUTH_NAMES.forEach(function(n) {
+      var v = extractStatus(TRUTH_DOCS[n], key);
+      if (v) vals[n] = v;
+    });
+    var uniq = uniqueValues(vals);
+    check(uniq.length <= 1, 'Truth docs ' + key + ' non-conflict' +
+      (uniq.length <= 1 ? '' : ' (CONFLICT: ' + uniq.join(' | ') + ')'));
+  });
+
+  // 12k. TRANSLATION_SEMANTIC_FIDELITY=NOT_IMPLEMENTED gate: no doc may claim
+  //      "translation fidelity PASS" / "semantic fidelity verified" as a positive
+  //      claim while the status is NOT_IMPLEMENTED. Catches the historical
+  //      conflation of format gates with semantic fidelity.
+  var semFidelityNotImpl = TRUTH_NAMES.some(function(n) {
+    return extractStatus(TRUTH_DOCS[n], 'TRANSLATION_SEMANTIC_FIDELITY') === 'NOT_IMPLEMENTED';
+  });
+  if (semFidelityNotImpl) {
+    var semFidPatterns = [
+      /translation\s+fidelity\s+PASS/i,
+      /semantic\s+fidelity\s+verified/i,
+      /translation\s+fidelity\s+verified/i,
+      /TRANSLATION_SEMANTIC_FIDELITY=PASS/i,
+      /Translation\s+fidelity\s+\|\s*IMPLEMENTED_AND_VERIFIED/i
+    ];
+    var semFidViolations = [];
+    var allMdFiles4 = fs.readdirSync(DOCS).filter(function(f) { return /\.md$/.test(f); });
+    allMdFiles4.forEach(function(fname) {
+      var t = readFile(fname);
+      if (!t) return;
+      semFidPatterns.forEach(function(pat) {
+        if (pat.test(t)) semFidViolations.push(fname + ' /' + pat.source + '/');
+      });
+    });
+    check(semFidViolations.length === 0,
+      'TRANSLATION_SEMANTIC_FIDELITY=NOT_IMPLEMENTED gate: no positive "translation fidelity verified" claim' +
+      (semFidViolations.length === 0 ? '' : ' (VIOLATIONS: ' + semFidViolations.join(', ') + ')'));
+  }
 })();
 
 console.log('\n=== exitCode=' + exitCode + ' ===');

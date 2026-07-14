@@ -108,6 +108,29 @@ String extractJsonString(const String &json, const char *key) {
   return json.substring(start + 1, end);
 }
 
+// extractJsonInt — parse a JSON numeric value for the given key.
+// Returns true only when the key exists and the value is a base-10 integer
+// (optional leading '-', digits only). Required because the server emits
+// schemaVersion as a JSON number (2), not a string ("2"); the legacy
+// extractJsonString helper above cannot parse raw numeric tokens and would
+// silently return an empty string, causing the ESP32 to reject v2 payloads.
+bool extractJsonInt(const String &json, const char *key, int &value) {
+  String needle = String("\"") + key + "\"";
+  int keyPos = json.indexOf(needle);
+  if (keyPos < 0) return false;
+  int colon = json.indexOf(':', keyPos + needle.length());
+  if (colon < 0) return false;
+  int i = colon + 1;
+  while (i < (int)json.length() && (json.charAt(i) == ' ' || json.charAt(i) == '\t')) i++;
+  int start = i;
+  if (i < (int)json.length() && json.charAt(i) == '-') i++;
+  if (i >= (int)json.length() || json.charAt(i) < '0' || json.charAt(i) > '9') return false;
+  while (i < (int)json.length() && json.charAt(i) >= '0' && json.charAt(i) <= '9') i++;
+  if (i == start || (i == start + 1 && json.charAt(start) == '-')) return false;
+  value = json.substring(start, i).toInt();
+  return true;
+}
+
 String sha256Hex(const uint8_t *data, size_t len) {
   uint8_t digest[32];
   char hex[65];
@@ -378,9 +401,18 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   // Parse JSON manually to avoid dynamic allocation
   String jsonStr = String((char *)payload, length);
 
-  String sv = extractJsonString(jsonStr, "schemaVersion");
-  if (sv != "1") {
-    Serial.printf("MQTT ignoring unknown schemaVersion: %s\n", sv.c_str());
+  // schemaVersion is emitted by the server as a JSON number (2).
+  // We accept v1 and v2 (numeric). String forms ("1"/"2") are also accepted
+  // for tolerance, but a missing, 0, 3, or non-numeric value is rejected.
+  int svNum = 0;
+  bool svIsNum = extractJsonInt(jsonStr, "schemaVersion", svNum);
+  String svStr = extractJsonString(jsonStr, "schemaVersion");
+  bool svIsString1 = (svStr == "1");
+  bool svIsString2 = (svStr == "2");
+  bool svValid = (svIsNum && (svNum == 1 || svNum == 2)) || svIsString1 || svIsString2;
+  if (!svValid) {
+    Serial.printf("MQTT ignoring unknown schemaVersion: num=%d str=%s\n",
+                  svNum, svStr.c_str());
     return;
   }
 

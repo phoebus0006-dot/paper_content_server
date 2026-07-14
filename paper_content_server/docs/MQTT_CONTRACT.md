@@ -33,9 +33,10 @@ epaper/<deviceId>/publication
 ```
 
 - `schemaVersion=2` 由 `SCHEMA_VERSION` 常量保证;`validateMessage` 同时接受 `schemaVersion=1` 的旧消息(向后兼容,ESP32 固件升级期间不丢消息);
-- `frameSha256` 是 frame 内容 SHA-256(非 frame bytes,符合 ADR-0001);
+- `schemaVersion` 在 payload 中为 JSON 数字 (`2`),非字符串。ESP32 固件通过 `extractJsonInt()` 解析数字值,同时容忍字符串 `"1"`/`"2"` 形式以提升兼容性;拒绝 `0`、`3`、缺失或非数字值;
+- `frameSha256` 是 frame 内容 SHA-256(非 frame bytes,符合 ADR-0001)。**服务端 `validateMessage` 不校验 SHA 长度/格式,仅检查非空**;SHA 格式校验(`isValidShaHex`)由 ESP32 固件在 callback 中执行;
 - `reason` 字段为可选;若存在必须落在 `VALID_REASONS` 白名单内,否则视为非法消息。该字段从 `createSnapshot(..., { publishReason })` → `snapshot.publishReason` → `publication-service.publish` → `mqtt-notification-adapter` → `mqtt-publisher` → `mqtt-message` 全链路贯穿;
-- ESP32 收到通知后只把 `frameId` / `snapshotId` 作为 refresh signal,立即执行正常 HTTP state/frame 刷新(见 §5)。`reason` 仅供设备侧日志/统计,不影响刷新行为。
+- ESP32 收到通知后只把 `frameId` / `snapshotId` 作为 refresh signal,立即执行正常 HTTP state/frame 刷新(见 §5)。`reason` 仅供设备侧日志/统计,不影响刷新行为。**ESP32 固件不校验 `reason` 白名单**,该责任由服务端承担。
 
 ## 4. Server 顺序
 

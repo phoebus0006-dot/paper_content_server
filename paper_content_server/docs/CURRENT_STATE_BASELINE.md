@@ -48,12 +48,12 @@ ESP32_DYNAMIC_ACCEPTANCE=PARTIAL (WiFi+display+polling verified, MQTT not connec
 | State/frame coherence | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | ESP32 frame validation | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | News live fetch | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
-| News translation fidelity | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
+| News translation fidelity | NOT_IMPLEMENTED | | See TRANSLATION_PROVIDER_INTEGRATION / TRANSLATION_FORMAT_GATE / TRANSLATION_SEMANTIC_FIDELITY split below | | |
 | News final dedupe | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | News layout | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | Last-good | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | | | |
 | Learning Library auto-fetch | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Wikimedia source adapter + HTTPS-only downloader (size/redirect/timeout guards) + scheduler with classifierReady gate + ingestion service (enabled guard, fail-closed decode); wired behind learningLibraryEnabled flag. Scheduler does NOT start when classifier not ready (zero network requests). | NOT TESTED | N/A |
-| Learning relevance gate | PARTIAL | | PARTIAL_LICENSE_ONLY — learning-policy.js 只检查 license,无主题/关键词/质量评分 | NOT VERIFIED | N/A |
+| Learning relevance gate | PARTIAL | | PARTIAL: learning-policy.js has computeTopicScore() and computeQualityScore() but NO computeKeywordScore() — `keywords` field is declared (L6) but never read. Default config has topics=[] so computeTopicScore returns 1 unconditionally, bypassing topic filtering entirely. qualityThreshold defaults to 2 (enforced). Effective production policy = license check + quality score check only; topic/keyword relevance NOT enforced when no topics configured. Production seed data cleaned (Hyatt image moved to test/fixtures/learning/). | NOT VERIFIED | N/A |
 | Custom Library | BLOCKED | | Streaming upload (octet-stream → processUploadStream → quarantine → sharp decode → MIME mismatch → SHA256 → safety gate → dedup → atomic move) fully wired, but classifier has no real model → fail-closed (CLASSIFIER_UNAVAILABLE). Upload cannot ACCEPT until a real NSFW model is configured. Gated by customLibraryEnabled + classifierReady. | NOT TESTED | N/A |
 | Strict NSFW deletion | NOT_IMPLEMENTED | | No real NSFW classifier model. safety-classifier-port fail-closed (configured=false, ready=false). AssetDeleteService atomic DELETE chain (HTTP route → feature flag check → AssetDeleteService.deleteAsset → findReferences → markBlocked → tombstone write → cleanup → audit → markTombstoned, reason enum UNSAFE/SUSPICIOUS/POLICY_BLOCKED, fail-closed: no swallow) is IMPLEMENTED but cannot make a real deletion decision without a classifier. | NOT TESTED | N/A |
 | Analysis Card | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Real EPF1 rasterizer (5x7 ASCII bitmap font + real CJK glyphs via sharp SVG text / font-detector) producing 192010-byte frames; gated by renderShadowEnabled | NOT TESTED | N/A |
@@ -63,6 +63,25 @@ ESP32_DYNAMIC_ACCEPTANCE=PARTIAL (WiFi+display+polling verified, MQTT not connec
 | FOCUS_LOCK | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | Route uses assetSelectionService.selectForFocusLock() for strict theme/albumId matching (404 on no match, no schedule fallback); override persisted + restart-validated same as ONE_SHOT | NOT TESTED | NOT TESTED |
 | MQTT immediate refresh | IMPLEMENTED_NOT_PRODUCTION_VERIFIED | | mqtt-message-test 16/16 covers schemaVersion=2 + reason field + v1 backward compat; mqtt-publisher/notification-adapter wiring present | NOT VERIFIED | NOT TESTED |
 | Admin production-path publication | PARTIAL | | admin-test covers one-shot photo valid/invalid assetId, expiry, frameId consistency, legacy publish/photo photoId propagation. MQTT reason 字段贯穿 snapshot-model → publication-service → mqtt-publisher. | NOT VERIFIED | NOT TESTED |
+
+### Translation Fidelity (split)
+
+The monolithic "News translation fidelity" status is split into three orthogonal layers. The previous single-row "IMPLEMENTED_NOT_PRODUCTION_VERIFIED" was misleading because it conflated provider integration, format gating, and semantic fidelity.
+
+- `TRANSLATION_PROVIDER_INTEGRATION=NOT_IMPLEMENTED`
+  - `src/news/translation-gate.js` is a stub: `translate()` always returns `Promise.resolve(null)` — no real OpenAI / DeepL / Gemini call is made at runtime. Provider selection is wired through config but the actual provider HTTP call has never been implemented.
+- `TRANSLATION_FORMAT_GATE=IMPLEMENTED_NOT_PRODUCTION_VERIFIED`
+  - `server.js` exports `isTextSemanticallyComplete`, `rewriteNewsTitle`, `rewriteNewsSummary`, `normalizeEntitiesAndAcronyms`, `evaluateNewsItemQuality`, `PROTECTED_ENTITIES`.
+  - These functions enforce: title/summary non-empty, translated text contains Chinese characters, no hanging ends, no HTML residue, no photo-credit residue, sentence-ending punctuation, protected entities (OpenAI/ChatGPT/NATO/GDP/CEO) preserved.
+  - Covered by `translation-quality-test.js` (31/31 pass on the helper path).
+  - These are **format gates**, not semantic fidelity: they verify shape, not meaning.
+- `TRANSLATION_SEMANTIC_FIDELITY=NOT_IMPLEMENTED`
+  - No `src/news/translation/fidelity.js` file exists (referenced in SYSTEM_ARCHITECTURE.md and TRACEABILITY_MATRIX.md as a target, not as a real module).
+  - No original-vs-translation semantic comparison algorithm.
+  - No subject / action / negation / numbers / entities alignment test.
+  - Cannot be claimed as PASS until a real fidelity algorithm + test exists.
+
+**None of the following may be reported as "translation fidelity" alone:** length checks, period presence, hanging-end detection, numeric presence, Chinese-character presence, HTML residue, photo-credit residue. They are format gates.
 
 ### Render Fidelity (Text)
 
@@ -106,12 +125,12 @@ ORCHESTRATOR_PRODUCTION_SWITCH=NOT_IMPLEMENTED
 | State/frame coherence | server.js L2535-2598 | coherence-test 53/53 | NOT VERIFIED | NOT TESTED |
 | ESP32 frame validation | firmware + test routes | restart-test + frame tests | NOT VERIFIED | NOT TESTED |
 | News live fetch | server.js L691-735 | rotation-test Phase A/B/C | NOT VERIFIED | NOT TESTED |
-| News translation fidelity | server.js L1115-1185 | translation-quality-test 31/31 (helper path) | NOT VERIFIED | NOT TESTED |
+| News translation fidelity | server.js L1115-1185 (format gate only); src/news/translation-gate.js (stub) | TRANSLATION_PROVIDER_INTEGRATION=NOT_IMPLEMENTED (stub returns null); TRANSLATION_FORMAT_GATE=IMPLEMENTED_NOT_PRODUCTION_VERIFIED (translation-quality-test 31/31 on helper path — format gates only); TRANSLATION_SEMANTIC_FIDELITY=NOT_IMPLEMENTED (no fidelity.js, no original-vs-translation alignment) | NOT VERIFIED | NOT TESTED |
 | News final dedupe | server.js L1462-1483 | news-render-readability-test | NOT VERIFIED | NOT TESTED |
 | News layout | server.js L2106-2115 (layoutNewsCard) | news-render-readability-test 17/17 | NOT VERIFIED | NOT TESTED |
 | Last-good | server.js L1542 | rotation-test Phase B/C | NOT VERIFIED | N/A |
 | Learning Library auto-fetch | src/learning/learning-ingestion-service.js + wikimedia-source-adapter.js + learning-downloader.js + learning-scheduler.js + src/app/compose-services.js (classifierReady gate) | learning:test; v3:integration SECTION 2 (scheduler status=SAFETY_CLASSIFIER_NOT_READY when no model) | NOT TESTED | N/A |
-| Learning relevance gate | src/learning/learning-policy.js | learning-policy-test (license-only check, no topic/keyword/quality scoring — PARTIAL) | NOT VERIFIED | N/A |
+| Learning relevance gate | src/learning/learning-policy.js (computeTopicScore, computeQualityScore; keywords declared but never read) | learning-policy-test; Production seed Hyatt image archived to test/fixtures/learning/hyatt-image.json (was in data/image_index.json — leaked via empty-topics bypass) | NOT VERIFIED | N/A |
 | Custom Library | src/custom-library/custom-library-service.js (processUploadStream) + custom-file-store.js (createQuarantineWriteStream/streamDecode/streamSha256) + server.js /api/admin/library/custom/upload (octet-stream) + src/app/compose-services.js (config.safety passthrough) | custom-upload-security-test; v3:integration SECTION 2 (streaming upload → fail-closed CLASSIFIER_UNAVAILABLE when no model; 415 on wrong Content-Type) | NOT TESTED | N/A |
 | Strict NSFW deletion | src/safety/safety-classifier-port.js + nsfw-safety-gate.js + src/assets/asset-delete-service.js (DELETE chain: HTTP route → feature flag check → AssetDeleteService.deleteAsset → findReferences → markBlocked → tombstone write → cleanup → audit → markTombstoned; reason enum UNSAFE/SUSPICIOUS/POLICY_BLOCKED; fail-closed: no swallow) + server.js DELETE route (atomic, no legacy fallback; 503 FEATURE_DISABLED when flag off) | safety-classifier-port-test; nsfw-safety-gate-test; asset-delete-service-test; v3:integration SECTION 2 (DELETE 400 no reason, 400 bad reason, 404 not found, 503 flag off) | NOT TESTED | N/A |
 | Analysis Card | src/render/analysis-card-renderer.js (5x7 ASCII bitmap font + real CJK glyphs via sharp SVG text + font-detector) + src/render/legacy-shadow-adapter.js + orchestrator-shadow-adapter.js (independent shadow pipelines) | analysis-card-test; cjk-glyph-test; render-shadow-meaningful-test; v3:integration SECTION 4 (EPF1 192010 bytes) | NOT TESTED | N/A |
