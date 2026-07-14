@@ -4,9 +4,29 @@ var TOKEN = null;
 var LOGIN_CALLBACK = null;
 
 function $(id){return document.getElementById(id)}
-function show(el){el.style.display='block'}
-function hide(el){el.style.display='none'}
+function show(el){if(el)el.style.display='block'}
+function hide(el){if(el)el.style.display='none'}
 function qs(s,p){return(p||document).querySelector(s)}
+
+// ── Page-level error box (no silent white screen) ──
+function showErrorBox(msg){
+  var box=$('page-error-box');
+  if(!box){
+    box=document.createElement('div');
+    box.id='page-error-box';
+    box.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#cc0000;color:#fff;padding:12px 20px;border-radius:6px;z-index:10000;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:90vw';
+    document.body.appendChild(box);
+  }
+  box.textContent='后台加载失败: '+msg;
+  box.style.display='block';
+}
+window.addEventListener('error',function(e){
+  showErrorBox(e.message||'Unknown error');
+});
+window.addEventListener('unhandledrejection',function(e){
+  var msg=(e.reason&&(e.reason.message||e.reason))||'Promise rejected';
+  showErrorBox(String(msg));
+});
 
 function api(path,opts){
   opts=opts||{};
@@ -24,23 +44,40 @@ function api(path,opts){
 function toast(msg,type){type=type||'info';var t=document.createElement('div');t.className='toast toast-'+type;t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove()},3000)}
 
 function showLogin(){
+  // Login UI is optional — server strips it when ADMIN_ACCESS_MODE==='lan'
+  if(!$('login-overlay')){
+    console.warn('showLogin skipped: login-overlay not present (LAN mode)');
+    return;
+  }
   hide($('app'));
   show($('login-overlay'));
-  $('login-token').value='';
-  $('login-error').style.display='none';
+  if($('login-token'))$('login-token').value='';
+  if($('login-error'))$('login-error').style.display='none';
 }
 
-function hideLogin(){hide($('login-overlay'));show($('app'))}
+function hideLogin(){
+  if(!$('login-overlay')){
+    console.warn('hideLogin skipped: login-overlay not present (LAN mode)');
+    return;
+  }
+  hide($('login-overlay'));
+  show($('app'));
+}
 
-$('login-form').addEventListener('submit',function(e){
-  e.preventDefault();
-  var token=$('login-token').value.trim();
-  if(!token)return;
-  api('/api/admin/dashboard',{headers:{'Authorization':'Bearer '+token}}).then(function(d){
-    if(d&&d.status==='ok'){TOKEN=token;hideLogin();if(LOGIN_CALLBACK){LOGIN_CALLBACK();LOGIN_CALLBACK=null}}
-    else{$('login-error').textContent='Token 无效';$('login-error').style.display='block'}
-  }).catch(function(){toast('认证失败','error')});
-});
+// Explicit conditional binding: login-form only exists when ADMIN_ACCESS_MODE==='token'
+// (server strips the entire login-overlay block in LAN mode — see serveAdminFile in server.js)
+var loginForm=$('login-form');
+if(loginForm){
+  loginForm.addEventListener('submit',function(e){
+    e.preventDefault();
+    var token=$('login-token').value.trim();
+    if(!token)return;
+    api('/api/admin/dashboard',{headers:{'Authorization':'Bearer '+token}}).then(function(d){
+      if(d&&d.status==='ok'){TOKEN=token;hideLogin();if(LOGIN_CALLBACK){LOGIN_CALLBACK();LOGIN_CALLBACK=null}}
+      else{$('login-error').textContent='Token 无效';$('login-error').style.display='block'}
+    }).catch(function(){toast('认证失败','error')});
+  });
+}
 
 function switchTab(name){
   document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
@@ -55,24 +92,27 @@ document.querySelectorAll('.sidebar nav a').forEach(function(a){
 
 function loadAll(){loadDashboard();loadNewsReview();loadPhotos();loadPublishHistory();loadStatus()}
 
+// Safe text setter — no-op when element is missing (HTML may omit optional display fields)
+function setText(id,text){var el=$(id);if(el)el.textContent=text;return el}
+
 // ── Dashboard ──
 function loadDashboard(){
   api('/api/admin/dashboard').then(function(d){
     if(!d)return;
-    $('dash-mode').textContent=d.currentMode||'-';
-    $('dash-slot').textContent=d.currentSlot||'-';
-    $('dash-frameid').textContent=(d.frameId||'').slice(0,40)+'...';
-    $('dash-nextswitch').textContent=d.nextSwitchLocal||'-';
-    $('dash-news').textContent=d.newsItemCount||'-';
-    $('dash-cache').textContent=d.frameCacheEntries||'-';
-    $('dash-uptime').textContent=d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟';
-    $('dash-override').textContent=d.manualOverride||'auto';
-    $('dash-override-expires').textContent=d.overrideExpiresAt||'-';
-    $('dash-lastpublish').textContent=d.lastPublishedAt||'-';
+    setText('dash-mode',d.currentMode||'-');
+    setText('dash-slot',d.currentSlot||'-');
+    setText('dash-frameid',(d.frameId||'').slice(0,40)+'...');
+    setText('dash-nextswitch',d.nextSwitchLocal||'-');
+    setText('dash-news',d.newsItemCount||'-');
+    setText('dash-cache',d.frameCacheEntries||'-');
+    setText('dash-uptime',d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟');
+    setText('dash-override',d.manualOverride||'auto');
+    setText('dash-override-expires',d.overrideExpiresAt||'-');
+    setText('dash-lastpublish',d.lastPublishedAt||'-');
     STATE.dashboard=d;
     // Update frame preview
     if($('dash-frame-preview'))$('dash-frame-preview').src='/debug/news-review-6.png?'+Date.now();
-  });
+  }).catch(function(e){showErrorBox('dashboard load failed: '+(e&&e.message||e))});
 }
 
 // ── News Review ──
@@ -160,14 +200,18 @@ function loadPhotos(){
   });
 }
 
-$('photo-upload-form').addEventListener('submit',function(e){
-  e.preventDefault();
-  var fd=new FormData();fd.append('photo',$('photo-file').files[0]);
-  fetch('/api/admin/photos/upload',{method:'POST',headers:{},body:fd}).then(function(r){
-    if(r.ok){toast('上传成功','success');$('photo-file').value='';loadPhotos()}
-    else{toast('上传失败:'+r.status,'error')}
-  }).catch(function(e){toast('上传错误: '+e.message,'error')});
-});
+// Explicit conditional binding: photo-upload-form is required but guard against future HTML changes
+var photoForm=$('photo-upload-form');
+if(photoForm){
+  photoForm.addEventListener('submit',function(e){
+    e.preventDefault();
+    var fd=new FormData();fd.append('photo',$('photo-file').files[0]);
+    fetch('/api/admin/photos/upload',{method:'POST',headers:{},body:fd}).then(function(r){
+      if(r.ok){toast('上传成功','success');$('photo-file').value='';loadPhotos()}
+      else{toast('上传失败:'+r.status,'error')}
+    }).catch(function(e){toast('上传错误: '+e.message,'error')});
+  });
+}
 
 function deletePhoto(id){
   if(!confirm('确认删除?'))return;
@@ -219,7 +263,9 @@ function loadEditorPreview(){
       el.appendChild(err);
     }
   });
-  $('editor-preview-eink').style.display='block';
+  // Optional wrapper element — guard against future HTML changes
+  var einkWrapper=$('editor-preview-eink');
+  if(einkWrapper)einkWrapper.style.display='block';
 }
 
 function updateEditorParam(key,val){
@@ -267,35 +313,58 @@ function clearOverride(){
 function loadStatus(){
   api('/api/health.json').then(function(d){
     if(!d)return;
-    $('status-uptime').textContent=d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟';
-    $('status-mode').textContent=d.currentMode||'-';
-    $('status-slot').textContent=d.currentSlot||'-';
-    $('status-frameid').textContent=(d.frameId||'').slice(0,40)+'...';
-    $('status-news').textContent=d.newsItemCount||'-';
-    $('status-cache').textContent=d.frameCacheEntries||'-';
-    $('status-render').textContent=d.frameRenderCount||'-';
-    $('status-state-req').textContent=d.stateRequestCount||'-';
-    $('status-frame-req').textContent=d.frameRequestCount||'-';
-    $('status-news-refresh').textContent=d.newsRefreshCount||'-';
-    $('status-news-fail').textContent=d.newsRefreshFailureCount||'-';
+    setText('status-uptime',d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟');
+    setText('status-mode',d.currentMode||'-');
+    setText('status-slot',d.currentSlot||'-');
+    setText('status-frameid',(d.frameId||'').slice(0,40)+'...');
+    setText('status-news',d.newsItemCount||'-');
+    setText('status-cache',d.frameCacheEntries||'-');
+    setText('status-render',d.frameRenderCount||'-');
+    setText('status-state-req',d.stateRequestCount||'-');
+    setText('status-frame-req',d.frameRequestCount||'-');
+    setText('status-news-refresh',d.newsRefreshCount||'-');
+    setText('status-news-fail',d.newsRefreshFailureCount||'-');
   });
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
-// Init
-fetch('/api/admin/access-mode').then(function(r){return r.json()}).then(function(d){
+// Init — wrapped in try/catch to prevent silent white screen
+try{
+fetch('/api/admin/access-mode').then(function(r){
+  if(!r.ok)throw new Error('access-mode HTTP '+r.status);
+  return r.json();
+}).then(function(d){
   ACCESS_MODE=d.mode||'token';
   if(ACCESS_MODE==='token'){
+    if($('login-overlay')){
+      showLogin();
+      LOGIN_CALLBACK=loadAll;
+    }else{
+      // Inconsistent state: mode=token but login UI missing from HTML
+      showErrorBox('access_mode=token 但登录界面缺失');
+      show($('app'));
+      loadAll();
+    }
+  }else{
+    // LAN mode: login-overlay stripped by server — just show the app
+    show($('app'));
+    if($('login-overlay'))hide($('login-overlay'));
+    loadAll();
+  }
+}).catch(function(e){
+  ACCESS_MODE='token';
+  if($('login-overlay')){
     showLogin();
     LOGIN_CALLBACK=loadAll;
   }else{
+    showErrorBox('access-mode fetch failed: '+(e&&e.message||e));
     show($('app'));
-    hide($('login-overlay'));
     loadAll();
   }
-}).catch(function(){
-  ACCESS_MODE='token';
-  showLogin();
-  LOGIN_CALLBACK=loadAll;
 });
+}catch(e){
+  showErrorBox('init failed: '+(e&&e.message||e));
+  show($('app'));
+  loadAll();
+}

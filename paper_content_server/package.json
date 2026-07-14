@@ -52,6 +52,7 @@
     "admin:cidr-test": "node test/admin/admin-network-cidr-test.js",
     "admin:cors-test": "node test/admin/admin-cross-origin-test.js",
     "admin:ui-test": "node test/admin/admin-ui-no-login-test.js",
+    "admin:browser-test": "node test/admin/admin-browser-p0-test.js",
     "selftest:deps": "node scripts/dependency-selftest.js",
     "selftest:container": "node scripts/container-selftest.js",
     "v5:cjk": "node test/render/cjk-glyph-test.js",
@@ -66,6 +67,7 @@
     "sharp": "^0.33.5"
   },
   "devDependencies": {
-    "aedes": "^0.51.0"
+    "aedes": "^0.51.0",
+    "playwright": "^1.61.1"
   }
 }
