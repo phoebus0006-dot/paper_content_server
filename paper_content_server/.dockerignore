@@ -5,3 +5,19 @@ test/
 config.h
 audit-checkpoint/
 .git/
+# Model files (classifier, ML)
+*.tflite
+*.onnx
+*.bin.model
+models/
+# Font files (runtime installs via apt, not from host)
+*.ttf
+*.otf
+*.woff
+*.woff2
+fonts/
+# Runtime temporary files
+*.log
+*.tmp
+serial_*.txt
+.DS_Store

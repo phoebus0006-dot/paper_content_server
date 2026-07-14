@@ -1,14 +1,18 @@
 # Stage 1: build — clean install from official node:20-slim
 FROM node:20-slim AS builder
 WORKDIR /app
+# Copy only manifests first — enables layer caching and ensures npm ci runs
+# against a clean tree (host node_modules excluded via .dockerignore).
 COPY package.json package-lock.json ./
-# Clean install: no host node_modules copied, no audit, no fund
-# Fail fast: verify sharp loads and server.js parses in the same layer
+# Clean install + fail-fast sharp verification BEFORE copying source.
+# server.js is NOT checked here — it does not exist yet.
 RUN npm ci --omit=dev --no-audit --no-fund && \
     node -e "require('sharp'); console.log('sharp_loaded')" && \
-    node -e "console.log(JSON.stringify(require('sharp').versions))" && \
-    node --check server.js
+    node -e "console.log(JSON.stringify(require('sharp').versions))"
+# Now copy source — .dockerignore excludes node_modules/data/.env/config.h/etc.
 COPY . .
+# server.js syntax check MUST run AFTER COPY . . (file must exist).
+RUN node --check server.js
 
 # Stage 2: runtime
 FROM node:20-slim AS runtime

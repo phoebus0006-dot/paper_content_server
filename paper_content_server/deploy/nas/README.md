@@ -32,17 +32,32 @@ bash rollback.sh <PREVIOUS_IMAGE_TAG>
 The Dockerfile performs a clean install from the official `node:20-slim` image:
 
 - `npm ci --omit=dev --no-audit --no-fund` — no host node_modules copied
-- Fail-fast verification in same RUN layer:
+- Fail-fast sharp verification in the npm ci RUN layer (BEFORE `COPY . .`):
   - `node -e "require('sharp')"` — sharp must load
-  - `node --check server.js` — syntax must pass
+- `node --check server.js` runs in a SEPARATE RUN layer AFTER `COPY . .`
+  (server.js does not exist before the source copy)
 - Multi-stage build: builder (npm ci) → runtime (fonts-noto-cjk, non-root)
 - `Dockerfile.reuse` is NOT a sanctioned approach — only the clean Dockerfile is supported
 
-### NAS Network Note
+### Build Context Exclusions
 
-The NAS shaper router intercepts Docker bridge DNS, returning `fn.phoebusstudio.com`
-TLS certificate for `registry.npmjs.org`. `build-staging.sh` uses `--network=host`
-to bypass bridge DNS interception. TLS verification is NOT disabled.
+`.dockerignore` excludes from the Docker build context:
+`node_modules/`, `data/`, `.env`, `config.h`, models (`*.tflite`, `*.onnx`),
+fonts (`*.ttf`, `*.otf`), temp files (`*.log`, `*.tmp`), `.git/`.
+Host `node_modules` is never copied into the image.
+
+### NAS Network Mode
+
+`build-staging.sh` defaults to Docker's standard bridge network.
+On NAS where the shaper router intercepts bridge DNS (returning
+`fn.phoebusstudio.com` TLS cert for `registry.npmjs.org`), set:
+
+```bash
+DOCKER_BUILD_NETWORK=host bash build-staging.sh <SHA> <TREE>
+```
+
+Allowed values: `default` (default) | `host`. Invalid values fail.
+TLS verification is NEVER disabled.
 
 ## SHA Verification
 
