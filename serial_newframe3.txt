@@ -1,6 +1,0 @@
-﻿state mode=photo frameId=photo:2026-07-13:offhours:storyboard:dialogue:fb-dialogue-sb next=2026-07-14 10:30 title=dialogue
-skip refresh, frameId unchanged: photo:2026-07-13:offhours:storyboard:dialogue:fb-dialogue-sb
-state mode=photo frameId=photo:2026-07-13:offhours:storyboard:dialogue:fb-dialogue-sb next=2026-07-14 10:30 title=dialogue
-skip refresh, frameId unchanged: photo:2026-07-13:offhours:storyboard:dialogue:fb-dialogue-sb
-state mode=photo frameId=photo:2026-07-13:offhours:storyboard:dialogue:fb-dialogue-sb next=2026-07-14 10:30 title=dialogue
-skip refresh, frameId unchanged: photo:2026-07-13:offhours:storyboard:dialogue:fb-dialogue-sb

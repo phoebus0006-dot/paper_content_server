@@ -52,8 +52,25 @@ paper_content_server/test/admin/*-screenshot.png
 paper_content_server/test-news*.json
 # Audit checkpoints
 audit-checkpoint/
+# Security — SSH private keys, credentials
+key_2026
+key_aliyun
+nas_key
+*.pem
+*.key
+id_rsa*
+# SSH config
+config.h
+# Build archives
+*.tar.gz
+# Serial port logs
+serial_*.txt
+# Temporary deployment scripts (migrate to paper_content_server/deploy/ if needed)
+.nas-*.sh
+# Runtime screenshots and artifacts
+artifacts/
+# Arduino build output
+arduino-build/
 # Editor swap files
-#
-D
-paper_content_server_manifest/
-\#
+\#*
+*~

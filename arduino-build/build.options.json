@@ -1,9 +1,0 @@
-{
-  "additionalFiles": "..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..",
-  "compiler.optimization_flags": "-Os",
-  "customBuildProperties": "",
-  "fqbn": "esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,FlashMode=dio",
-  "hardwareFolders": "C:\\Users\\wspho\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.10,C:\\Users\\wspho\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.10",
-  "otherLibrariesFolders": "C:\\Users\\wspho\\Documents\\Arduino\\libraries",
-  "sketchLocation": "D:\\dev\\NewsPhoto_esp32wf"
-}
