@@ -71,6 +71,12 @@ serial_*.txt
 artifacts/
 # Arduino build output
 arduino-build/
+# Staging and runtime artifacts
+artifacts-staging-*
+# Serial monitor scripts
+serial_monitor*
+# Audit output directory
+architecture-audit-*/
 # Editor swap files
 \#*
 *~
