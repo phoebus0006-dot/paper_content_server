@@ -93,8 +93,10 @@ check "code4 count is zero" "$(echo "$VALIDATE_OUTPUT" | grep -q 'Code4Count: 0'
 check "invalid codes is zero" "$(echo "$VALIDATE_OUTPUT" | grep -q 'InvalidCodeCount: 0' && echo true || echo false)"
 
 # Cleanup frame file in container (ignore errors — file may not exist)
+set +e
 docker exec "$CONTAINER" rm -f /tmp/frame-verify.bin 2>/dev/null
 rm -f "$FRAME_FILE"
+set -e
 
 # ============================================================
 # Container identity: non-root
