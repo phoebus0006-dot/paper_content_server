@@ -1,0 +1,147 @@
+{
+  "photos": [
+    {
+      "id": "c7a7d3bc2f605fb97c4f6996287b3b4e212f8038",
+      "title": "Hyatt Regency Embarcadero Atrium, San Francisco, US.jpg",
+      "source": "Wikimedia Commons",
+      "width": 800,
+      "height": 480,
+      "theme": "cinematic",
+      "poolType": "",
+      "safetyStatus": "approved",
+      "createdAt": "2026-07-08T12:59:09.859Z"
+    },
+    {
+      "id": "d518a0fa529fcca885adaeef4b3e07d8259f883e",
+      "title": "Rolling hills",
+      "source": "Picsum",
+      "width": 800,
+      "height": 480,
+      "theme": "wide_shot",
+      "kind": "shot",
+      "poolType": "",
+      "safetyStatus": "approved",
+      "createdAt": "2026-07-09T10:30:34.195Z"
+    },
+    {
+      "id": "9b15f27efc2e40e0ad4a5e18db750959132e6840",
+      "title": "Portrait Studio Rental",
+      "source": "Internet Archive",
+      "width": 800,
+      "height": 480,
+      "theme": "cinematic",
+      "kind": "shot",
+      "poolType": "",
+      "safetyStatus": "pending",
+      "createdAt": "2026-07-08T13:32:48.227Z"
+    },
+    {
+      "id": "ad478211f7d863e781269c6f254718a15c1e91c7",
+      "title": "Kasberger Opening",
+      "source": "Internet Archive",
+      "width": 800,
+      "height": 480,
+      "theme": "night",
+      "kind": "shot",
+      "poolType": "",
+      "safetyStatus": "pending",
+      "createdAt": "2026-07-09T10:29:59.739Z"
+    },
+    {
+      "id": "ff717e65ebe3afe94d930b7619d64bde5ed4277e",
+      "title": "Male/Femboy Leafeon AI Anime Feet Pics [FeetGen.com Collection]",
+      "source": "Internet Archive",
+      "width": 800,
+      "height": 480,
+      "theme": "cinematic",
+      "kind": "shot",
+      "poolType": "",
+      "safetyStatus": "rejected",
+      "createdAt": "2026-07-09T10:30:05.117Z"
+    },
+    {
+      "id": "fb-wideshot",
+      "title": "Wide Shot - Establishing Context",
+      "source": "Built-in Study Pack",
+      "width": 800,
+      "height": 480,
+      "theme": "wide_shot",
+      "kind": "shot",
+      "poolType": "study_frames",
+      "safetyStatus": "approved",
+      "createdAt": "2026-07-13T18:52:26.247Z"
+    },
+    {
+      "id": "fb-entrance",
+      "title": "Entrance Framing - Full Body",
+      "source": "Built-in Study Pack",
+      "width": 800,
+      "height": 480,
+      "theme": "entrance",
+      "kind": "shot",
+      "poolType": "study_frames",
+      "safetyStatus": "approved",
+      "createdAt": "2026-07-13T18:52:26.247Z"
+    },
+    {
+      "id": "fb-night",
+      "title": "Night Scene - Low Key",
+      "source": "Built-in Study Pack",
+      "width": 800,
+      "height": 480,
+      "theme": "night",
+      "kind": "shot",
+      "poolType": "study_frames",
+      "safetyStatus": "approved",
+      "createdAt": "2026-07-13T18:52:26.247Z"
+    },
+    {
+      "id": "fb-ensemble",
+      "title": "Group Balance - Ensemble",
+      "source": "Built-in Study Pack",
+      "width": 800,
+      "height": 480,
+      "theme": "ensemble",
+      "kind": "shot",
+      "poolType": "study_frames",
+      "safetyStatus": "approved",
+      "createdAt": "2026-07-13T18:52:26.247Z"
+    },
+    {
+      "id": "fb-color",
+      "title": "Color Harmony - Complementary",
+      "source": "Built-in Study Pack",
+      "width": 800,
+      "height": 480,
+      "theme": "color",
+      "kind": "film_still",
+      "poolType": "study_frames",
+      "safetyStatus": "approved",
+      "createdAt": "2026-07-13T18:52:26.247Z"
+    },
+    {
+      "id": "fb-dialogue-ms",
+      "title": "Medium Shot - Dialogue",
+      "source": "Built-in Study Pack",
+      "width": 800,
+      "height": 480,
+      "theme": "dialogue",
+      "kind": "shot",
+      "poolType": "study_frames",
+      "safetyStatus": "approved",
+      "createdAt": "2026-07-13T18:52:26.247Z"
+    },
+    {
+      "id": "fb-ensemble-sb",
+      "title": "Blocking Layout - Storyboard",
+      "source": "Built-in Study Pack",
+      "width": 800,
+      "height": 480,
+      "theme": "ensemble",
+      "kind": "storyboard",
+      "poolType": "study_frames",
+      "safetyStatus": "approved",
+      "createdAt": "2026-07-13T18:52:26.247Z"
+    }
+  ]
+}

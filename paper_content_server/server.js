@@ -3240,7 +3240,7 @@ async function handleRequest(req, res) {
         var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
         if (fs.existsSync(lgPath2)) { var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8')); if (lg2 && lg2.items) newsItemCount = lg2.items.length; }
       } catch(e) {}
-      respondJson(res, { status: 'ok', timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount, newsItemCount: newsItemCount });
+      respondJson(res, { status: 'ok', timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount, newsItemCount: newsItemCount, manualOverride: runtime.manualOverride || null, overrideExpiresAt: runtime.overrideExpiresAt || null, lastPublishedAt: runtime.lastPublishedAt || null });
       return;
     }
 
@@ -3517,7 +3517,7 @@ async function handleRequest(req, res) {
       if (runtime.publicationService) {
         try {
           var rbBody = JSON.parse(await readBody(req));
-          var rbSnapshotId = rbBody && rbBody.snapshotId;
+          var rbSnapshotId = rbBody && (rbBody.snapshotId || rbBody.publishId);
           if (!rbSnapshotId) { failJson(res, 400, 'snapshotId required'); return; }
           await runtime.publicationService.rollback(rbSnapshotId);
           respondJson(res, { status: 'ok', snapshotId: rbSnapshotId });
@@ -3537,7 +3537,14 @@ async function handleRequest(req, res) {
       if (runtime.publicationHistory) {
         try {
           var r3History = await runtime.publicationHistory.list();
-          respondJson(res, { history: r3History });
+          // Only mark the first (most recent) as active
+          if (r3History && r3History.length > 0) {
+            r3History[0].status = 'active';
+            for (var hi = 1; hi < r3History.length; hi++) {
+              r3History[hi].status = 'archived';
+            }
+          }
+          respondJson(res, { history: r3History || [] });
           return;
         } catch(e) {}
       }
@@ -3550,6 +3557,26 @@ async function handleRequest(req, res) {
       var idx = [];
       try { idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
       respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, poolType: e.poolType || '', safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }) });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/photos/upload' && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      // Check if photo upload is supported
+      var uploadDisabled = true;
+      var uploadReason = '安全分类器未就绪，暂不可上传';
+      if (uploadDisabled) {
+        failJson(res, 503, uploadReason);
+        return;
+      }
+      // TODO: Implement actual file upload handling
+      failJson(res, 501, '上传功能尚未实现');
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/photo-preview' || parsed.pathname === '/api/admin/photo-eink-preview') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      failJson(res, 501, '图片预览服务未就绪');
       return;
     }
 
@@ -3903,7 +3930,17 @@ async function handleRequest(req, res) {
         newsItemCount: hNewsCount,
         photoCount: hPhotoCount,
         mqttEnabled: !!APP_CONFIG.mqtt && APP_CONFIG.mqtt.enabled,
-        translationProvider: (APP_CONFIG.translation && APP_CONFIG.translation.provider) || 'none'
+        translationProvider: (APP_CONFIG.translation && APP_CONFIG.translation.provider) || 'none',
+        stateRequestCount: runtime.stateRequestCount || 0,
+        frameRequestCount: runtime.frameRequestCount || 0,
+        newsRefreshCount: runtime.newsRefreshCount || 0,
+        newsRefreshFailureCount: runtime.newsRefreshFailureCount || 0,
+        recentError: runtime.recentError || null,
+        lastNewsRefreshAt: runtime.lastNewsRefreshAt || null,
+        buildSha: process.env.BUILD_GIT_SHA || null,
+        manualOverride: runtime.manualOverride || null,
+        overrideExpiresAt: runtime.overrideExpiresAt || null,
+        lastPublishedAt: runtime.lastPublishedAt || null
       });
       return;
     }

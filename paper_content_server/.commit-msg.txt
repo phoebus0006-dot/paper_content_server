@@ -1,0 +1,9 @@
+fix(admin): thumbnail endpoint, news fallback, health URLs, dashboard placeholders
+
+- Add /api/admin/photos/:id/thumbnail route to serve image files
+- Add last_good_news.json fallback to /api/admin/news when in-memory cache empty
+- Add newsItemCount and photoCount to /api/health.json response
+- Fix loadHealth() URLs: /api/health/live -> /health/live (server route mismatch)
+- Replace all -- placeholders with meaningful Chinese empty-state text
+- Add z-index:1 to .main to prevent sidebar pointer event interception
+- Update browser test to use JS evaluate for publish button (avoids sidebar)

@@ -110,16 +110,23 @@
         </div>
       </div>
 
-      <!-- Row 3: Quick actions -->
+      <!-- Row 3: Control mode info -->
+      <div class="card">
+        <h3 class="card-title">控制方式说明</h3>
+        <div id="control-mode-info" class="control-mode-box">加载中…</div>
+      </div>
+
+      <!-- Row 4: Quick actions -->
       <div class="card">
         <h3 class="card-title">快捷操作</h3>
         <div class="actions">
-          <button class="btn btn-primary" onclick="publishNews()">📰 发布新闻页</button>
-          <button class="btn btn-outline" onclick="clearOverride()">🔁 恢复自动调度</button>
+          <button class="btn btn-primary" onclick="publishNews()">📰 立即发布所选新闻</button>
+          <button class="btn btn-outline" onclick="clearOverride()">🔁 退出手动覆盖，恢复自动排程</button>
           <button class="btn btn-outline" onclick="switchTab('photos-page')">🖼️ 前往图片库</button>
           <button class="btn btn-outline" onclick="refreshAll()">🔄 刷新状态</button>
         </div>
         <div id="publish-msg" class="msg-area" style="display:none"></div>
+        <div id="confirm-dialog-area" style="margin-top:8px"></div>
       </div>
     </section>
 
@@ -147,6 +154,20 @@
           <div id="news-detail" class="news-detail">
             <div class="empty-state">从左侧列表选择一条新闻查看详情</div>
           </div>
+          <!-- Quality rules -->
+          <div id="quality-rules-section" style="margin-top:12px">
+            <h4 style="font-size:13px;color:#666;margin-bottom:6px">质量规则检查</h4>
+            <div id="quality-rules"></div>
+          </div>
+          <!-- Toggle original button -->
+          <div style="margin-top:12px">
+            <button class="btn btn-sm btn-outline" onclick="toggleOriginal()" id="btn-toggle-original">📄 显示原文</button>
+          </div>
+          <!-- Original text (hidden by default) -->
+          <div id="original-text" class="card" style="display:none;margin-top:12px">
+            <div class="detail-field"><div class="detail-label">原文标题</div><div class="detail-value" id="orig-title"></div></div>
+            <div class="detail-field"><div class="detail-label">原文摘要</div><div class="detail-value" id="orig-summary"></div></div>
+          </div>
         </div>
       </div>
     </section>
@@ -159,6 +180,7 @@
           <input type="file" id="photo-file" accept="image/jpeg,image/png,image/webp">
           <button type="submit" class="btn btn-primary btn-sm">📤 上传</button>
         </form>
+        <div id="upload-disabled-info" class="disabled-upload" style="display:none"></div>
         <div class="muted small" style="margin-top:6px">支持 JPEG / PNG / WebP,推荐 800×480 比例</div>
       </div>
       <div class="card">
@@ -215,13 +237,22 @@
     <!-- ───────── Publish Center ───────── -->
     <section id="publish-page" class="page">
       <div class="card">
+        <p class="small muted">这里记录每次新闻或图片发布生成的版本。"恢复此版本"会把所选历史版本重新设为当前显示版本，不会修改原始新闻或图片。</p>
+      </div>
+      <div class="card" id="rollback-preview" style="display:none">
+        <h3 class="card-title">版本恢复预览</h3>
+        <div id="rollback-preview-content"></div>
+        <div class="actions" style="margin-top:10px">
+          <button class="btn btn-danger" onclick="confirmRollback()">确认恢复</button>
+          <button class="btn btn-outline" onclick="closeRollbackPreview()">取消</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="panel-header">
-          <h3 class="card-title">发布历史</h3>
+          <h3 class="card-title">发布记录</h3>
           <button class="btn btn-sm btn-outline" onclick="loadPublishHistory()">🔄 刷新</button>
         </div>
-        <div id="publish-history-list">
-          <div class="empty-state">加载中…</div>
-        </div>
+        <div id="publish-history-list"><div class="empty-state">加载中…</div></div>
       </div>
     </section>
 
@@ -233,18 +264,22 @@
           <div class="stat-item">
             <div class="stat-label">/health/live</div>
             <div class="stat-value" id="health-live">加载中…</div>
+            <div class="status-hint small muted" id="hint-health-live" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">/health/ready</div>
             <div class="stat-value" id="health-ready">加载中…</div>
+            <div class="status-hint small muted" id="hint-health-ready" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">运行时间</div>
             <div class="stat-value" id="status-uptime">加载中…</div>
+            <div class="status-hint small muted" id="hint-uptime" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">模式</div>
             <div class="stat-value" id="status-mode">加载中…</div>
+            <div class="status-hint small muted" id="hint-mode" style="margin-top:2px;font-size:11px"></div>
           </div>
         </div>
       </div>
@@ -254,18 +289,22 @@
           <div class="stat-item">
             <div class="stat-label">当前 frameId</div>
             <div class="stat-value stat-mono stat-truncate" id="status-frameid">加载中…</div>
+            <div class="status-hint small muted" id="hint-frameid" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">frameLength</div>
             <div class="stat-value" id="status-framelen">--</div>
+            <div class="status-hint small muted" id="hint-framelen" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">frameSha256</div>
             <div class="stat-value stat-mono stat-truncate" id="status-sha">--</div>
+            <div class="status-hint small muted" id="hint-sha" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">当前 Slot</div>
             <div class="stat-value" id="status-slot">加载中…</div>
+            <div class="status-hint small muted" id="hint-slot" style="margin-top:2px;font-size:11px"></div>
           </div>
         </div>
       </div>
@@ -275,18 +314,22 @@
           <div class="stat-item">
             <div class="stat-label">新闻数量</div>
             <div class="stat-value" id="status-news">加载中…</div>
+            <div class="status-hint small muted" id="hint-news" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">图片数量</div>
             <div class="stat-value" id="status-photos">--</div>
+            <div class="status-hint small muted" id="hint-photos" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">Frame 缓存</div>
             <div class="stat-value" id="status-cache">加载中…</div>
+            <div class="status-hint small muted" id="hint-cache" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">渲染次数</div>
             <div class="stat-value" id="status-render">--</div>
+            <div class="status-hint small muted" id="hint-render" style="margin-top:2px;font-size:11px"></div>
           </div>
         </div>
       </div>
@@ -296,18 +339,22 @@
           <div class="stat-item">
             <div class="stat-label">/api/state 请求</div>
             <div class="stat-value" id="status-state-req">--</div>
+            <div class="status-hint small muted" id="hint-state-req" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">/api/frame 请求</div>
             <div class="stat-value" id="status-frame-req">--</div>
+            <div class="status-hint small muted" id="hint-frame-req" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">新闻刷新次数</div>
             <div class="stat-value" id="status-news-refresh">--</div>
+            <div class="status-hint small muted" id="hint-news-refresh" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">新闻刷新失败</div>
             <div class="stat-value" id="status-news-fail">--</div>
+            <div class="status-hint small muted" id="hint-news-fail" style="margin-top:2px;font-size:11px"></div>
           </div>
         </div>
       </div>
@@ -317,18 +364,22 @@
           <div class="stat-item">
             <div class="stat-label">MQTT 状态</div>
             <div class="stat-value" id="status-mqtt">--</div>
+            <div class="status-hint small muted" id="hint-mqtt" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">Translation Provider</div>
             <div class="stat-value" id="status-translation">--</div>
+            <div class="status-hint small muted" id="hint-translation" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">最近错误</div>
             <div class="stat-value" id="status-recent-error">无</div>
+            <div class="status-hint small muted" id="hint-recent-error" style="margin-top:2px;font-size:11px"></div>
           </div>
           <div class="stat-item">
             <div class="stat-label">最近刷新时间</div>
             <div class="stat-value" id="status-last-refresh">--</div>
+            <div class="status-hint small muted" id="hint-last-refresh" style="margin-top:2px;font-size:11px"></div>
           </div>
         </div>
       </div>

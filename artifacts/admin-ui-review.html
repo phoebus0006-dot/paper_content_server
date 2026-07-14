@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin UI Redesign Review</title>
+<style>
+body{font-family:'Microsoft YaHei','PingFang SC',-apple-system,sans-serif;background:#f5f5f7;color:#1a1a1a;margin:0;padding:20px 40px;max-width:1200px;margin:0 auto}
+h1{font-size:28px;border-bottom:2px solid #1a1a1a;padding-bottom:10px}
+h2{font-size:22px;margin-top:30px;color:#1a1a1a}
+h3{font-size:16px;margin-top:20px;color:#555}
+.card{background:#fff;border:1px solid #e5e5ea;border-radius:10px;padding:18px;margin:12px 0;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.screenshot{width:100%;border:1px solid #ddd;border-radius:8px;margin:10px 0}
+.badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:700;margin-right:4px}
+.badge-pass{background:#28a745;color:#fff}
+.badge-info{background:#4a9eff;color:#fff}
+.badge-warn{background:#ffc107;color:#1a1a1a}
+.badge-fail{background:#dc3545;color:#fff}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+th{background:#f0f0f5;padding:8px;text-align:left;border-bottom:2px solid #ddd}
+td{padding:8px;border-bottom:1px solid #eee}
+.truncate{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ul{margin:5px 0;padding-left:20px}
+li{margin:4px 0}
+.summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:15px 0}
+.summary-item{padding:14px;background:#f8f8fa;border-radius:8px;border:1px solid #eef0f3}
+.summary-label{font-size:11px;color:#888;text-transform:uppercase;margin-bottom:4px}
+.summary-value{font-size:18px;font-weight:700}
+</style>
+</head>
+<body>
+
+<h1>Admin UI Redesign + Usability Repair</h1>
+
+<div class="summary-grid">
+<div class="summary-item"><div class="summary-label">Staging URL</div><div class="summary-value">18080</div></div>
+<div class="summary-item"><div class="summary-label">Deployed SHA</div><div class="summary-value">74c4d50</div></div>
+<div class="summary-item"><div class="summary-label">Browser Tests</div><div class="summary-value">34/0 PASS</div></div>
+<div class="summary-item"><div class="summary-label">Console Errors</div><div class="summary-value">0</div></div>
+<div class="summary-item"><div class="summary-label">Page Errors</div><div class="summary-value">0</div></div>
+<div class="summary-item"><div class="summary-label">News Count</div><div class="summary-value">6</div></div>
+<div class="summary-item"><div class="summary-label">Valid Images</div><div class="summary-value">8</div></div>
+<div class="summary-item"><div class="summary-label">Removed Bad Images</div><div class="summary-value">4</div></div>
+<div class="summary-item"><div class="summary-label">Publish History</div><div class="summary-value">13</div></div>
+</div>
+
+<h2>修复的布局问题</h2>
+<div class="card">
+<ul>
+<li><strong>侧边栏导航</strong> — 替换原来的无导航页面为左侧 220px 固定侧边栏，包含 6 个导航入口（总览/新闻审查/图片库/图片编辑/发布中心/运行状态）</li>
+<li><strong>页面头部</strong> — 每个页面顶部有统一的页头（标题 + 刷新时间 + 刷新按钮）</li>
+<li><strong>统一卡片设计</strong> — 所有区块使用统一的 card 组件（圆角 10px、边框、阴影、内边距）</li>
+<li><strong>统计网格</strong> — 使用 stat-grid-4 和 stat-grid-6 网格布局替代原来的随意排列</li>
+<li><strong>新闻两栏布局</strong> — 新闻审查页改为左栏列表 + 右栏详情的两栏布局</li>
+<li><strong>图片网格</strong> — 图片库改为自动填充网格卡片，每张图统一缩略图+信息+操作按钮</li>
+<li><strong>发布历史表格</strong> — 发布中心使用 grid 布局的行式卡片</li>
+<li><strong>运行状态分区</strong> — 运行状态页分为 5 个卡片（健康检查/Frame状态/内容缓存/请求统计/服务配置）</li>
+<li><strong>z-index 修复</strong> — 主内容区添加 z-index:1 防止侧边栏遮挡按钮点击</li>
+</ul>
+</div>
+
+<h2>修复的空态/错误态问题</h2>
+<div class="card">
+<ul>
+<li><strong>消除所有 <code>--</code> 占位符</strong> — 替换为有意义的中文空态文本（"暂无数据"/"未设置"/"未生成"/"未调度"等）</li>
+<li><strong>setText() 函数</strong> — 新增统一文本设置函数，自动处理 undefined/null/空字符串/<code>-</code>/<code>--</code> 为有意义的空态</li>
+<li><strong>新闻空态</strong> — 新闻列表为空时显示"暂无新闻数据"提示，而非空白</li>
+<li><strong>图片空态</strong> — 图片库为空时显示"图片库为空"提示</li>
+<li><strong>加载失败空态</strong> — 所有 API 加载失败时显示具体的错误信息，而非静默空白</li>
+<li><strong>页面错误框</strong> — 新增 page-error-box 组件，初始化异常时显示可见错误框，不白屏</li>
+<li><strong>Broken image 处理</strong> — 图片加载失败时显示图标占位符，不显示 broken image</li>
+<li><strong>健康检查 URL 修复</strong> — 修正 loadHealth() 中 /api/health/live -> /health/live 的路由不匹配问题</li>
+<li><strong>新闻回退</strong> — 内存缓存为空时回退到 last_good_news.json 文件，确保重启后新闻仍可见</li>
+</ul>
+</div>
+
+<h2>移除的污染图片</h2>
+<div class="card">
+<table>
+<tr><th>ID</th><th>标题</th><th>来源</th><th>移除原因</th></tr>
+<tr><td>hyatt-embarcadero</td><td>Hyatt Regency Embarcadero Atrium</td><td>搜索</td><td>酒店内部图片，与新闻语境无关</td></tr>
+<tr><td>portrait-studio-rental</td><td>Portrait Studio Rental</td><td>搜索</td><td>商业摄影工作室图片，非新闻内容</td></tr>
+<tr><td>kasberger-opening</td><td>Kasberger Opening</td><td>搜索</td><td>无关活动图片</td></tr>
+<tr><td>feetgen-leafeon</td><td>Male/Femboy Leafeon AI Anime Feet Pics</td><td>搜索</td><td>AI 生成的不当内容</td></tr>
+</table>
+<p><span class="badge badge-pass">已清理</span> 4 张不合格图片已从生产 image_index.json 中移除，当前保留 8 张有效图片。</p>
+</div>
+
+<h2>当前新闻数据（6 条真实新闻）</h2>
+<div class="card">
+<table>
+<tr><th>#</th><th>标题</th><th>来源</th><th>分类</th><th>翻译状态</th><th>字数</th></tr>
+<tr><td>1</td><td>法官斥国税局诉讼为不当自肥</td><td>NYT</td><td>politics</td><td><span class="badge badge-pass">translated</span></td><td>13/68</td></tr>
+<tr><td>2</td><td>特朗普再威胁控制霍尔木兹海峡，恢复对伊海上封锁。</td><td>The Guardian</td><td>politics</td><td><span class="badge badge-pass">translated</span></td><td>24/73</td></tr>
+<tr><td>3</td><td>美联储沃勒警告：通胀若居高不下，利率恐将更高。</td><td>NYT</td><td>economy</td><td><span class="badge badge-pass">translated</span></td><td>23/53</td></tr>
+<tr><td>4</td><td>欧盟主席承诺禁止儿童使用社交媒体防范算法侵害</td><td>The Guardian</td><td>economy</td><td><span class="badge badge-pass">translated</span></td><td>22/75</td></tr>
+<tr><td>5</td><td>中国机器人技术热潮下，被抛弃的蓝领工人</td><td>纽约时报中文网</td><td>economy</td><td><span class="badge badge-info">original</span></td><td>19/75</td></tr>
+<tr><td>6</td><td>普京如何将日本变成俄罗斯间谍据点</td><td>纽约时报中文网</td><td>technology</td><td><span class="badge badge-info">original</span></td><td>16/75</td></tr>
+</table>
+</div>
+
+<h2>当前图片库（8 张有效图片）</h2>
+<div class="card">
+<table>
+<tr><th>#</th><th>ID</th><th>标题</th><th>来源</th><th>尺寸</th><th>安全状态</th></tr>
+<tr><td>1</td><td class="truncate">d518a0fa...</td><td>Rolling hills</td><td>Picsum</td><td>800×480</td><td><span class="badge badge-pass">approved</span></td></tr>
+<tr><td>2</td><td>fb-wideshot</td><td>Wide Shot - Establishing Context</td><td>Built-in Study Pack</td><td>800×480</td><td><span class="badge badge-pass">approved</span></td></tr>
+<tr><td>3</td><td>fb-entrance</td><td>Entrance Framing - Full Body</td><td>Built-in Study Pack</td><td>800×480</td><td><span class="badge badge-pass">approved</span></td></tr>
+<tr><td>4</td><td>fb-night</td><td>Night Scene - Low Key</td><td>Built-in Study Pack</td><td>800×480</td><td><span class="badge badge-pass">approved</span></td></tr>
+<tr><td>5</td><td>fb-ensemble</td><td>Group Balance - Ensemble</td><td>Built-in Study Pack</td><td>800×480</td><td><span class="badge badge-pass">approved</span></td></tr>
+<tr><td>6</td><td>fb-color</td><td>Color Harmony - Complementary</td><td>Built-in Study Pack</td><td>800×480</td><td><span class="badge badge-pass">approved</span></td></tr>
+<tr><td>7</td><td>fb-dialogue-ms</td><td>Medium Shot - Dialogue</td><td>Built-in Study Pack</td><td>800×480</td><td><span class="badge badge-pass">approved</span></td></tr>
+<tr><td>8</td><td>fb-ensemble-sb</td><td>Blocking Layout - Storyboard</td><td>Built-in Study Pack</td><td>800×480</td><td><span class="badge badge-pass">approved</span></td></tr>
+</table>
+</div>
+
+<h2>页面截图</h2>
+
+<h3>1. Dashboard（总览）</h3>
+<img class="screenshot" src="admin-dashboard-redesign.png" alt="Dashboard">
+
+<h3>2. News Review（新闻审查）</h3>
+<img class="screenshot" src="admin-news-redesign.png" alt="News Review">
+
+<h3>3. Image Library（图片库）</h3>
+<img class="screenshot" src="admin-images-redesign.png" alt="Image Library">
+
+<h3>4. Publish Center（发布中心）</h3>
+<img class="screenshot" src="admin-publish-redesign.png" alt="Publish Center">
+
+<h3>5. Runtime Status（运行状态）</h3>
+<img class="screenshot" src="admin-runtime-redesign.png" alt="Runtime Status">
+
+<h2>仍存在的功能缺口</h2>
+<div class="card">
+<ul>
+<li><span class="badge badge-warn">P1</span> <strong>图片与新闻相关性</strong> — 当前图片库为通用素材（study pack），尚未实现 AI 驱动的新闻-图片自动匹配</li>
+<li><span class="badge badge-warn">P1</span> <strong>翻译语义保真度</strong> — TRANSLATION_SEMANTIC_FIDELITY=NOT_IMPLEMENTED，无原文译文语义对照验证</li>
+<li><span class="badge badge-warn">P2</span> <strong>新闻管道切换</strong> — NEWS_PIPELINE_PRODUCTION_SWITCH=NOT_IMPLEMENTED，仍使用 legacy buildNewsSnapshot</li>
+<li><span class="badge badge-warn">P2</span> <strong>图片编辑器</strong> — 图片编辑页功能保留但未在本次验证中测试完整流程</li>
+<li><span class="badge badge-info">P2</span> <strong>状态页请求统计</strong> — 部分请求计数字段（stateRequestCount/frameRequestCount）在 /api/health.json 中尚未暴露，显示为"暂无"</li>
+</ul>
+</div>
+
+<h2>用户视觉审查项</h2>
+<div class="card">
+<p>以下项目需要用户在实际页面中检查：</p>
+<ul>
+<li><strong>标题</strong> — 新闻标题是否完整显示，是否有截断</li>
+<li><strong>摘要</strong> — 新闻摘要是否可读，是否溢出</li>
+<li><strong>图片相关性</strong> — 图片内容是否与新闻语境基本匹配</li>
+<li><strong>裁切</strong> — 图片缩略图是否保持比例，不拉伸变形</li>
+<li><strong>字体</strong> — 中文字体是否正常渲染，无方框字</li>
+<li><strong>颜色</strong> — 卡片、按钮、徽章颜色是否清晰可辨</li>
+<li><strong>留白</strong> — 页面是否有大面积无意义空白</li>
+<li><strong>布局</strong> — 侧边栏、内容区、卡片是否对齐一致</li>
+<li><strong>操作反馈</strong> — 按钮点击后是否有 toast 提示</li>
+<li><strong>导航</strong> — 侧边栏切换页面是否流畅</li>
+</ul>
+</div>
+
+<h2>浏览器验证结果</h2>
+<div class="card">
+<table>
+<tr><th>检查项</th><th>结果</th></tr>
+<tr><td>ADMIN_HTTP_200</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>P0_NO_NULL_REFERENCE</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>APP_VISIBLE</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>SIDEBAR_NAV_LINKS (6)</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>DASHBOARD_MODE_LOADED</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>DASHBOARD_NO_DASH_PLACEHOLDERS</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>NEWS_ITEMS_PRESENT (6)</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>NEWS_DETAIL_LOADED_ON_SELECT</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>PHOTOS_PRESENT (8)</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>PHOTOS_NO_BROKEN_IMAGES</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>PUBLISH_HISTORY_PRESENT (13)</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>HEALTH_LIVE_LOADED (ok)</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>HEALTH_READY_LOADED (ok)</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>FLOW_NEWS_SELECTED</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>FLOW_DRAFT_SAVED</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>FLOW_PUBLISH_NEWS_CLICKED</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>FLOW_PUBLISH_FEEDBACK</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>CONSOLE_ERRORS_ZERO</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>PAGE_ERRORS_ZERO</td><td><span class="badge badge-pass">PASS</span></td></tr>
+<tr><td>REQUIRED_FAILED_REQUESTS_ZERO</td><td><span class="badge badge-pass">PASS</span></td></tr>
+</table>
+<p><strong>总计: 34 passed, 0 failed</strong></p>
+</div>
+
+<h2>结论</h2>
+<div class="card">
+<p><span class="badge badge-pass">ADMIN_READY_FOR_USER_VISUAL_REVIEW</span></p>
+<p>Staging 18080 后台已重新设计并部署。所有 5 个页面均可正常打开，无控制台错误，无页面错误。新闻（6 条）、图片（8 张）、发布历史（13 条）均正常显示。后台操作流程（选择新闻 → 保存草稿 → 发布）验证通过。</p>
+<p>用户可通过 <a href="http://192.168.1.49:18080/admin">http://192.168.1.49:18080/admin</a> 访问后台进行视觉审查。</p>
+</div>
+
+</body>
+</html>

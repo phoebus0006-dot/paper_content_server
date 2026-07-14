@@ -1,0 +1,75 @@
+﻿{
+  "updatedAt": "2026-07-08T12:22:27.587Z",
+  "translationProvider": "none",
+  "translationNotice": "翻译未启用",
+  "items": [
+    {
+      "originalTitle": "Oil Prices Jump After Trump Says Deal With Iran Is ‘Over’",
+      "originalSummary": "Attacks on ships in the Strait of Hormuz sparked a new cycle of retaliation that could throttle the flow of energy from the region.",
+      "zhTitle": "Oil Prices Jump After Trump Says Deal With Iran Is ‘Over’",
+      "zhSummary": "Attacks on ships in the Strait of Hormuz sparked a new cycle of retaliation that could throttle the flow of energy from the region.",
+      "sourceUrl": "https://www.nytimes.com/2026/07/08/business/oil-gas-markets-iran-shipping-hormuz.html",
+      "source": "NYT",
+      "category": "politics",
+      "publishedAt": "2026-07-08T10:55:48.000Z",
+      "translationStatus": "disabled"
+    },
+    {
+      "originalTitle": "Tensions Escalate Between Russia and NATO’s European Members",
+      "originalSummary": "Moscow has directed extra hostility toward countries that have strongly supported Ukraine and praise at President Trump.",
+      "zhTitle": "Tensions Escalate Between Russia and NATO’s European Members",
+      "zhSummary": "Moscow has directed extra hostility toward countries that have strongly supported Ukraine and praise at President Trump.",
+      "sourceUrl": "https://www.nytimes.com/2026/07/08/world/europe/russia-nato-europe-ukraine.html",
+      "source": "NYT",
+      "category": "politics",
+      "publishedAt": "2026-07-08T10:46:55.000Z",
+      "translationStatus": "disabled"
+    },
+    {
+      "originalTitle": "Jeff Bezos’s Blue Origin Nears a Big Fund-Raising Round",
+      "originalSummary": "The rocket company founded by Jeff Bezos is set to take on external investors for the first time, at a $130 billion valuation.",
+      "zhTitle": "Jeff Bezos’s Blue Origin Nears a Big Fund-Raising Round",
+      "zhSummary": "The rocket company founded by Jeff Bezos is set to take on external investors for the first time, at a $130 billion valuation.",
+      "sourceUrl": "https://www.nytimes.com/2026/07/08/business/dealbook/bezos-funding-blue-origin.html",
+      "source": "NYT",
+      "category": "economy",
+      "publishedAt": "2026-07-08T12:07:35.000Z",
+      "translationStatus": "disabled"
+    },
+    {
+      "originalTitle": "Dans le solaire et l’éolien, l’inquiétude monte face aux suppressions de postes",
+      "originalSummary": "Alors que le gouvernement défend l’électrification et la souveraineté énergétique, plusieurs acteurs des énergies renouvelables réduisent leurs effectifs. Les salariés redoutent une perte de compétences dans une filière pourtant appelée à se développer.",
+      "zhTitle": "Dans le solaire et l’éolien, l’inquiétude monte face aux suppressions de postes",
+      "zhSummary": "Alors que le gouvernement défend l’électrification et la souveraineté énergétique, plusieurs acteurs des énergies renouvelables réduisent leurs effectifs. Les salariés redoutent une perte de compétences dans une filière pourtant appelée à se développer.",
+      "sourceUrl": "https://www.lemonde.fr/economie/article/2026/07/08/dans-le-solaire-et-l-eolien-l-inquietude-monte-face-aux-suppressions-de-postes_6721832_3234.html",
+      "source": "Le Monde",
+      "category": "economy",
+      "publishedAt": "2026-07-08T12:00:04.000Z",
+      "translationStatus": "disabled"
+    },
+    {
+      "originalTitle": "蓝色起源以1300亿美元估值融资100亿美元",
+      "originalSummary": "据报道，蓝色起源以1300亿美元估值融资100亿美元，其中，贝佐斯将注资20亿美元。（财联社）",
+      "zhTitle": "蓝色起源以1300亿美元估值融资100亿美元",
+      "zhSummary": "据报道，蓝色起源以1300亿美元估值融资100亿美元，其中，贝佐斯将注资20亿美元。（财联社）",
+      "sourceUrl": "https://36kr.com/newsflashes/3886944497154824?f=rss",
+      "source": "36氪",
+      "category": "technology",
+      "publishedAt": "2026-07-08T12:04:24.000Z",
+      "translationStatus": "original"
+    },
+    {
+      "originalTitle": "« Kill Bill. The Whole Bloody Affair », de Quentin Tarantino, revient dans les salles en version intégrale",
+      "originalSummary": "Plus qu’un simple raccordement des deux volets sortis séparément en 2003 et 2004, la mouture originale du quatrième long-métrage du cinéaste reconstitue le cours d’une vengeance épique qui s’éprouve dans la durée.",
+      "zhTitle": "« Kill Bill. The Whole Bloody Affair », de Quentin Tarantino, revient dans les salles en version intégrale",
+      "zhSummary": "Plus qu’un simple raccordement des deux volets sortis séparément en 2003 et 2004, la mouture originale du quatrième long-métrage du cinéaste reconstitue le cours d’une vengeance épique qui s’éprouve dans la durée.",
+      "sourceUrl": "https://www.lemonde.fr/culture/article/2026/07/08/kill-bill-the-whole-bloody-affair-de-quentin-tarantino-revient-dans-les-salles-en-version-integrale_6721807_3246.html",
+      "source": "Le Monde",
+      "category": "culture",
+      "publishedAt": "2026-07-08T09:15:10.000Z",
+      "translationStatus": "disabled"
+    }
+  ],
+  "frameId": "news:b75f1a411d99643170a332fc83580454b3c8e4c7",
+  "title": "NYT / politics"
+}
