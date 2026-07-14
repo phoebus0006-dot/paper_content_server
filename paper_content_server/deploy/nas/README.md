@@ -1,24 +1,24 @@
-# R11.2 NAS Staging Deployment — Admin LAN Mode
+# R11.2 NAS Staging Deployment — Reproducible Clean Build
 
 ## Prerequisites
 
-- Docker on NAS or target host
-- Final immutable image tag (12-char commit SHA)
+- Docker on Synology NAS (verified on fn-nas 192.168.1.49)
+- Git SHA and tree SHA of the target commit
 - `.env` file (copy from `.env.example`)
 
-## Quick Start
+## Build & Deploy
 
 ```bash
-# 1. Copy and configure environment
+# 1. Configure environment (minimal, no production secrets)
 cp .env.example .env
-# Edit .env: set IMAGE_TAG, TRANSLATION_PROVIDER, etc.
-# ADMIN_TOKEN is NOT required in LAN mode
+# Edit .env if needed (defaults are staging-safe)
 
-# 2. Run preflight check
-bash preflight.sh <IMAGE_TAG>
+# 2. Build clean image (requires git SHA + tree SHA)
+bash build-staging.sh <GIT_SHA_12_OR_40> <GIT_TREE_SHA_40>
+# Example: bash build-staging.sh 145c7c35e349 62c51b70923faf9dc8b487f127048772f85ed7e3
 
-# 3. Deploy staging
-bash deploy-staging.sh <IMAGE_TAG>
+# 3. Deploy staging (port 18080 only — production 8787 untouched)
+bash deploy-staging.sh <IMAGE_TAG_12_CHAR>
 
 # 4. Verify
 bash verify.sh
@@ -27,47 +27,55 @@ bash verify.sh
 bash rollback.sh <PREVIOUS_IMAGE_TAG>
 ```
 
-## Admin LAN Access
+## Clean Docker Build
 
-The staging deployment uses **Admin LAN mode** (`ADMIN_ACCESS_MODE=lan`):
+The Dockerfile performs a clean install from the official `node:20-slim` image:
 
-- **No login required** — open `http://<NAS_IP>:18080/admin` directly
-- **No ADMIN_TOKEN needed** — token config is optional in LAN mode
-- **LAN-only** — only private IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) are allowed
-- **No CORS wildcard** — cross-origin write requests are denied
-- **Proxy headers not trusted** — uses TCP `remoteAddress` directly
+- `npm ci --omit=dev --no-audit --no-fund` — no host node_modules copied
+- Fail-fast verification in same RUN layer:
+  - `node -e "require('sharp')"` — sharp must load
+  - `node --check server.js` — syntax must pass
+- Multi-stage build: builder (npm ci) → runtime (fonts-noto-cjk, non-root)
+- `Dockerfile.reuse` is NOT a sanctioned approach — only the clean Dockerfile is supported
 
-### NAS Firewall Requirements
+### NAS Network Note
 
-- Port `18080` (staging) must only accept connections from LAN IP ranges
-- Disable port forwarding on router for port 18080
-- Disable reverse proxy exposure to public internet
-- Disable UPnP auto-open for this port
+The NAS shaper router intercepts Docker bridge DNS, returning `fn.phoebusstudio.com`
+TLS certificate for `registry.npmjs.org`. `build-staging.sh` uses `--network=host`
+to bypass bridge DNS interception. TLS verification is NOT disabled.
 
-### Access
+## SHA Verification
 
-```text
-URL: http://<NAS_LAN_IP>:18080/admin
-Auth: None (LAN only)
-Scope: LAN_ONLY
+```
+HTTP_BUILD_ENDPOINT=NOT_IMPLEMENTED
+SHA_VERIFIED_VIA_DOCKER_INSPECT=YES
 ```
 
-To find the NAS LAN IP, use `ip addr show` or `ifconfig` on the NAS host.
+The `/api/build` endpoint does not exist (returns 404). The build SHA is verified
+via `docker inspect <image> --format '{{range .Config.Env}}{{println .}}{{end}}'`
+showing `BUILD_GIT_SHA=<sha>`. This is documented and NOT a deployment failure.
 
-## Default Flags
+## Admin LAN Access
 
-These features are disabled in staging:
-- DELETE_PIPELINE_ENABLED=false
-- MQTT_ENABLED=false
-- LEARNING_LIBRARY_ENABLED=false
-- CUSTOM_LIBRARY_ENABLED=false
-- R9_ADVANCED_RENDER_ENABLED=false
-- R9_RENDER_SHADOW_ENABLED=false
+- `ADMIN_ACCESS_MODE=lan` — no login required, LAN-only
+- `ADMIN_ALLOWED_CIDRS` — private IP ranges only
+- `TRUST_PROXY=false` — uses TCP remoteAddress directly
+- No CORS wildcard — cross-origin writes denied
+
+## Default Flags (staging baseline)
+
+- `DELETE_PIPELINE_ENABLED=false`
+- `MQTT_ENABLED=false`
+- `LEARNING_LIBRARY_ENABLED=false`
+- `CUSTOM_LIBRARY_ENABLED=false`
+- `R9_ADVANCED_RENDER_ENABLED=false`
+- `R9_RENDER_SHADOW_ENABLED=false`
 
 ## Production Switch
 
-Before switching to production port:
+Before switching to production port 8787:
 1. CI must pass (root workflow)
 2. All staging verification must pass
 3. Backup verified
 4. Rollback tested
+5. Explicit approval required — `production_replaced=NO` until then

@@ -1,43 +1,69 @@
 #!/bin/bash
-# deploy-staging.sh — Deploy R11.2 staging container
+# deploy-staging.sh — Deploy staging container (port 18080) only
+# Production (8787) is NEVER touched by this script.
 set -euo pipefail
 
 IMAGE_TAG="${1:-}"
 if [ -z "$IMAGE_TAG" ]; then
-  echo "FAIL: usage: $0 <image-tag>"
-  echo "Example: $0 ea2327a63082"
+  echo "FAIL: usage: $0 <image-tag-12-char>"
+  echo "Example: $0 145c7c35e349"
   exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+IMAGE="paper-content-server:$IMAGE_TAG"
+STAGING_PORT=18080
+PRODUCTION_PORT=8787
 
-# Preflight
-"$SCRIPT_DIR/preflight.sh" "$IMAGE_TAG"
+echo "=== Staging deployment ==="
+echo "IMAGE=$IMAGE"
+echo "STAGING_PORT=$STAGING_PORT"
+echo "PRODUCTION_PORT=$PRODUCTION_PORT (untouched)"
 
-# Backup existing data
+# Safety: refuse if target is production port
+if [ "$STAGING_PORT" = "$PRODUCTION_PORT" ]; then
+  echo "FAIL: staging port must not equal production port"
+  exit 1
+fi
+
+# Require .env (copy from .env.example)
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ ! -f "$ENV_FILE" ]; then
+  echo "FAIL: $ENV_FILE not found — copy from .env.example and configure"
+  exit 1
+fi
+
+# Reject if .env contains production secrets
+if grep -qE 'OPENAI_API_KEY|GEMINI_API|TRANSLATION_PROVIDER' "$ENV_FILE"; then
+  echo "FAIL: .env contains production API keys — staging must use minimal config"
+  exit 1
+fi
+
+# Preflight: image must exist
+if ! docker image inspect "$IMAGE" &>/dev/null; then
+  echo "FAIL: image $IMAGE not found — run build-staging.sh first"
+  exit 1
+fi
+
+# Backup existing staging data
 "$SCRIPT_DIR/backup.sh"
 
-# Stop and remove existing container
+# Stop and remove existing staging container
 docker stop paper-content-staging 2>/dev/null || true
 docker rm paper-content-staging 2>/dev/null || true
 
-# Deploy
+# Deploy staging only — never touch the production container on port 8787
 docker run -d \
   --name paper-content-staging \
   --restart unless-stopped \
-  -p 18080:8787 \
-  -v /volume1/docker/paper-content-staging/data:/app/data \
-  --env-file "$SCRIPT_DIR/.env" \
-  -e DELETE_PIPELINE_ENABLED=false \
-  -e MQTT_ENABLED=false \
-  -e LEARNING_LIBRARY_ENABLED=false \
-  -e CUSTOM_LIBRARY_ENABLED=false \
-  -e R9_ADVANCED_RENDER_ENABLED=false \
-  -e R9_RENDER_SHADOW_ENABLED=false \
-  "paper-content-server:$IMAGE_TAG"
+  -p "$STAGING_PORT:8787" \
+  -v /home/phoebus/staging/data:/app/data \
+  -v /home/phoebus/staging/images:/app/images \
+  --env-file "$ENV_FILE" \
+  "$IMAGE"
 
-echo "OK: container paper-content-staging started"
+echo "OK: container paper-content-staging started on port $STAGING_PORT"
 
 # Verify
-sleep 3
+sleep 4
 "$SCRIPT_DIR/verify.sh"
