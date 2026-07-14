@@ -18,7 +18,7 @@ async function main() {
   var html = r1.b.toString();
   check('UI_LOGIN_OVERLAY_ABSENT_IN_LAN_MODE', html.indexOf('login-overlay') === -1 && html.indexOf('login-box') === -1);
   check('UI_ADMIN_TOKEN_TEXT_ABSENT_IN_LAN_MODE', html.indexOf('ADMIN_TOKEN') === -1);
-  check('UI_APP_VISIBLE_IN_LAN_MODE', html.indexOf('id=app') > -1);
+  check('UI_APP_VISIBLE_IN_LAN_MODE', /id=["']?app["']?/.test(html));
   var js = (await get('/admin/admin.js')).b.toString();
   check('UI_JS_HAS_ACCESS_MODE_CHECK', js.indexOf('access-mode') > -1);
   check('UI_JS_HAS_TOKEN_VARIABLE', js.indexOf('var TOKEN') > -1);

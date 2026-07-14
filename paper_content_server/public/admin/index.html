@@ -1,1 +1,342 @@
-<!DOCTYPE html><html lang=zh-CN><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>电子纸管理后台</title><link rel=stylesheet href=/admin/admin.css></head><body><div id=login-overlay class=login-overlay style=display:none><div class=login-box><h2>电子纸管理后台</h2><p style="color:#666;font-size:13px;margin-bottom:12px">输入 ADMIN_TOKEN 登录</p><form id=login-form><input type=password id=login-token placeholder=输入管理令牌 required><div id=login-error class=error>令牌无效</div><button type=submit class="btn btn-primary" style=width:100%>登录</button></form></div></div><div id=app class=layout style=display:none><div class=sidebar><h1>📋 电子纸</h1><nav><a href=# data-tab=dashboard class=active>总览</a><a href=# data-tab=news-page>新闻审查</a><a href=# data-tab=photos-page>图片库</a><a href=# data-tab=photo-editor-page style=display:none>图片编辑</a><a href=# data-tab=publish-page>发布中心</a><a href=# data-tab=status-page>运行状态</a></nav></div><div class=main><div id=dashboard class="page active"><h2>总览</h2><div class=card><div class=stat-grid><div class=stat-item><div class=label>当前模式</div><div class=value id=dash-mode>-</div></div><div class=stat-item><div class=label>当前 Slot</div><div class=value id=dash-slot>-</div></div><div class=stat-item><div class=label>新闻数量</div><div class=value id=dash-news>-</div></div><div class=stat-item><div class=label>Frame 缓存</div><div class=value id=dash-cache>-</div></div><div class=stat-item><div class=label>运行时间</div><div class=value id=dash-uptime>-</div></div><div class=stat-item><div class=label>手动覆盖</div><div class=value id=dash-override>-</div></div></div></div><div class=card><h3>操作</h3><div class=actions><button class="btn btn-danger" onclick=document.getElementById('publish-msg').textContent='将覆盖当前调度并发布新闻页';document.getElementById('publish-msg').style.display='block';publishNews()>发布新闻页</button><button class="btn btn-outline" onclick=clearOverride()>恢复自动调度</button></div><div id=publish-msg style=display:none;margin-top:8px;padding:8px;background:#f0f8f0;border-radius:4px></div></div></div><div id=news-page class=page><h2>新闻审查 <button class="btn btn-sm btn-outline" onclick=loadNewsReview() style=margin-left:8px>刷新</button><button class="btn btn-sm btn-primary" onclick=saveNewsDraft() style=margin-left:8px>保存草稿</button></h2><div id=news-list class=news-list></div></div><div id=photos-page class=page><h2>图片库</h2><div class=card><h3>上传图片</h3><form id=photo-upload-form><input type=file id=photo-file accept=image/jpeg,image/png,image/webp><button type=submit class="btn btn-primary btn-sm" style=margin-left:8px>上传</button></form></div><div id=photo-grid class=photo-grid></div></div><div id=photo-editor-page class=page><h2 id=editor-title>图片编辑</h2><div class=editor-layout><div class=preview><div class=preview-container><img id=editor-preview></div><h3 style=margin-top:12px>六色效果</h3><div class=preview-container><img id=editor-eink-preview></div><h3 style=margin-top:12px>颜色统计</h3><div id=editor-palette class=palette-bar></div></div><div class=controls><h3>调整</h3><label>亮度</label><input type=range min=0.5 max=1.5 step=0.05 value=1 oninput="updateEditorParam('brightness',this.value)"><span class=value id=val-brightness>1.0</span><label>对比度</label><input type=range min=0.5 max=1.5 step=0.05 value=1 oninput="updateEditorParam('contrast',this.value)"><span class=value id=val-contrast>1.0</span><label>饱和度</label><input type=range min=0 max=2 step=0.05 value=1 oninput="updateEditorParam('saturation',this.value)"><span class=value id=val-saturation>1.0</span><label>Gamma</label><input type=range min=0.5 max=2 step=0.05 value=1 oninput="updateEditorParam('gamma',this.value)"><span class=value id=val-gamma>1.0</span><label>旋转</label><select onchange="updateEditorParam('rotate',this.value)"><option value=0>0°</option><option value=90>90°</option><option value=180>180°</option><option value=270>270°</option></select><div class=actions style=margin-top:12px><button class="btn btn-primary" onclick=saveEdit()>保存编辑</button><button class="btn btn-success" onclick=publishPhoto(EDITOR_STATE.id)>发布到电子纸</button></div></div></div></div><div id=publish-page class=page><h2>发布中心</h2><div class=card><h3>发布历史</h3><div id=publish-history-list></div></div></div><div id=status-page class=page><h2>运行状态</h2><div class=card><div class=stat-grid><div class=stat-item><div class=label>运行时间</div><div class=value id=status-uptime>-</div></div><div class=stat-item><div class=label>模式</div><div class=value id=status-mode>-</div></div><div class=stat-item><div class=label>Slot</div><div class=value id=status-slot>-</div></div><div class=stat-item><div class=label>Frame 缓存</div><div class=value id=status-cache>-</div></div></div></div></div></div></div><script src=/admin/admin.js></script></body></html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>电子纸管理后台</title>
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+
+<!-- Login overlay (stripped by server in LAN mode; only present in token mode) -->
+<div id="login-overlay" class="login-overlay" style="display:none">
+  <div class="login-box">
+    <h2>电子纸管理后台</h2>
+    <p class="muted small">输入 ADMIN_TOKEN 登录</p>
+    <form id="login-form">
+      <input type="password" id="login-token" placeholder="输入管理令牌" required>
+      <div id="login-error" class="error">令牌无效</div>
+      <button type="submit" class="btn btn-primary btn-block">登录</button>
+    </form>
+  </div>
+</div>
+
+<div id="app" class="layout" style="display:none">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-icon">📋</span>
+      <span class="brand-name">电子纸</span>
+    </div>
+    <nav>
+      <a href="#" data-tab="dashboard" class="active">📊 总览</a>
+      <a href="#" data-tab="news-page">📰 新闻审查</a>
+      <a href="#" data-tab="photos-page">🖼️ 图片库</a>
+      <a href="#" data-tab="photo-editor-page" style="display:none">✏️ 图片编辑</a>
+      <a href="#" data-tab="publish-page">📤 发布中心</a>
+      <a href="#" data-tab="status-page">⚙️ 运行状态</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="env-badge" id="env-badge">staging</div>
+      <div class="small muted" id="sidebar-sha">--</div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main">
+    <header class="page-header">
+      <div class="page-header-left">
+        <h2 id="page-title">总览</h2>
+        <span class="muted small" id="last-refresh">未刷新</span>
+      </div>
+      <div class="page-header-right">
+        <button class="btn btn-outline btn-sm" onclick="refreshAll()">🔄 刷新</button>
+      </div>
+    </header>
+
+    <!-- ───────── Dashboard ───────── -->
+    <section id="dashboard" class="page active">
+      <!-- Row 1: Key metrics -->
+      <div class="card">
+        <h3 class="card-title">关键指标</h3>
+        <div class="stat-grid stat-grid-6">
+          <div class="stat-item">
+            <div class="stat-label">当前模式</div>
+            <div class="stat-value" id="dash-mode">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">当前 Slot</div>
+            <div class="stat-value" id="dash-slot">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">新闻数量</div>
+            <div class="stat-value" id="dash-news">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">当前 frameId</div>
+            <div class="stat-value stat-mono stat-truncate" id="dash-frameid">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Frame 缓存</div>
+            <div class="stat-value" id="dash-cache">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">运行时间</div>
+            <div class="stat-value" id="dash-uptime">加载中…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 2: System summary -->
+      <div class="card">
+        <h3 class="card-title">系统摘要</h3>
+        <div class="stat-grid stat-grid-4">
+          <div class="stat-item">
+            <div class="stat-label">手动覆盖</div>
+            <div class="stat-value" id="dash-override">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">覆盖过期</div>
+            <div class="stat-value" id="dash-override-expires">--</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">最近发布时间</div>
+            <div class="stat-value" id="dash-lastpublish">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">下次切换</div>
+            <div class="stat-value" id="dash-nextswitch">--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 3: Quick actions -->
+      <div class="card">
+        <h3 class="card-title">快捷操作</h3>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="publishNews()">📰 发布新闻页</button>
+          <button class="btn btn-outline" onclick="clearOverride()">🔁 恢复自动调度</button>
+          <button class="btn btn-outline" onclick="switchTab('photos-page')">🖼️ 前往图片库</button>
+          <button class="btn btn-outline" onclick="refreshAll()">🔄 刷新状态</button>
+        </div>
+        <div id="publish-msg" class="msg-area" style="display:none"></div>
+      </div>
+    </section>
+
+    <!-- ───────── News Review ───────── -->
+    <section id="news-page" class="page">
+      <div class="news-layout">
+        <!-- Left: News list -->
+        <div class="news-list-panel">
+          <div class="panel-header">
+            <h3 class="card-title">新闻列表</h3>
+            <div class="panel-actions">
+              <button class="btn btn-sm btn-outline" onclick="loadNewsReview()">🔄 刷新</button>
+              <button class="btn btn-sm btn-primary" onclick="saveNewsDraft()">💾 保存草稿</button>
+            </div>
+          </div>
+          <div id="news-list" class="news-list">
+            <div class="empty-state">加载中…</div>
+          </div>
+        </div>
+        <!-- Right: News detail -->
+        <div class="news-detail-panel">
+          <div class="panel-header">
+            <h3 class="card-title">新闻详情</h3>
+          </div>
+          <div id="news-detail" class="news-detail">
+            <div class="empty-state">从左侧列表选择一条新闻查看详情</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── Photos / Image Library ───────── -->
+    <section id="photos-page" class="page">
+      <div class="card">
+        <h3 class="card-title">上传图片</h3>
+        <form id="photo-upload-form" class="upload-form">
+          <input type="file" id="photo-file" accept="image/jpeg,image/png,image/webp">
+          <button type="submit" class="btn btn-primary btn-sm">📤 上传</button>
+        </form>
+        <div class="muted small" style="margin-top:6px">支持 JPEG / PNG / WebP,推荐 800×480 比例</div>
+      </div>
+      <div class="card">
+        <div class="panel-header">
+          <h3 class="card-title">图片库</h3>
+          <span class="muted small" id="photo-count">--</span>
+        </div>
+        <div id="photo-grid" class="photo-grid">
+          <div class="empty-state">加载中…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── Photo Editor (hidden by default) ───────── -->
+    <section id="photo-editor-page" class="page">
+      <h2 id="editor-title">图片编辑</h2>
+      <div class="editor-layout">
+        <div class="preview">
+          <div class="preview-container"><img id="editor-preview" alt="预览"></div>
+          <h3 style="margin-top:12px">六色效果</h3>
+          <div class="preview-container"><img id="editor-eink-preview" alt="电子纸预览"></div>
+          <h3 style="margin-top:12px">颜色统计</h3>
+          <div id="editor-palette" class="palette-bar"></div>
+        </div>
+        <div class="controls">
+          <h3>调整</h3>
+          <label>亮度</label>
+          <input type="range" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('brightness',this.value)">
+          <span class="value" id="val-brightness">1.0</span>
+          <label>对比度</label>
+          <input type="range" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('contrast',this.value)">
+          <span class="value" id="val-contrast">1.0</span>
+          <label>饱和度</label>
+          <input type="range" min="0" max="2" step="0.05" value="1" oninput="updateEditorParam('saturation',this.value)">
+          <span class="value" id="val-saturation">1.0</span>
+          <label>Gamma</label>
+          <input type="range" min="0.5" max="2" step="0.05" value="1" oninput="updateEditorParam('gamma',this.value)">
+          <span class="value" id="val-gamma">1.0</span>
+          <label>旋转</label>
+          <select onchange="updateEditorParam('rotate',this.value)">
+            <option value="0">0°</option>
+            <option value="90">90°</option>
+            <option value="180">180°</option>
+            <option value="270">270°</option>
+          </select>
+          <div class="actions" style="margin-top:12px">
+            <button class="btn btn-primary" onclick="saveEdit()">💾 保存编辑</button>
+            <button class="btn btn-success" onclick="publishPhoto(EDITOR_STATE.id)">📤 发布到电子纸</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── Publish Center ───────── -->
+    <section id="publish-page" class="page">
+      <div class="card">
+        <div class="panel-header">
+          <h3 class="card-title">发布历史</h3>
+          <button class="btn btn-sm btn-outline" onclick="loadPublishHistory()">🔄 刷新</button>
+        </div>
+        <div id="publish-history-list">
+          <div class="empty-state">加载中…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── Runtime Status ───────── -->
+    <section id="status-page" class="page">
+      <div class="card">
+        <h3 class="card-title">健康检查</h3>
+        <div class="stat-grid stat-grid-4">
+          <div class="stat-item">
+            <div class="stat-label">/health/live</div>
+            <div class="stat-value" id="health-live">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">/health/ready</div>
+            <div class="stat-value" id="health-ready">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">运行时间</div>
+            <div class="stat-value" id="status-uptime">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">模式</div>
+            <div class="stat-value" id="status-mode">加载中…</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">Frame 状态</h3>
+        <div class="stat-grid stat-grid-4">
+          <div class="stat-item">
+            <div class="stat-label">当前 frameId</div>
+            <div class="stat-value stat-mono stat-truncate" id="status-frameid">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">frameLength</div>
+            <div class="stat-value" id="status-framelen">--</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">frameSha256</div>
+            <div class="stat-value stat-mono stat-truncate" id="status-sha">--</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">当前 Slot</div>
+            <div class="stat-value" id="status-slot">加载中…</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">内容与缓存</h3>
+        <div class="stat-grid stat-grid-4">
+          <div class="stat-item">
+            <div class="stat-label">新闻数量</div>
+            <div class="stat-value" id="status-news">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">图片数量</div>
+            <div class="stat-value" id="status-photos">--</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Frame 缓存</div>
+            <div class="stat-value" id="status-cache">加载中…</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">渲染次数</div>
+            <div class="stat-value" id="status-render">--</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">请求统计</h3>
+        <div class="stat-grid stat-grid-4">
+          <div class="stat-item">
+            <div class="stat-label">/api/state 请求</div>
+            <div class="stat-value" id="status-state-req">--</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">/api/frame 请求</div>
+            <div class="stat-value" id="status-frame-req">--</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">新闻刷新次数</div>
+            <div class="stat-value" id="status-news-refresh">--</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">新闻刷新失败</div>
+            <div class="stat-value" id="status-news-fail">--</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">服务配置</h3>
+        <div class="stat-grid stat-grid-4">
+          <div class="stat-item">
+            <div class="stat-label">MQTT 状态</div>
+            <div class="stat-value" id="status-mqtt">--</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Translation Provider</div>
+            <div class="stat-value" id="status-translation">--</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">最近错误</div>
+            <div class="stat-value" id="status-recent-error">无</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">最近刷新时间</div>
+            <div class="stat-value" id="status-last-refresh">--</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="/admin/admin.js"></script>
+</body>
+</html>

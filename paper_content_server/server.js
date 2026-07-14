@@ -2734,7 +2734,7 @@ function serveAdminFile(name) {
   if (!fs.existsSync(fp)) return null;
   var c = fs.readFileSync(fp);
   if (name === 'index.html' && ADMIN_ACCESS_MODE === 'lan') {
-    c = c.toString().replace(/<div id=login-overlay[\s\S]*?<\/form><\/div><\/div>/, '');
+    c = c.toString().replace(/<div id=["']?login-overlay["']?[\s\S]*?<\/form>\s*<\/div>\s*<\/div>/, '');
   }
   return Buffer.from(c);
 }
