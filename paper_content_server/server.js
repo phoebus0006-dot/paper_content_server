@@ -3235,7 +3235,12 @@ async function handleRequest(req, res) {
       if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
-      respondJson(res, { status: 'ok', timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount });
+      var newsItemCount = 0;
+      try {
+        var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
+        if (fs.existsSync(lgPath2)) { var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8')); if (lg2 && lg2.items) newsItemCount = lg2.items.length; }
+      } catch(e) {}
+      respondJson(res, { status: 'ok', timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount, newsItemCount: newsItemCount });
       return;
     }
 
@@ -3246,8 +3251,18 @@ async function handleRequest(req, res) {
         var nw = now;
         var kn = 'news:' + nw.getFullYear() + '-' + String(nw.getMonth()+1).padStart(2,'0') + '-' + String(nw.getDate()).padStart(2,'0') + ':' + Math.floor(nw.getTime() / 900000);
         var ch = runtime.cachedSnapshots.get(kn);
-        if (ch && ch.items) sel = ch.items.map(function(it) { return { source: it.source, category: it.category, title: it.zhTitle, summary: it.zhSummary, url: it.sourceUrl, titleLen: (it.zhTitle||'').length, summaryLen: (it.zhSummary||'').length }; });
+        if (ch && ch.items) sel = ch.items.map(function(it) { return { source: it.source, category: it.category, title: it.zhTitle, summary: it.zhSummary, url: it.sourceUrl, titleLen: (it.zhTitle||'').length, summaryLen: (it.zhSummary||'').length, publishedAt: it.publishedAt, translationStatus: it.translationStatus }; });
       } catch(e) {}
+      // Fallback: read from last_good_news.json if in-memory cache is empty
+      if (sel.length === 0) {
+        try {
+          var lgPath = path.join(DATA_DIR, 'last_good_news.json');
+          if (fs.existsSync(lgPath)) {
+            var lg = JSON.parse(fs.readFileSync(lgPath, 'utf8'));
+            if (lg && lg.items) sel = lg.items.map(function(it) { return { source: it.source, category: it.category, title: it.zhTitle || it.originalTitle, summary: it.zhSummary || it.originalSummary, url: it.sourceUrl, titleLen: (it.zhTitle||it.originalTitle||'').length, summaryLen: (it.zhSummary||it.originalSummary||'').length, publishedAt: it.publishedAt, translationStatus: it.translationStatus }; });
+          }
+        } catch(e) {}
+      }
       respondJson(res, { selected: sel, candidates: [] });
       return;
     }
@@ -3535,6 +3550,35 @@ async function handleRequest(req, res) {
       var idx = [];
       try { idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
       respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, poolType: e.poolType || '', safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }) });
+      return;
+    }
+
+    // Serve individual photo thumbnail/image
+    var photoMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/thumbnail$/);
+    if (photoMatch) {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var photoId = photoMatch[1];
+      var photoIdx = [];
+      try { photoIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      var photoEntry = null;
+      for (var pi = 0; pi < photoIdx.length; pi++) {
+        if (photoIdx[pi].id === photoId) { photoEntry = photoIdx[pi]; break; }
+      }
+      if (!photoEntry) { res.writeHead(404); res.end('not found'); return; }
+      var imgPath = photoEntry.processedPngPath || photoEntry.rawPath || '';
+      if (!imgPath) { res.writeHead(404); res.end('no image path'); return; }
+      // Resolve relative to app root
+      var fullImgPath = path.isAbsolute(imgPath) ? imgPath : path.join(ROOT_DIR, imgPath);
+      if (!fs.existsSync(fullImgPath)) { res.writeHead(404); res.end('file not found: ' + fullImgPath); return; }
+      try {
+        var imgBuf = fs.readFileSync(fullImgPath);
+        var ext = path.extname(fullImgPath).toLowerCase();
+        var ct = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'public, max-age=3600' });
+        res.end(imgBuf);
+      } catch(e) {
+        res.writeHead(500); res.end('read error: ' + e.message);
+      }
       return;
     }
 
@@ -3838,7 +3882,29 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/health.json') {
       var uptime = Math.floor((Date.now() - runtime.serverStartTime) / 1000);
-      respondJson(res, { status: 'ok', uptimeSeconds: uptime, timezone: TIMEZONE, frameCacheEntries: runtime.cachedFrames.size, frameRenderCount: runtime.renderCount });
+      var hSnap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
+      var hNewsCount = 0;
+      try {
+        var hLgPath = path.join(DATA_DIR, 'last_good_news.json');
+        if (fs.existsSync(hLgPath)) { var hLg = JSON.parse(fs.readFileSync(hLgPath, 'utf8')); if (hLg && hLg.items) hNewsCount = hLg.items.length; }
+      } catch(e) {}
+      var hPhotoCount = 0;
+      try {
+        var hIdxPath = path.join(DATA_DIR, 'image_index.json');
+        if (fs.existsSync(hIdxPath)) { hPhotoCount = JSON.parse(fs.readFileSync(hIdxPath, 'utf8')).length; }
+      } catch(e) {}
+      respondJson(res, {
+        status: 'ok', uptimeSeconds: uptime, timezone: TIMEZONE,
+        currentMode: hSnap ? hSnap.mode : null,
+        currentSlot: hSnap ? hSnap.slotKey : null,
+        frameId: hSnap ? hSnap.frameId : null,
+        frameCacheEntries: runtime.cachedFrames.size,
+        frameRenderCount: runtime.renderCount,
+        newsItemCount: hNewsCount,
+        photoCount: hPhotoCount,
+        mqttEnabled: !!APP_CONFIG.mqtt && APP_CONFIG.mqtt.enabled,
+        translationProvider: (APP_CONFIG.translation && APP_CONFIG.translation.provider) || 'none'
+      });
       return;
     }
 

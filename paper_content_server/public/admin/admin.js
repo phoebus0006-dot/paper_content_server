@@ -127,12 +127,12 @@ function loadDashboard(){
     setText('dash-mode',d.currentMode,'未设置');
     setText('dash-slot',d.currentSlot,'未生成');
     setText('dash-frameid',d.frameId?(d.frameId.slice(0,50)+'...'):'未生成','未生成');
-    setText('dash-nextswitch',d.nextSwitchLocal,'--');
+    setText('dash-nextswitch',d.nextSwitchLocal,'未调度');
     setText('dash-news',d.newsItemCount!==undefined?String(d.newsItemCount):'未加载','未加载');
     setText('dash-cache',d.frameCacheEntries!==undefined?String(d.frameCacheEntries):'0','0');
     setText('dash-uptime',d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟','<1 分钟');
     setText('dash-override',d.manualOverride||'auto','auto');
-    setText('dash-override-expires',d.overrideExpiresAt||'--','--');
+    setText('dash-override-expires',d.overrideExpiresAt,'未设置');
     setText('dash-lastpublish',d.lastPublishedAt||'未发布','未发布');
     STATE.dashboard=d;
   }).catch(function(e){showErrorBox('dashboard load failed: '+(e&&e.message||e))});
@@ -424,11 +424,11 @@ function clearOverride(){
 
 // ── Health checks ──
 function loadHealth(){
-  fetch('/api/health/live').then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
-    setText('health-live',d.status||(d.ok?'ok':'--'),'--');
+  fetch('/health/live').then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
+    setText('health-live',d.status||(d.ok?'ok':'未知'),'未知');
   }).catch(function(){setText('health-live','ERROR','ERROR')});
-  fetch('/api/health/ready').then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
-    setText('health-ready',d.status||(d.ok?'ok':'--'),'--');
+  fetch('/health/ready').then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
+    setText('health-ready',d.status||(d.ok?'ok':'未知'),'未知');
   }).catch(function(){setText('health-ready','ERROR','ERROR')});
 }
 
@@ -440,20 +440,20 @@ function loadStatus(){
     setText('status-mode',d.currentMode,'未设置');
     setText('status-slot',d.currentSlot,'未生成');
     setText('status-frameid',d.frameId?(d.frameId.slice(0,40)+'...'):'未生成','未生成');
-    setText('status-framelen',d.frameLength?String(d.frameLength):'--','--');
-    setText('status-sha',d.frameSha256?(d.frameSha256.slice(0,24)+'...'):'--','--');
-    setText('status-news',d.newsItemCount!==undefined?String(d.newsItemCount):'--','--');
-    setText('status-photos',d.photoCount!==undefined?String(d.photoCount):'--','--');
-    setText('status-cache',d.frameCacheEntries!==undefined?String(d.frameCacheEntries):'--','--');
-    setText('status-render',d.frameRenderCount!==undefined?String(d.frameRenderCount):'--','--');
-    setText('status-state-req',d.stateRequestCount!==undefined?String(d.stateRequestCount):'--','--');
-    setText('status-frame-req',d.frameRequestCount!==undefined?String(d.frameRequestCount):'--','--');
-    setText('status-news-refresh',d.newsRefreshCount!==undefined?String(d.newsRefreshCount):'--','--');
+    setText('status-framelen',d.frameLength?String(d.frameLength):'暂无','暂无');
+    setText('status-sha',d.frameSha256?(d.frameSha256.slice(0,24)+'...'):'暂无','暂无');
+    setText('status-news',d.newsItemCount!==undefined?String(d.newsItemCount):'暂无','暂无');
+    setText('status-photos',d.photoCount!==undefined?String(d.photoCount):'暂无','暂无');
+    setText('status-cache',d.frameCacheEntries!==undefined?String(d.frameCacheEntries):'0','0');
+    setText('status-render',d.frameRenderCount!==undefined?String(d.frameRenderCount):'0','0');
+    setText('status-state-req',d.stateRequestCount!==undefined?String(d.stateRequestCount):'暂无','暂无');
+    setText('status-frame-req',d.frameRequestCount!==undefined?String(d.frameRequestCount):'暂无','暂无');
+    setText('status-news-refresh',d.newsRefreshCount!==undefined?String(d.newsRefreshCount):'暂无','暂无');
     setText('status-news-fail',d.newsRefreshFailureCount!==undefined?String(d.newsRefreshFailureCount):'0','0');
     setText('status-mqtt',d.mqttEnabled?'enabled':'disabled','disabled');
     setText('status-translation',d.translationProvider||'none','none');
-    setText('status-recent-error',d.recentError||'无','无');
-    setText('status-last-refresh',d.lastNewsRefreshAt||'--','--');
+    setText('status-recent-error',d.recentError||'无错误','无错误');
+    setText('status-last-refresh',d.lastNewsRefreshAt||'暂无','暂无');
     // Update sidebar SHA
     var shaEl=$('sidebar-sha');
     if(shaEl&&d.buildSha){shaEl.textContent='SHA: '+d.buildSha.slice(0,12);}
