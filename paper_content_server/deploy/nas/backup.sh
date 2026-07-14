@@ -1,9 +1,14 @@
 #!/bin/bash
 # backup.sh — Backup staging data before deployment
+#
+# Paths are configurable via environment variables. Defaults assume
+# STAGING_ROOT=/home/phoebus/staging (overridable).
 set -euo pipefail
 
-BACKUP_DIR="/volume1/docker/paper-content-staging/backups"
-DATA_DIR="/volume1/docker/paper-content-staging/data"
+STAGING_ROOT="${STAGING_ROOT:-/home/phoebus/staging}"
+DATA_DIR="${DATA_DIR:-$STAGING_ROOT/data}"
+BACKUP_DIR="${BACKUP_DIR:-$STAGING_ROOT/backups}"
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_PATH="$BACKUP_DIR/data_$TIMESTAMP.tar.gz"
 

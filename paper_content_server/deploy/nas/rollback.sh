@@ -1,11 +1,15 @@
 #!/bin/bash
 # rollback.sh — Rollback staging to previous backup and image
+#
+# Paths are configurable via environment variables (see backup.sh).
 set -euo pipefail
 
-BACKUP_DIR="/volume1/docker/paper-content-staging/backups"
-DATA_DIR="/volume1/docker/paper-content-staging/data"
+STAGING_ROOT="${STAGING_ROOT:-/home/phoebus/staging}"
+DATA_DIR="${DATA_DIR:-$STAGING_ROOT/data}"
+IMAGE_DIR="${IMAGE_DIR:-$STAGING_ROOT/images}"
+BACKUP_DIR="${BACKUP_DIR:-$STAGING_ROOT/backups}"
 
-echo "=== R11.2 Rollback ==="
+echo "=== Staging Rollback ==="
 
 # List available backups
 echo "Available backups:"
@@ -28,7 +32,7 @@ docker stop paper-content-staging 2>/dev/null || true
 # Restore data
 rm -rf "$DATA_DIR"
 mkdir -p "$DATA_DIR"
-tar -xzf "$LATEST" -C /volume1/docker/paper-content-staging/
+tar -xzf "$LATEST" -C "$(dirname "$DATA_DIR")"/
 echo "OK: data restored"
 
 # Restart with previous image tag
@@ -45,7 +49,8 @@ else
     --name paper-content-staging \
     --restart unless-stopped \
     -p 18080:8787 \
-    -v /volume1/docker/paper-content-staging/data:/app/data \
+    -v "$DATA_DIR:/app/data" \
+    -v "$IMAGE_DIR:/app/images" \
     "paper-content-server:$IMAGE_TAG"
 fi
 

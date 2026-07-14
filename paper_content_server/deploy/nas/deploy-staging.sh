@@ -1,6 +1,8 @@
 #!/bin/bash
 # deploy-staging.sh — Deploy staging container (port 18080) only
 # Production (8787) is NEVER touched by this script.
+#
+# Paths are configurable via environment variables (see backup.sh).
 set -euo pipefail
 
 IMAGE_TAG="${1:-}"
@@ -15,10 +17,18 @@ IMAGE="paper-content-server:$IMAGE_TAG"
 STAGING_PORT=18080
 PRODUCTION_PORT=8787
 
+# Shared paths — must match backup.sh and verify.sh
+STAGING_ROOT="${STAGING_ROOT:-/home/phoebus/staging}"
+DATA_DIR="${DATA_DIR:-$STAGING_ROOT/data}"
+IMAGE_DIR="${IMAGE_DIR:-$STAGING_ROOT/images}"
+
 echo "=== Staging deployment ==="
 echo "IMAGE=$IMAGE"
 echo "STAGING_PORT=$STAGING_PORT"
 echo "PRODUCTION_PORT=$PRODUCTION_PORT (untouched)"
+echo "STAGING_ROOT=$STAGING_ROOT"
+echo "DATA_DIR=$DATA_DIR"
+echo "IMAGE_DIR=$IMAGE_DIR"
 
 # Safety: refuse if target is production port
 if [ "$STAGING_PORT" = "$PRODUCTION_PORT" ]; then
@@ -45,8 +55,12 @@ if ! docker image inspect "$IMAGE" &>/dev/null; then
   exit 1
 fi
 
-# Backup existing staging data
-"$SCRIPT_DIR/backup.sh"
+# Ensure data/image dirs exist
+mkdir -p "$DATA_DIR" "$IMAGE_DIR"
+
+# Backup existing staging data (uses same STAGING_ROOT/DATA_DIR)
+STAGING_ROOT="$STAGING_ROOT" DATA_DIR="$DATA_DIR" BACKUP_DIR="${BACKUP_DIR:-$STAGING_ROOT/backups}" \
+  "$SCRIPT_DIR/backup.sh"
 
 # Stop and remove existing staging container
 docker stop paper-content-staging 2>/dev/null || true
@@ -57,8 +71,8 @@ docker run -d \
   --name paper-content-staging \
   --restart unless-stopped \
   -p "$STAGING_PORT:8787" \
-  -v /home/phoebus/staging/data:/app/data \
-  -v /home/phoebus/staging/images:/app/images \
+  -v "$DATA_DIR:/app/data" \
+  -v "$IMAGE_DIR:/app/images" \
   --env-file "$ENV_FILE" \
   "$IMAGE"
 
