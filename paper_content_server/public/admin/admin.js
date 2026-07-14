@@ -392,8 +392,23 @@ function loadPhotos(){
     var photos=d.photos||[];
     var countEl=$('photo-count');
     if(countEl)countEl.textContent='共 '+photos.length+' 张';
+    // Handle upload availability from server response
+    if(d.uploadAvailable===false){
+      var form=$('photo-upload-form');
+      if(form){
+        var btn=form.querySelector('button[type="submit"]');
+        if(btn){btn.disabled=true;btn.classList.add('btn-disabled');}
+        var existing=form.parentNode.querySelector('.disabled-upload');
+        if(!existing){
+          var msg=document.createElement('div');
+          msg.className='disabled-upload';
+          msg.innerHTML='<div class="disabled-upload-title">上传暂不可用</div><div>'+(d.uploadDisabledReason||'安全分类器未就绪，暂不可上传')+'</div>';
+          form.parentNode.insertBefore(msg,form.nextSibling);
+        }
+      }
+    }
     if(photos.length===0){
-      el.innerHTML='<div class="empty-state">图片库为空。请上传图片。</div>';
+      el.innerHTML='<div class="empty-state">图片库为空。</div>';
       return;
     }
     photos.forEach(function(p){
@@ -716,22 +731,22 @@ fetch('/api/admin/access-mode').then(function(r){
   if(ACCESS_MODE==='token'){
     if($('login-overlay')){
       showLogin();
-      LOGIN_CALLBACK=function(){loadAll();checkUploadEnabled()};
+      LOGIN_CALLBACK=function(){loadAll()};
     }else{
       showErrorBox('access_mode=token 但登录界面缺失');
       show($('app'));
-      loadAll();checkUploadEnabled();
+      loadAll();
     }
   }else{
     show($('app'));
     if($('login-overlay'))hide($('login-overlay'));
-    loadAll();checkUploadEnabled();
+    loadAll();
   }
 }).catch(function(e){
   ACCESS_MODE='token';
   if($('login-overlay')){
     showLogin();
-    LOGIN_CALLBACK=function(){loadAll();checkUploadEnabled()};
+    LOGIN_CALLBACK=function(){loadAll()};
   }else{
     showErrorBox('access-mode fetch failed: '+(e&&e.message||e));
     show($('app'));

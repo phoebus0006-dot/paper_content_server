@@ -50,8 +50,10 @@ async function main() {
     page.on('console', function(msg) {
       if (msg.type() === 'error') {
         var text = msg.text();
+        var loc = msg.location() || {};
+        var urlSuffix = loc.url ? loc.url.slice(-80) : '';
         if (text.indexOf('favicon') < 0 && text.indexOf('mcs.ziieapi.com') < 0) {
-          consoleErrors.push(text);
+          consoleErrors.push(text + ' @ ' + urlSuffix);
         }
       }
     });
@@ -364,13 +366,18 @@ async function main() {
       check('FLOW_PUBLISH_NEWS_CLICKED', publishResult === 'called', 'result: ' + publishResult);
 
       if (publishResult === 'called') {
-        await page.waitForTimeout(3000);
-        // Check for toast or message
-        var toastShown = await page.evaluate(function() {
-          var t = document.querySelector('.toast');
-          return t !== null;
-        });
-        check('FLOW_PUBLISH_FEEDBACK', toastShown, 'toast shown');
+        // Wait for confirm dialog to appear
+        await page.waitForSelector('.confirm-overlay', { timeout: 5000 });
+        await page.waitForTimeout(500);
+        // Click confirm button (btn-primary with id confirm-ok-btn)
+        await page.click('#confirm-ok-btn');
+        // Wait for toast to appear (publish takes ~2-3s, toast lives 3s)
+        var toastAppeared = false;
+        try {
+          await page.waitForSelector('.toast', { timeout: 15000 });
+          toastAppeared = true;
+        } catch(e) {}
+        check('FLOW_PUBLISH_FEEDBACK', toastAppeared, toastAppeared ? 'toast appeared' : 'toast never appeared');
       }
     } catch (e) {
       check('FLOW_PUBLISH_NEWS_CLICKED', false, 'error: ' + e.message);
