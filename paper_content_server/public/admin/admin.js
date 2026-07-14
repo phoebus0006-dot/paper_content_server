@@ -6,7 +6,7 @@ var SELECTED_NEWS_IDX = -1;
 var NEWS_BASELINE = null;
 
 function $(id){return document.getElementById(id)}
-function show(el){if(el)el.style.display='block'}
+function show(el){if(!el)return;if(el.id==='app'){el.style.display='grid'}else{el.style.display='block'}}
 function hide(el){if(el)style_display(el,'none')}
 function style_display(el,val){if(el)el.style.display=val}
 function qs(s,p){return(p||document).querySelector(s)}
