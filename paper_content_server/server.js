@@ -41,6 +41,11 @@ var R3_PublicationService = require('./src/publication/publication-service').Pub
 
 const ROOT_DIR = __dirname;
 const DEFAULT_PORT = 8787;
+var BUILD_GIT_SHA = null;
+try {
+  var bm = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'build-manifest.json'), 'utf8'));
+  if (bm && bm.gitSha) BUILD_GIT_SHA = bm.gitSha;
+} catch (e) {}
 const DEFAULT_PANEL = 49;
 const FRAME_WIDTH = 800;
 const FRAME_HEIGHT = 480;
@@ -3937,7 +3942,7 @@ async function handleRequest(req, res) {
         newsRefreshFailureCount: runtime.newsRefreshFailureCount || 0,
         recentError: runtime.recentError || null,
         lastNewsRefreshAt: runtime.lastNewsRefreshAt || null,
-        buildSha: process.env.BUILD_GIT_SHA || null,
+        buildSha: BUILD_GIT_SHA,
         manualOverride: runtime.manualOverride || null,
         overrideExpiresAt: runtime.overrideExpiresAt || null,
         lastPublishedAt: runtime.lastPublishedAt || null
