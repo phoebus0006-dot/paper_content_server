@@ -1,0 +1,4 @@
+# Enforce LF line endings for shell scripts and Dockerfile
+# (prevents CRLF issues when deploying to Linux NAS via git archive)
+*.sh text eol=lf
+Dockerfile text eol=lf
