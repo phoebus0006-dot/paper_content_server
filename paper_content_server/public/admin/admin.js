@@ -624,6 +624,8 @@ function loadPublishHistory(){
   });
 }
 
+var ROLLBACK_TARGET_ID = null;
+
 function rollback(id){
   var entries=STATE.publishHistory||[];
   var entry=null;
@@ -633,16 +635,39 @@ function rollback(id){
       break;
     }
   }
-  var msg='确认恢复到此版本？';
-  if(entry){
-    msg='发布类型: '+(entry.type||'--')+'\n发布时间: '+((entry.publishedAt||'').slice(0,19)||'--')+'\nFrame ID: '+(entry.frameId||'--');
+  if(!entry) return;
+  ROLLBACK_TARGET_ID = id;
+  var el=$('rollback-preview-content');
+  if(el){
+    el.innerHTML='<div style="line-height:1.6;font-size:14px;">' +
+      '<div><strong>发布类型:</strong> ' + esc(entry.type||'--') + '</div>' +
+      '<div><strong>发布时间:</strong> ' + esc(((entry.publishedAt||'').slice(0,19)||'--')) + '</div>' +
+      '<div><strong>Frame ID:</strong> ' + esc(entry.frameId||'--') + '</div>' +
+      '</div>';
   }
-  showConfirm('恢复版本',msg,function(){
-    api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:id})}).then(function(r){
-      if(r&&r.frameId){toast('已回滚: '+r.frameId.slice(0,20)+'...','success');loadDashboard();loadPublishHistory()}
-      else toast('回滚失败','error');
-    }).catch(function(e){toast('回滚失败: '+(e.message||e),'error')});
+  show($('rollback-preview'));
+}
+
+function confirmRollback(){
+  if(!ROLLBACK_TARGET_ID) return;
+  api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:ROLLBACK_TARGET_ID})}).then(function(r){
+    if(r&&r.status==='ok'||(r&&r.frameId)){
+      toast('已回滚','success');
+      hide($('rollback-preview'));
+      ROLLBACK_TARGET_ID = null;
+      loadDashboard();
+      loadPublishHistory();
+    } else {
+      toast('回滚失败','error');
+    }
+  }).catch(function(e){
+    toast('回滚失败: '+(e.message||e),'error');
   });
+}
+
+function closeRollbackPreview(){
+  hide($('rollback-preview'));
+  ROLLBACK_TARGET_ID = null;
 }
 
 // ── Override ──
