@@ -1,0 +1,37 @@
+{
+  "items": [
+    {
+      "source": "测试新闻源A",
+      "category": "technology",
+      "originalTitle": "Test News Title 1",
+      "originalSummary": "This is a test news summary for the first audit news item that should be long enough to pass quality checks.",
+      "zhTitle": "审计测试新闻标题1 - 科技",
+      "zhSummary": "这是第一条审计测试新闻的摘要内容，用于验证管理后台的新闻审查功能是否正常工作。",
+      "sourceUrl": "https://example.com/audit-news-1",
+      "publishedAt": "2026-07-15T07:00:00.000Z",
+      "translationStatus": "translated"
+    },
+    {
+      "source": "测试新闻源B",
+      "category": "international",
+      "originalTitle": "Test News Title 2",
+      "originalSummary": "Second test news item for admin audit verification process and functional testing purposes.",
+      "zhTitle": "审计测试新闻标题2 - 国际",
+      "zhSummary": "这是第二条审计测试新闻的摘要内容，用于验证管理后台的新闻审查功能。",
+      "sourceUrl": "https://example.com/audit-news-2",
+      "publishedAt": "2026-07-15T07:30:00.000Z",
+      "translationStatus": "translated"
+    },
+    {
+      "source": "测试新闻源C",
+      "category": "economy",
+      "originalTitle": "Test News Title 3 With Longer Title For Testing",
+      "originalSummary": "Third test item for the admin audit functional verification and testing suite.",
+      "zhTitle": "审计测试新闻标题3 - 经济",
+      "zhSummary": "这是第三条审计测试新闻的摘要内容，用于验证管理后台的各项功能。",
+      "sourceUrl": "https://example.com/audit-news-3",
+      "publishedAt": "2026-07-15T08:00:00.000Z",
+      "translationStatus": "original"
+    }
+  ]
+}

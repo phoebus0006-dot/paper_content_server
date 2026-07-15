@@ -1,0 +1,73 @@
+page,section,visible_text,selector,control_type,clickable,frontend_handler,request_method,request_path,status_code,response_summary,console_error,ui_result,refresh_persistence,restart_persistence,final_status,evidence
+总览,侧边栏导航,📊 总览,a[data-tab="dashboard"],导航链接,true,switchTab(dashboard),GET,/api/admin/dashboard,200,{status:"ok",currentMode:"...",...},无,页面切换正常,不适用,不适用,PASS,admin.js:81-89 定义 TAB_TITLES; HTML:line32
+总览,侧边栏导航,📰 新闻审查,a[data-tab="news-page"],导航链接,true,switchTab(news-page),无,无,无,无,页面切换正常,不适用,不适用,PASS,admin.js:81-89; HTML:line33
+总览,侧边栏导航,🖼️ 图片库,a[data-tab="photos-page"],导航链接,true,switchTab(photos-page),无,无,无,无,页面切换正常,不适用,不适用,PASS,admin.js:81-89; HTML:line34
+总览,侧边栏导航,✏️ 图片编辑 (hidden),a[data-tab="photo-editor-page"],导航链接,true,switchTab(photo-editor-page),无,无,无,无,默认隐藏(style=display:none),不适用,不适用,PASS,admin.js:81-89; HTML:line35 style=display:none
+总览,侧边栏导航,📤 发布中心,a[data-tab="publish-page"],导航链接,true,switchTab(publish-page),无,无,无,无,页面切换正常,不适用,不适用,PASS,admin.js:81-89; HTML:line36
+总览,侧边栏导航,⚙️ 运行状态,a[data-tab="status-page"],导航链接,true,switchTab(status-page),无,无,无,无,页面切换正常,不适用,不适用,PASS,admin.js:81-89; HTML:line37
+总览,页面标题,总览,#page-title,文本标签,false,无,无,无,无,无,初始化显示,不适用,不适用,PASS,HTML:line49
+总览,刷新按钮,🔄 刷新,button[onclick="refreshAll()"],按钮,true,refreshAll(),GET,/api/admin/dashboard+其他,200,{status:"ok",...},无,刷新后重新加载所有面板,不适用,不适用,PASS,admin.js:100-103; HTML:line53
+总览,关键指标-当前模式,加载中…,#dash-mode,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{currentMode:"..."},无,显示当前模式,不适用,不适用,PASS,admin.js:168; HTML:line65
+总览,关键指标-当前Slot,加载中…,#dash-slot,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{currentSlot:"..."},无,显示当前Slot,不适用,不适用,PASS,admin.js:169; HTML:line69
+总览,关键指标-新闻数量,加载中…,#dash-news,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{newsItemCount:N},无,显示新闻数量,不适用,不适用,PASS,admin.js:172; HTML:line73
+总览,关键指标-当前frameId,加载中…,#dash-frameid,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{frameId:"..."},无,显示frameId,不适用,不适用,PASS,admin.js:170; HTML:line77
+总览,关键指标-Frame缓存,加载中…,#dash-cache,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{frameCacheEntries:N},无,显示缓存数量,不适用,不适用,PASS,admin.js:173; HTML:line81
+总览,关键指标-运行时间,加载中…,#dash-uptime,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{uptimeSeconds:N},无,显示运行时间,不适用,不适用,PASS,admin.js:174; HTML:line85
+总览,系统摘要-手动覆盖,加载中…,#dash-override,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{manualOverride:...},无,显示覆盖状态,不适用,不适用,PASS,admin.js:175; HTML:line96
+总览,系统摘要-覆盖过期,--,#dash-override-expires,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{overrideExpiresAt:...},无,显示过期时间,不适用,不适用,PASS,admin.js:176; HTML:line100
+总览,系统摘要-最近发布时间,加载中…,#dash-lastpublish,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{lastPublishedAt:...},无,显示最近发布时间,不适用,不适用,PASS,admin.js:177; HTML:line104
+总览,系统摘要-下次切换,--,#dash-nextswitch,文本显示,false,loadDashboard()填充,GET,/api/admin/dashboard,200,{nextSwitchLocal:...},无,显示下次切换时间,不适用,不适用,PASS,admin.js:171; HTML:line108
+总览,控制方式说明,加载中…,#control-mode-info,容器,false,loadDashboard()创建#dash-control-mode但未更新#control-mode-info,GET,/api/admin/dashboard,200,{manualOverride:...},无,#control-mode-info永远显示"加载中…"因为JS操作的是#dash-control-mode,不适用,不适用,INFINITE_LOADING,admin.js:178-191 使用$('dash-control-mode')而非$('control-mode-info'); HTML:line116
+总览,快捷操作-立即发布新闻,📰 立即发布所选新闻,button[onclick="publishNews()"],按钮,true,publishNews(),POST,/api/admin/publish/news,200,{frameId:"..."},无,调用publishNews->saveNewsDraft->showConfirm->POST发布,不适用,不适用,PASS,admin.js:337-354; HTML:line123
+总览,快捷操作-退出手动覆盖,🔁 退出手动覆盖恢复自动排程,button[onclick="clearOverride()"],按钮,true,clearOverride(),DELETE,/api/admin/override,200,{status:"ok"},无,确认后清除覆盖,不适用,不适用,PASS,admin.js:649-655; HTML:line124
+总览,快捷操作-前往图片库,🖼️ 前往图片库,button[onclick="switchTab('photos-page')"],按钮,true,switchTab(photos-page),无,无,无,无,切换到图片库页面,不适用,不适用,PASS,admin.js:82-89; HTML:line125
+总览,快捷操作-刷新状态,🔄 刷新状态,button[onclick="refreshAll()"],按钮,true,refreshAll(),GET,多个API,200,混合,无,刷新所有面板,不适用,不适用,PASS,admin.js:100-103; HTML:line126
+总览,快捷操作-发布消息区域,隐藏的msg-area,#publish-msg,文本显示区域,false,publishNews()填充,无,无,无,无,发布时显示消息,不适用,不适用,PASS,admin.js:339-353; HTML:line128-129
+新闻审查,新闻列表标题,新闻列表,.card-title (新闻列表),标题,false,无,无,无,无,无,显示,不适用,不适用,PASS,HTML:line139
+新闻审查,刷新新闻列表,🔄 刷新,button[onclick="loadNewsReview()"],按钮,true,loadNewsReview(),GET,/api/admin/news,200,{selected:[...],candidates:[...]},无,重新加载新闻列表,不适用,不适用,PASS,admin.js:197-244; HTML:line141
+新闻审查,保存草稿,💾 保存草稿,button[onclick="saveNewsDraft()"],按钮,true,saveNewsDraft(),POST,/api/admin/news/draft,200,{status:"ok",count:N},无,保存新闻草稿,不适用,不适用,PASS,admin.js:298-335; HTML:line142
+新闻审查,新闻列表容器,加载中…,#news-list,容器,false,loadNewsReview()填充,GET,/api/admin/news,200,{selected:[]},无,加载新闻列表,不适用,不适用,PASS,admin.js:197-244; HTML:line145-147
+新闻审查,新闻详情面板,从左侧列表选择一条新闻查看详情,#news-detail,详情面板,false,selectNews()渲染,无,无,无,无,点击新闻显示详情,不适用,不适用,PASS,admin.js:246-282; HTML:line154-156
+新闻审查,显示原文按钮,📄 显示原文,#btn-toggle-original,按钮,true,toggleOriginal(),无,无,无,无,切换原文显示,不适用,不适用,PASS,admin.js:285-296; HTML:line164
+新闻审查,新闻卡片-上移按钮,⬆ 上移,button[onclick*="moveNews("],按钮,true,moveNews(idx,-1),无,无,无,无,移动新闻排序,不适用,不适用,PASS,admin.js:356-364; HTML通过JS生成
+新闻审查,新闻卡片-下移按钮,⬇ 下移,button[onclick*="moveNews("],按钮,true,moveNews(idx,1),无,无,无,无,移动新闻排序,不适用,不适用,PASS,admin.js:356-364; HTML通过JS生成
+新闻审查,新闻卡片-移除按钮,移除,button[onclick*="removeNews("],按钮,true,removeNews(idx),无,无,无,无,移除新闻,不适用,不适用,PASS,admin.js:366-383; HTML通过JS生成
+新闻审查,新闻卡片-原文链接,原文,a[href][target="_blank"],链接,true,无(直接链接),无,无,无,无,打开原文链接,不适用,不适用,PASS,admin.js:231; HTML通过JS生成
+新闻审查,新闻卡片-选择,点击卡片,div.news-card,可点击卡片,true,selectNews(idx),无,无,无,无,选择新闻显示详情,不适用,不适用,PASS,admin.js:233; HTML通过JS生成
+图片库,上传图片-文件选择,选择文件,#photo-file,文件输入,false,photoForm提交,无,无,无,无,选择上传文件,不适用,不适用,PASS,HTML:line180
+图片库,上传图片-上传按钮,📤 上传,button[type="submit"],按钮,true,photoForm提交,POST,/api/admin/photos/upload,503,{error:"安全分类器未就绪"},无,上传禁用,不适用,不适用,PASS(返回503),admin.js:454-477; HTML:line181; server.js:3568-3579
+图片库,图片库标题,图片库,.card-title (图片库),标题,false,无,无,无,无,无,显示,不适用,不适用,PASS,HTML:line188
+图片库,图片数量,--,#photo-count,文本显示,false,loadPhotos()填充,无,无,无,无,显示图片数量,不适用,不适用,PASS,admin.js:393-394; HTML:line189
+图片库,图片网格,加载中…,#photo-grid,容器,false,loadPhotos()填充,GET,/api/admin/photos,200,{photos:[...],uploadAvailable:false},无,加载图片列表,不适用,不适用,PASS,admin.js:386-432; HTML:line191-193
+图片库,图片卡片-编辑按钮,编辑,button[onclick*="openEditor("],按钮,true,openEditor(id),GET,/api/admin/photos/:id（缺失）,404（预期）,(无路由),无,切换到编辑页,不适用,不适用,BACKEND_ROUTE_MISSING,admin.js:500; server.js缺失GET /api/admin/photos/:id路由
+图片库,图片卡片-发布按钮,发布,button[onclick*="publishPhoto("],按钮,true,publishPhoto(id),POST,/api/admin/publish/photo,200,{frameId:"..."},无,发布图片,不适用,不适用,PASS,admin.js:485-490; server.js:3326
+图片库,图片卡片-删除按钮,删除,button[onclick*="deletePhoto("],按钮,true,deletePhoto(id),DELETE,/api/admin/photos/:id（缺失）,404（预期）,(无路由),无,确认后删除,不适用,不适用,BACKEND_ROUTE_MISSING,admin.js:479-483; server.js缺失DELETE /api/admin/photos/:id路由
+图片编辑,编辑标题,#editor-title 图片编辑,文本标签,false,openEditor()设置,GET,/api/admin/photos/:id（缺失）,404（预期）,(无路由),无,显示图片标题,不适用,不适用,BACKEND_ROUTE_MISSING,admin.js:500-501; server.js缺失路由
+图片编辑,返回图片库,← 返回图片库,.editor-close-btn,按钮,true,switchTab(photos-page),无,无,无,无,切换到图片库,不适用,不适用,PASS,admin.js:506-510
+图片编辑,亮度滑块,亮度,input[oninput*="updateEditorParam('brightness'"],滑块,true,updateEditorParam(brightness,val),无,无,无,无,调整亮度,不适用,不适用,PASS,admin.js:582; HTML:line211
+图片编辑,对比度滑块,对比度,input[oninput*="updateEditorParam('contrast'"],滑块,true,updateEditorParam(contrast,val),无,无,无,无,调整对比度,不适用,不适用,PASS,admin.js:582; HTML:line214
+图片编辑,饱和度滑块,饱和度,input[oninput*="updateEditorParam('saturation'"],滑块,true,updateEditorParam(saturation,val),无,无,无,无,调整饱和度,不适用,不适用,PASS,admin.js:582; HTML:line217
+图片编辑,Gamma滑块,Gamma,input[oninput*="updateEditorParam('gamma'"],滑块,true,updateEditorParam(gamma,val),无,无,无,无,调整Gamma,不适用,不适用,PASS,admin.js:582; HTML:line220
+图片编辑,旋转选择,旋转,select[onchange*="updateEditorParam('rotate'"],下拉选择,true,updateEditorParam(rotate,val),无,无,无,无,选择旋转角度,不适用,不适用,PASS,admin.js:582; HTML:line223
+图片编辑,保存编辑,💾 保存编辑,button[onclick="saveEdit()"],按钮,true,saveEdit(),POST,/api/admin/photos/:id/save-edit（缺失）,404（预期）,(无路由),无,尝试保存编辑,不适用,不适用,BACKEND_ROUTE_MISSING,admin.js:587-591; server.js缺失POST /api/admin/photos/:id/save-edit路由
+图片编辑,发布到电子纸,📤 发布到电子纸,button[onclick*="publishPhoto("],按钮,true,publishPhoto(EDITOR_STATE.id),POST,/api/admin/publish/photo,200,{frameId:"..."},无,发布图片到电子纸,不适用,不适用,PASS,admin.js:485-490; server.js:3326
+发布中心,说明文字,版本恢复说明,.card p,文本,false,无,无,无,无,无,显示说明,不适用,不适用,PASS,HTML:line240
+发布中心,版本恢复预览(隐藏),版本恢复预览,#rollback-preview,面板,false,rollback()显示,无,无,无,无,默认隐藏,不适用,不适用,PASS(默认隐藏),HTML:line242-249
+发布中心,确认恢复(预览内),确认恢复,button[onclick="confirmRollback()"],按钮,true,❌ confirmRollback不存在,无,无,无,参考错误: confirmRollback is not defined,按钮存在但点击会报JS错误,不适用,不适用,FRONTEND_HANDLER_MISSING,admin.js未定义confirmRollback; HTML:line246
+发布中心,取消(预览内),取消,button[onclick="closeRollbackPreview()"],按钮,true,❌ closeRollbackPreview不存在,无,无,无,参考错误: closeRollbackPreview is not defined,按钮存在但点击会报JS错误,不适用,不适用,FRONTEND_HANDLER_MISSING,admin.js未定义closeRollbackPreview; HTML:line247
+发布中心,发布记录标题,发布记录,.card-title (发布记录),标题,false,无,无,无,无,无,显示,不适用,不适用,PASS,HTML:line252
+发布中心,刷新发布记录,🔄 刷新,button[onclick="loadPublishHistory()"],按钮,true,loadPublishHistory(),GET,/api/admin/publish-history,200,{history:[...]},无,重新加载发布记录,不适用,不适用,PASS,admin.js:594-625; HTML:line253
+发布中心,发布记录列表,加载中…,#publish-history-list,容器,false,loadPublishHistory()填充,GET,/api/admin/publish-history,200,{history:[]},无,显示发布记录,不适用,不适用,PASS,admin.js:594-625; HTML:line255
+发布中心,恢复此版本按钮,恢复此版本,button[onclick*="rollback("],按钮,true,rollback(id),POST,/api/admin/rollback,200,{frameId:"..."},无,确认后回滚,不适用,不适用,PASS,admin.js:627-646; server.js:3520
+运行状态,健康检查卡片,/health/live -> 加载中…,#health-live,文本显示,false,loadHealth()填充,GET,/health/live,200,{status:"ok"},无,显示健康状态,不适用,不适用,PASS,admin.js:658-661; HTML:line266
+运行状态,健康检查卡片,/health/ready -> 加载中…,#health-ready,文本显示,false,loadHealth()填充,GET,/health/ready,200,{status:"ok"},无,显示就绪状态,不适用,不适用,PASS,admin.js:662-664; HTML:line270
+运行状态,Frame状态卡片,当前frameId -> 加载中…,#status-frameid,文本显示,false,loadStatus()填充,GET,/api/health.json,200,{frameId:"..."},无,显示frameId,不适用,不适用,PASS,admin.js:669-711; HTML:line291
+运行状态,内容与缓存卡片,新闻数量 -> 加载中…,#status-news,文本显示,false,loadStatus()填充,GET,/api/health.json,200,{newsItemCount:N},无,显示新闻数量,不适用,不适用,PASS,admin.js:685; HTML:line316
+运行状态,内容与缓存卡片,图片数量 -> --,#status-photos,文本显示,false,loadStatus()填充,GET,/api/health.json,200,{photoCount:N},无,显示图片数量,不适用,不适用,PASS,admin.js:686; HTML:line320
+运行状态,服务配置卡片,MQTT状态 -> --,#status-mqtt,文本显示,false,loadStatus()填充,GET,/api/health.json,200,{mqttEnabled:bool},无,显示MQTT状态,不适用,不适用,PASS,admin.js:693-697; HTML:line366
+登录覆盖层,登录页,电子纸管理后台输入管理令牌,#login-overlay,登录表单,false,loginForm.addEventListener(submit),POST,/api/admin/dashboard(GET),200或401,{status:"ok"},无,输入TOKEN登录,不适用,不适用,PASS,admin.js:68-79; HTML:line12-22
+登录覆盖层,登录按钮,登录,button[type="submit"],提交按钮,true,loginForm提交,GET,/api/admin/dashboard,200,{status:"ok"},无,验证TOKEN后登录,不适用,不适用,PASS,admin.js:70-78; HTML:line19
+登录覆盖层,令牌输入框,输入管理令牌,#login-token,密码输入框,false,loginForm读取,无,无,无,无,输入TOKEN,不适用,不适用,PASS,HTML:line17
+全局,错误提示浮层,后台加载失败: xxx,#page-error-box,错误提示,false,showErrorBox()创建,无,无,无,无,显示加载错误,不适用,不适用,PASS(仅错误时显示),admin.js:14-24
+全局,toast提示,动态生成,.toast,消息提示,false,toast()创建,无,无,无,无,显示操作结果提示,不适用,不适用,PASS,admin.js:46
+全局,确认对话框,动态生成,.confirm-overlay,模态对话框,false,showConfirm()创建,无,无,无,无,确认操作对话框,不适用,不适用,PASS,admin.js:145-153

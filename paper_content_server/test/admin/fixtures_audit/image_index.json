@@ -1,0 +1,44 @@
+[
+  {
+    "id": "photo-audit-001",
+    "title": "测试图片1 - 风景",
+    "source": "测试源",
+    "width": 800,
+    "height": 480,
+    "theme": "cinematic",
+    "kind": "shot",
+    "poolType": "storyboard",
+    "safetyStatus": "approved",
+    "createdAt": "2026-07-15T08:00:00.000Z",
+    "processedPngPath": "",
+    "rawPath": ""
+  },
+  {
+    "id": "photo-audit-002",
+    "title": "测试图片2 - 人物",
+    "source": "测试源",
+    "width": 800,
+    "height": 480,
+    "theme": "portrait",
+    "kind": "shot",
+    "poolType": "storyboard",
+    "safetyStatus": "pending",
+    "createdAt": "2026-07-15T08:05:00.000Z",
+    "processedPngPath": "",
+    "rawPath": ""
+  },
+  {
+    "id": "photo-audit-003",
+    "title": "测试图片3 - 夜景",
+    "source": "测试源",
+    "width": 800,
+    "height": 480,
+    "theme": "night",
+    "kind": "storyboard",
+    "poolType": "storyboard",
+    "safetyStatus": "approved",
+    "createdAt": "2026-07-15T08:10:00.000Z",
+    "processedPngPath": "",
+    "rawPath": ""
+  }
+]
