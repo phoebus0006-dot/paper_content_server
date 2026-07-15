@@ -636,11 +636,11 @@ function loadPublishHistory(){
 }
 
 
-var ROLLBACK_TARGET = null;
-function rollback(id){
-  ROLLBACK_TARGET = id;
-  var rec = (STATE.publishHistory&&STATE.publishHistory.history||[]).find(function(h){return h.id===id});
-  if(!rec) { toast('记录未找到', 'error'); return; }
+  var ROLLBACK_TARGET = null;
+  function rollback(id){
+    ROLLBACK_TARGET = id;
+    var rec = (STATE.publishHistory||[]).find(function(h){return h.id===id});
+    if(!rec) { toast('记录未找到', 'error'); return; }
   var rbox = $('rollback-preview');
   var rcon = $('rollback-preview-content');
   rcon.innerHTML = '<div><strong>类型:</strong> '+(rec.type==='news'?'新闻':'图片')+'</div>'+
