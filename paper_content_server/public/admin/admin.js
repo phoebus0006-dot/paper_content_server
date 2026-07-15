@@ -250,24 +250,25 @@ function loadContentSyncStatus() {
 function triggerNewsSync() {
   $('btn-sync-news').disabled = true;
   api('/api/admin/content-sync/news', { method: 'POST' }).then(function(res) {
-    showMsg('sync-msg', '新闻同步已触发后台运行 (Job ID: ' + res.jobId + ')', 'success');
+    toast('新闻同步已触发后台运行 (Job ID: ' + res.jobId + ')', 'success');
     setTimeout(function() { $('btn-sync-news').disabled = false; loadContentSyncStatus(); }, 3000);
   }).catch(function(e) {
     $('btn-sync-news').disabled = false;
-    showMsg('sync-msg', '新闻同步触发失败: ' + (e&&e.message||e), 'error');
+    toast('新闻同步触发失败: ' + (e&&e.message||e), 'error');
   });
 }
 
 function triggerPhotoSync() {
   $('btn-sync-photos').disabled = true;
   api('/api/admin/content-sync/photos', { method: 'POST' }).then(function(res) {
-    showMsg('sync-msg', '图片同步已触发后台运行 (Job ID: ' + res.jobId + ')', 'success');
+    toast('图片同步已触发后台运行 (Job ID: ' + res.jobId + ')', 'success');
     setTimeout(function() { $('btn-sync-photos').disabled = false; loadContentSyncStatus(); }, 3000);
   }).catch(function(e) {
     $('btn-sync-photos').disabled = false;
-    showMsg('sync-msg', '图片同步触发失败: ' + (e&&e.message||e), 'error');
+    toast('图片同步触发失败: ' + (e&&e.message||e), 'error');
   });
 }
+
 
 // ── News Review ──
 function loadNewsReview(){
