@@ -93,7 +93,7 @@ document.querySelectorAll('.sidebar nav a').forEach(function(a){
 });
 
 function loadAll(){
-  loadDashboard();loadNewsReview();loadPhotos();loadPublishHistory();loadStatus();loadHealth();
+  loadControlMode();loadDashboard();loadNewsReview();loadPhotos();loadPublishHistory();loadStatus();loadHealth();
   updateRefreshTime();
 }
 
@@ -162,6 +162,37 @@ function addStatusDetail(el,text,type){
 }
 
 // ── Dashboard ──
+function loadControlMode() {
+  setText('control-mode-info', '加载中…', '加载中…');
+  setText('status-mode', '加载中…', '加载中…');
+  setText('dash-mode', '加载中…', '加载中…');
+  
+  api('/api/admin/control-mode').then(function(d) {
+    if (!d) return;
+    
+    var infoHtml = '<div class="control-mode-title">控制模式: ' + esc(d.modeLabel || '未知') + '</div>';
+    infoHtml += '<div>' + esc(d.description || '') + '</div>';
+    if (d.mode === 'manual' && d.overrideExpiresAt) {
+      infoHtml += '<div><small class="muted">到期时间: ' + esc(d.overrideExpiresAt) + '</small></div>';
+    } else if (d.mode !== 'manual' && d.slot) {
+      infoHtml += '<div><small class="muted">当前 Slot: ' + esc(d.slot) + (d.nextSwitchAt ? ' (下次切换: ' + esc(d.nextSwitchAt) + ')' : '') + '</small></div>';
+    }
+    
+    var box = $('control-mode-info');
+    if (box) box.innerHTML = infoHtml;
+    
+    setText('dash-mode', d.modeLabel || '未知', '未知');
+    setText('status-mode', d.modeLabel || '未知', '未知');
+  }).catch(function(e) {
+    var box = $('control-mode-info');
+    if (box) {
+      box.innerHTML = '<div class="error">加载失败: ' + esc(e&&e.message||e) + '</div><button class="btn btn-sm btn-outline" style="margin-top:6px" onclick="loadControlMode()">重试</button>';
+    }
+    setText('dash-mode', '加载失败', '加载失败');
+    setText('status-mode', '加载失败', '加载失败');
+  });
+}
+
 function loadDashboard(){
   api('/api/admin/dashboard').then(function(d){
     if(!d)return;
@@ -175,20 +206,6 @@ function loadDashboard(){
     setText('dash-override',d.manualOverride||'auto','auto');
     setText('dash-override-expires',d.overrideExpiresAt,'未设置');
     setText('dash-lastpublish',d.lastPublishedAt||'未发布','未发布');
-    var modeEl=$('dash-control-mode');
-    if(!modeEl){
-      modeEl=document.createElement('div');
-      modeEl.id='dash-control-mode';
-      modeEl.className='control-mode-box';
-      var dash=$('dashboard');
-      var cards=dash.querySelectorAll('.card');
-      cards[cards.length-1].parentNode.insertBefore(modeEl,cards[cards.length-1].nextSibling);
-    }
-    if(d.manualOverride==null||d.manualOverride===undefined){
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>自动调度 — 由时间 SLOT 调度器自动选择内容';
-    }else{
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>手动覆盖 — 当前内容由管理员手动指定，到期时间: '+(d.overrideExpiresAt||'未知');
-    }
     STATE.dashboard=d;
   }).catch(function(e){showErrorBox('dashboard load failed: '+(e&&e.message||e))});
 }
@@ -627,25 +644,46 @@ function loadPublishHistory(){
 var ROLLBACK_TARGET_ID = null;
 
 function rollback(id){
-  var entries=STATE.publishHistory||[];
-  var entry=null;
-  for(var i=0;i<entries.length;i++){
-    if(entries[i].id===id||entries[i].snapshotId===id){
-      entry=entries[i];
-      break;
-    }
-  }
-  if(!entry) return;
   ROLLBACK_TARGET_ID = id;
   var el=$('rollback-preview-content');
   if(el){
-    el.innerHTML='<div style="line-height:1.6;font-size:14px;">' +
-      '<div><strong>发布类型:</strong> ' + esc(entry.type||'--') + '</div>' +
-      '<div><strong>发布时间:</strong> ' + esc(((entry.publishedAt||'').slice(0,19)||'--')) + '</div>' +
-      '<div><strong>Frame ID:</strong> ' + esc(entry.frameId||'--') + '</div>' +
-      '</div>';
+    el.innerHTML='<div class="empty-state">正在加载预览...</div>';
   }
   show($('rollback-preview'));
+  
+  api('/api/admin/publish-history/' + encodeURIComponent(id) + '/preview').then(function(d){
+    if(!d || !el) return;
+    
+    var html = '<div style="line-height:1.6;font-size:14px;margin-bottom:12px;">' +
+      '<div><strong>发布类型:</strong> ' + esc(d.type||'--') + '</div>' +
+      '<div><strong>发布时间:</strong> ' + esc(((d.publishedAt||'').slice(0,19)||'--')) + '</div>' +
+      '<div><strong>Frame ID:</strong> ' + esc(d.frameId||'--') + '</div>' +
+      '</div>';
+      
+    if(d.type === 'news' && d.preview && d.preview.items) {
+      html += '<div style="margin-top:12px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:8px;">';
+      html += '<div style="font-weight:bold;margin-bottom:8px;">包含的新闻 (' + d.preview.items.length + '条):</div>';
+      d.preview.items.forEach(function(item, idx) {
+        html += '<div style="margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (idx+1) + '. ' + esc(item.title||'无标题') + '</div>';
+      });
+      html += '</div>';
+    } else if (d.type === 'photo' && d.preview) {
+      html += '<div style="margin-top:12px;border:1px solid var(--border);border-radius:4px;padding:8px;text-align:center;">';
+      html += '<div style="font-weight:bold;margin-bottom:8px;text-align:left;">图片: ' + esc(d.preview.title||'未知') + '</div>';
+      if (d.preview.thumbnailUrl) {
+        html += '<img src="' + esc(d.preview.thumbnailUrl) + '" style="max-width:100%;max-height:200px;object-fit:contain;">';
+      }
+      html += '</div>';
+    }
+    
+    if(!d.canRollback) {
+      html += '<div class="error" style="margin-top:10px;">此版本已被标记为不可恢复，可能文件已损坏或丢失。</div>';
+    }
+    
+    el.innerHTML = html;
+  }).catch(function(e){
+    if(el) el.innerHTML = '<div class="error">无法加载预览: ' + esc(e.message||e) + '</div>';
+  });
 }
 
 function confirmRollback(){
@@ -655,8 +693,7 @@ function confirmRollback(){
       toast('已回滚','success');
       hide($('rollback-preview'));
       ROLLBACK_TARGET_ID = null;
-      loadDashboard();
-      loadPublishHistory();
+      loadAll();
     } else {
       toast('回滚失败','error');
     }
@@ -674,7 +711,7 @@ function closeRollbackPreview(){
 function clearOverride(){
   showConfirm('退出手动覆盖','确认退出手动覆盖，恢复自动排程？清除当前手动覆盖或焦点锁定后，后续内容由时间 SLOT 调度器自动选择。',function(){
     api('/api/admin/override',{method:'DELETE'}).then(function(){
-      toast('已恢复自动调度','success');loadDashboard()
+      toast('已恢复自动调度','success');loadAll()
     }).catch(function(e){toast('操作失败: '+(e.message||e),'error')});
   });
 }
