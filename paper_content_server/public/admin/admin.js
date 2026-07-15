@@ -38,6 +38,13 @@ function api(path,opts){
     if(r.status===401||r.status===403){
       if(ACCESS_MODE==='token'&&!TOKEN){showLogin();throw new Error('unauthorized')}
     }
+    if(!r.ok){
+      return r.text().then(function(t){
+        var msg=t;
+        try{var j=JSON.parse(t);msg=j.error||j.message||t;}catch(e){}
+        throw new Error('['+r.status+'] '+msg);
+      });
+    }
     if(r.status===204)return null;
     return r.json().catch(function(){return null});
   });
