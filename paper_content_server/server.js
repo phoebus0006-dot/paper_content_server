@@ -2700,12 +2700,15 @@ function ensureCachedFrame(photo, now) {
   return null;
 }
 
-function readBody(req, limit) {
+function readBody(req, limit, asBuffer) {
   return new Promise(function(ok, fail) {
     var chunks = [];
     var total = 0;
     req.on('data', function(c) { total += c.length; if (limit && total > limit) { req.destroy(); fail(new Error('too large')); return; } chunks.push(c); });
-    req.on('end', function() { ok(Buffer.concat(chunks).toString('utf8')); });
+    req.on('end', function() {
+      var b = Buffer.concat(chunks);
+      ok(asBuffer ? b : b.toString('utf8'));
+    });
     req.on('error', fail);
   });
 }
@@ -3248,6 +3251,12 @@ async function handleRequest(req, res) {
       if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
+      if (!snap) {
+        try {
+          var c = await getContentForNow(new Date());
+          snap = c.snapshot;
+        } catch(e) {}
+      }
       var newsItemCount = 0;
       try {
         var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
@@ -3262,6 +3271,12 @@ async function handleRequest(req, res) {
       if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var snap2 = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
+      if (!snap2) {
+        try {
+          var c2 = await getContentForNow(new Date());
+          snap2 = c2.snapshot;
+        } catch(e) {}
+      }
       var mode = runtime.manualOverride ? 'manual' : (snap2 ? snap2.mode : 'unknown');
       var description = '';
       if (mode === 'manual') description = '手动覆盖 — 当前内容由管理员手动指定';
@@ -3763,7 +3778,7 @@ async function handleRequest(req, res) {
         var fname = req.headers['x-file-name'] ? decodeURIComponent(req.headers['x-file-name']) : 'upload.png';
         var ext = path.extname(fname).toLowerCase();
         if (!ext) ext = '.png';
-        var rawBuf = await readBody(req, 20*1024*1024);
+        var rawBuf = await readBody(req, 20*1024*1024, true);
         var fid = 'upload-' + Date.now().toString(36);
         var rawDir = path.join(DATA_DIR, 'raw_images');
         if (!fs.existsSync(rawDir)) fs.mkdirSync(rawDir, { recursive: true });
@@ -3776,6 +3791,7 @@ async function handleRequest(req, res) {
         require('child_process').spawn('npm', ['run', 'process'], { detached: true, stdio: 'ignore' }).unref();
         respondJson(res, { status: 'ok', photoId: fid });
       } catch (e) {
+        console.error('Upload error:', e);
         failJson(res, 500, 'Upload failed: ' + e.message);
       }
       return;
@@ -3841,7 +3857,7 @@ async function handleRequest(req, res) {
     if (parsed.pathname === '/api/admin/photo-preview' || parsed.pathname === '/api/admin/photo-eink-preview') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       try {
-        var pId = parsed.query.photoId;
+        var pId = parsed.searchParams.get('photoId');
         var imgIdx = [];
         try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
         var pEntry = imgIdx.find(function(e) { return e.id === pId; });
@@ -3849,14 +3865,15 @@ async function handleRequest(req, res) {
         var srcPath = pEntry.rawPath ? path.join(ROOT_DIR, pEntry.rawPath) : (pEntry.processedPngPath ? path.join(ROOT_DIR, pEntry.processedPngPath) : '');
         if (!fs.existsSync(srcPath)) { failJson(res, 404, 'source file not found'); return; }
         
-        var b = parseFloat(parsed.query.brightness) || 1.0;
-        var s = parseFloat(parsed.query.saturation) || 1.0;
+        var b = parseFloat(parsed.searchParams.get('brightness')) || 1.0;
+        var s = parseFloat(parsed.searchParams.get('saturation')) || 1.0;
         var sharp = require('sharp');
         var outBuf = await sharp(srcPath).rotate().resize(800, 480, { fit: 'cover', position: 'centre' })
           .modulate({ brightness: b, saturation: s }).png().toBuffer();
         res.writeHead(200, { 'Content-Type': 'image/png' });
         res.end(outBuf);
       } catch (err) {
+        console.error('Preview error:', err);
         failJson(res, 500, 'preview failed: ' + err.message);
       }
       return;

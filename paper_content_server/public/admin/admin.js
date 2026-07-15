@@ -278,52 +278,62 @@ function triggerPhotoSync() {
 
 // ── News Review ──
 function loadNewsReview(){
+  var el=$('news-list');
+  if(!el)return;
+  el.innerHTML='<div class="empty-state">加载中...</div>';
   api('/api/admin/news').then(function(d){
     if(!d)return;
-    var el=$('news-list');
-    if(!el)return;
-    el.innerHTML='';
+    STATE.news=d;
     var items=(d.selected||[]);
     NEWS_BASELINE=JSON.parse(JSON.stringify(items));
-    if(items.length===0){
-      el.innerHTML='<div class="empty-state">暂无新闻数据。请检查新闻源配置或刷新。</div>';
-      return;
-    }
-    items.forEach(function(item,i){
-      var card=document.createElement('div');
-      card.className='news-card'+(i===SELECTED_NEWS_IDX?' selected':'');
-      var statusBadge='<span class="badge '+(item.translationStatus==='translated'?'badge-status-translated':item.translationStatus==='original'?'badge-status-original':item.translationStatus==='missing-key'?'badge-status-missing-key':item.translationStatus==='failed'?'badge-status-failed':'badge-status-stub')+'">'+(item.translationStatus||'unknown')+'</span>';
-      var isFirst=(i===0);
-      var isLast=(i===items.length-1);
-      var upDisabled=isFirst?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
-      var downDisabled=isLast?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
-      var qualityHtml=renderQualityRules(item);
-      card.innerHTML='<div class="meta">'+
-        '<span class="badge badge-category">'+(item.category||'综合')+'</span>'+
-        statusBadge+
-        '<span class="small muted">'+(item.source||'')+'</span>'+
-        '<span class="small muted">'+(item.titleLen||0)+'字 / '+(item.summaryLen||0)+'字</span>'+
-        '</div>'+
-        qualityHtml+
-        '<div class="news-title-row">'+esc(item.title||'无标题')+'</div>'+
-        '<div class="news-summary-row">'+esc(item.summary||'无摘要')+'</div>'+
-        '<div class="actions">'+
-        '<button'+upDisabled+' onclick="event.stopPropagation();moveNews('+i+',-1)">⬆ 上移</button>'+
-        '<button'+downDisabled+' onclick="event.stopPropagation();moveNews('+i+',1)">⬇ 下移</button>'+
-        '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')">移除</button>'+
-        '<a href="'+(item.url||'#')+'" target="_blank" class="btn btn-sm btn-outline" onclick="event.stopPropagation()">原文</a>'+
-        '</div>';
-      card.onclick=function(){selectNews(i);};
-      el.appendChild(card);
-    });
-    STATE.news=d;
-    if(SELECTED_NEWS_IDX>=0&&SELECTED_NEWS_IDX<items.length){
-      renderNewsDetail(items[SELECTED_NEWS_IDX]);
-    }
+    renderNewsList(items);
   }).catch(function(e){
     var el=$('news-list');
     if(el)el.innerHTML='<div class="empty-state">新闻加载失败: '+esc(e.message||e)+'</div>';
   });
+}
+
+function renderNewsList(items) {
+  var el=$('news-list');
+  if(!el)return;
+  el.innerHTML='';
+  if(items.length===0){
+    el.innerHTML='<div class="empty-state">暂无新闻数据。请检查新闻源配置或刷新。</div>';
+    return;
+  }
+  items.forEach(function(item,i){
+    var card=document.createElement('div');
+    card.className='news-card'+(i===SELECTED_NEWS_IDX?' selected':'');
+    var statusBadge='<span class="badge '+(item.translationStatus==='translated'?'badge-status-translated':item.translationStatus==='original'?'badge-status-original':item.translationStatus==='missing-key'?'badge-status-missing-key':item.translationStatus==='failed'?'badge-status-failed':'badge-status-stub')+'">'+(item.translationStatus||'unknown')+'</span>';
+    var isFirst=(i===0);
+    var isLast=(i===items.length-1);
+    var upDisabled=isFirst?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
+    var downDisabled=isLast?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
+    var qualityHtml=renderQualityRules(item);
+    card.innerHTML='<div class="meta">'+
+      '<span class="badge badge-category">'+(item.category||'综合')+'</span>'+
+      statusBadge+
+      '<span class="small muted">'+(item.source||'')+'</span>'+
+      '<span class="small muted">'+(item.titleLen||0)+'字 / '+(item.summaryLen||0)+'字</span>'+
+      '</div>'+
+      qualityHtml+
+      '<div class="news-title-row">'+esc(item.title||'无标题')+'</div>'+
+      '<div class="news-summary-row">'+esc(item.summary||'无摘要')+'</div>'+
+      '<div class="actions">'+
+      '<button'+upDisabled+' onclick="event.stopPropagation();moveNews('+i+',-1)">⬆ 上移</button>'+
+      '<button'+downDisabled+' onclick="event.stopPropagation();moveNews('+i+',1)">⬇ 下移</button>'+
+      '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')">移除</button>'+
+      '<a href="'+(item.url||'#')+'" target="_blank" class="btn btn-sm btn-outline" onclick="event.stopPropagation()">原文</a>'+
+      '</div>';
+    card.onclick=function(){selectNews(i);};
+    el.appendChild(card);
+  });
+  if(SELECTED_NEWS_IDX>=0&&SELECTED_NEWS_IDX<items.length){
+    renderNewsDetail(items[SELECTED_NEWS_IDX]);
+  } else {
+    var detail = $('news-detail');
+    if (detail) detail.innerHTML = '<div class="empty-state">请选择左侧新闻进行编辑</div>';
+  }
 }
 
 function selectNews(idx){
@@ -443,7 +453,7 @@ function moveNews(idx,dir){
   var tmp=items[idx];items[idx]=items[target];items[target]=tmp;
   if(SELECTED_NEWS_IDX===idx)SELECTED_NEWS_IDX=target;
   else if(SELECTED_NEWS_IDX===target)SELECTED_NEWS_IDX=idx;
-  loadNewsReview();
+  renderNewsList(items);
 }
 
 function removeNews(idx){
@@ -461,7 +471,7 @@ function removeNews(idx){
         if(!used[c.url]){items.push(c);break;}
       }
     }
-    loadNewsReview();
+    renderNewsList(items);
   });
 }
 
