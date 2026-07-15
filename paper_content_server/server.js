@@ -3223,16 +3223,16 @@ async function handleRequest(req, res) {
     }
     if (parsed.pathname === '/admin' || parsed.pathname === '/admin/') {
       var h = serveAdminFile('index.html');
-      if (h) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(h); return; }
+      if (h) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' }); res.end(h); return; }
       res.writeHead(500); res.end('Admin file missing'); return;
     }
     if (parsed.pathname === '/admin/admin.css') {
       var c = serveAdminFile('admin.css');
-      if (c) { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' }); res.end(c); return; }
+      if (c) { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' }); res.end(c); return; }
     }
     if (parsed.pathname === '/admin/admin.js') {
       var j = serveAdminFile('admin.js');
-      if (j) { res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' }); res.end(j); return; }
+      if (j) { res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' }); res.end(j); return; }
     }
 
     if (parsed.pathname === '/api/admin/dashboard') {
@@ -3358,7 +3358,7 @@ async function handleRequest(req, res) {
       var overrideFile = path.join(DATA_DIR, 'admin_override.json');
       var oldOverride = null;
       try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
-      var newOverride = JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
+      var newOverride = JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null, photoId: photoId || undefined }, null, 2);
       fs.writeFileSync(overrideFile, newOverride);
       try {
         if (runtime.publicationService && runtime.snapshotStore) {
