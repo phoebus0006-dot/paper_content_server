@@ -7,7 +7,7 @@ const sharp = require('sharp');
 // Ensure image directory uses proper ENV or fallback
 const IMAGE_DIR = process.env.IMAGE_DIR || path.join(__dirname, '..', 'data', 'images');
 const TEMP_DIR = path.join(IMAGE_DIR, 'tmp');
-const IMPORT_DIR = path.join(IMAGE_DIR, 'local-import');
+const IMPORT_DIR = path.join(IMAGE_DIR, 'local_import');
 
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 if (!fs.existsSync(IMPORT_DIR)) fs.mkdirSync(IMPORT_DIR, { recursive: true });
@@ -86,12 +86,13 @@ async function handlePhotoUpload(req, res) {
     tempFilePath = path.join(TEMP_DIR, finalFileName);
 
     const writeStream = fs.createWriteStream(tempFilePath);
+    writeStream.on('error', () => {}); // Catch destroy errors
+    file.on('error', () => {}); // Prevent unhandled error if writeStream is destroyed
     file.pipe(writeStream);
 
     file.on('limit', () => {
       uploadError = 'File exceeds the 5MB limit.';
-      writeStream.destroy();
-      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+      file.resume();
     });
 
     writeStream.on('close', () => {
@@ -100,7 +101,14 @@ async function handlePhotoUpload(req, res) {
   });
 
   bb.on('finish', async () => {
+    // Wait briefly if file is still saving (busboy finishes before file stream closes)
+    for (let i = 0; i < 20; i++) {
+      if (fileSaved || uploadError) break;
+      await new Promise(r => setTimeout(r, 10));
+    }
+
     if (uploadError) {
+      try { if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); } catch(e){}
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: uploadError }));
       return;
@@ -117,8 +125,11 @@ async function handlePhotoUpload(req, res) {
       const magic = getMagicBytes(tempFilePath);
       if (magic === 'unknown') throw new Error('Invalid file signature or magic bytes.');
 
+      // Read file to buffer to prevent sharp from holding a file lock on Windows
+      const fileBuffer = fs.readFileSync(tempFilePath);
+
       // 2. Decode with Sharp
-      const metadata = await sharp(tempFilePath).metadata();
+      const metadata = await sharp(fileBuffer).metadata();
       if (!metadata || !metadata.width || !metadata.height) throw new Error('Unreadable image metadata.');
 
       // 3. Atomically move to import directory
@@ -126,7 +137,6 @@ async function handlePhotoUpload(req, res) {
       fs.renameSync(tempFilePath, finalFilePath);
 
       // 4. Generate SHA256
-      const fileBuffer = fs.readFileSync(finalFilePath);
       const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
       // 5. Create index record
@@ -135,10 +145,10 @@ async function handlePhotoUpload(req, res) {
         id: photoId,
         photoId: photoId,
         title: 'Uploaded Photo',
-        sourceId: 'local-import',
+        sourceId: 'local_import',
         sourceName: 'Local Import',
         sourceUrl: null,
-        sourceTopic: 'local-import',
+        sourceTopic: 'local_import',
         targetCategory: '综合',
         targetKeyword: '上传',
         fetchedAt: new Date().toISOString(),
@@ -149,7 +159,7 @@ async function handlePhotoUpload(req, res) {
         validationStatus: 'valid',
         validationReason: 'local manual upload',
         fileName: finalFileName,
-        rawPath: path.join('local-import', finalFileName), // relative to IMAGE_DIR
+        rawPath: path.join('local_import', finalFileName), // relative to IMAGE_DIR
         quarantined: false
       };
 
@@ -159,7 +169,7 @@ async function handlePhotoUpload(req, res) {
       res.end(JSON.stringify({ status: 'ok', photoId: photoId, file: finalFileName }));
 
     } catch (err) {
-      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+      try { if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); } catch (e) {}
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Image validation failed: ' + err.message }));
     }
@@ -171,3 +181,4 @@ async function handlePhotoUpload(req, res) {
 module.exports = {
   handlePhotoUpload
 };
+

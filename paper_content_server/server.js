@@ -3568,14 +3568,8 @@ async function handleRequest(req, res) {
     if (parsed.pathname === '/api/admin/photos/upload' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       // Check if photo upload is supported
-      var uploadDisabled = true;
-      var uploadReason = '安全分类器未就绪，暂不可上传';
-      if (uploadDisabled) {
-        failJson(res, 503, uploadReason);
-        return;
-      }
-      // TODO: Implement actual file upload handling
-      failJson(res, 501, '上传功能尚未实现');
+      const { handlePhotoUpload } = require('./lib/photo-upload-service');
+        handlePhotoUpload(req, res);
       return;
     }
 
@@ -4038,6 +4032,7 @@ module.exports = {
   layoutNewsCard,
   NEWS_LAYOUT,
 };
+
 
 
 
