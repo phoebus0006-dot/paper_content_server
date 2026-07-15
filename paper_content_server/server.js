@@ -3357,12 +3357,20 @@ async function handleRequest(req, res) {
       runtime.syncStatus.photos.lastAttemptAt = Date.now();
       
       try {
+        const { runFetchImages } = require('./scripts/fetch-images.js');
         const { runProcessImages } = require('./scripts/process-images.js');
-        runProcessImages({ limit: 0 }).then((results) => {
+        runFetchImages({ limit: 10 }).then((fetchResults) => {
+          return runProcessImages({ limit: 0 }).then((processResults) => {
+            return { fetchResults, processResults };
+          });
+        }).then((results) => {
           runtime.syncStatus.photos.lastSuccessAt = Date.now();
           runtime.syncStatus.photos.lastError = null;
-          if (results) {
-            runtime.syncStatus.photos.itemsProcessed = results.processed || 0;
+          if (results.processResults) {
+            runtime.syncStatus.photos.itemsProcessed = results.processResults.processed || 0;
+          }
+          if (results.fetchResults) {
+            runtime.syncStatus.photos.itemsFetched = results.fetchResults.fetched || 0;
           }
           return loadImageIndex();
         }).then(() => {

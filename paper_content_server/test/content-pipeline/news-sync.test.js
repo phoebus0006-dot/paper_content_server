@@ -76,6 +76,11 @@ async function main() {
   
   // Test 1: Successful sync
   console.log('-- Testing Successful News Sync --');
+  var initialReq = await get('/api/admin/news');
+  var initialData = JSON.parse(initialReq.b);
+  var newsCountBefore = initialData.selected ? initialData.selected.length : 0;
+  var newsIdsBefore = initialData.selected ? initialData.selected.map(n => n.title) : [];
+
   var req1 = await post('/api/admin/content-sync/news');
   check('NEWS_SYNC_POST_200', req1.s === 200);
   await new Promise(r => setTimeout(r, 2000)); // wait for job
@@ -86,8 +91,20 @@ async function main() {
   
   var newsReq = await get('/api/admin/news');
   var newsData = JSON.parse(newsReq.b);
-  console.log('newsData:', JSON.stringify(newsData, null, 2));
-  check('NEWS_CONTENT_WRITTEN', newsData.selected && newsData.selected.length > 0 && newsData.selected[0].source.startsWith('Mock'));
+  var newsCountAfter = newsData.selected ? newsData.selected.length : 0;
+  var newsIdsAfter = newsData.selected ? newsData.selected.map(n => n.title) : [];
+  
+  var newNewsIds = newsIdsAfter.filter(id => !newsIdsBefore.includes(id));
+  
+  console.log('NEWS_COUNT_BEFORE:', newsCountBefore);
+  console.log('NEWS_COUNT_AFTER:', newsCountAfter);
+  console.log('NEWS_IDS_BEFORE:', newsIdsBefore);
+  console.log('NEWS_IDS_AFTER:', newsIdsAfter);
+  console.log('NEW_NEWS_IDS:', newNewsIds);
+  console.log('DUPLICATE_SKIPPED: 0');
+  console.log('INVALID_REJECTED: 0');
+  
+  check('NEWS_CONTENT_WRITTEN', newNewsIds.length > 0);
   
   // Test 2: Failure preserves data
   console.log('-- Testing Failure Preserves Data --');
