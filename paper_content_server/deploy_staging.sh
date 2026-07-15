@@ -7,10 +7,10 @@ echo "Building and deploying to NAS..."
 git archive -o deploy.tar HEAD
 
 # 2. Upload to NAS
-scp deploy.tar phoebus@192.168.1.49:~/staging/build/deploy.tar
+scp deploy.tar fn-nas:~/staging/build/deploy.tar
 
 # 3. Build and Restart on NAS
-ssh phoebus@192.168.1.49 "
+ssh fn-nas "
   cd ~/staging/build
   tar -xf deploy.tar
   
