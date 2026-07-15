@@ -128,6 +128,26 @@
         <div id="publish-msg" class="msg-area" style="display:none"></div>
         <div id="confirm-dialog-area" style="margin-top:8px"></div>
       </div>
+
+      <!-- Row 5: Content Sync Pipeline -->
+      <div class="card">
+        <h3 class="card-title">内容同步链路状态</h3>
+        <div class="grid-2col" style="margin-bottom: 12px;">
+          <div class="status-box">
+            <span class="label">新闻最近拉取:</span>
+            <span class="value" id="news-sync-status">加载中…</span>
+          </div>
+          <div class="status-box">
+            <span class="label">图片库最近同步:</span>
+            <span class="value" id="photo-sync-status">加载中…</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-outline" onclick="triggerNewsSync()" id="btn-sync-news">📥 立即同步新闻</button>
+          <button class="btn btn-outline" onclick="triggerPhotoSync()" id="btn-sync-photos">📥 立即同步图片</button>
+        </div>
+        <div id="sync-msg" class="msg-area" style="display:none"></div>
+      </div>
     </section>
 
     <!-- ───────── News Review ───────── -->

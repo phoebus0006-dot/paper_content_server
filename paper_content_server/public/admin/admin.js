@@ -93,7 +93,7 @@ document.querySelectorAll('.sidebar nav a').forEach(function(a){
 });
 
 function loadAll(){
-  loadControlMode();loadDashboard();loadNewsReview();loadPhotos();loadPublishHistory();loadStatus();loadHealth();
+  loadControlMode();loadDashboard();loadNewsReview();loadPhotos();loadPublishHistory();loadStatus();loadHealth();loadContentSyncStatus();
   updateRefreshTime();
 }
 
@@ -208,6 +208,42 @@ function loadDashboard(){
     setText('dash-lastpublish',d.lastPublishedAt||'未发布','未发布');
     STATE.dashboard=d;
   }).catch(function(e){showErrorBox('dashboard load failed: '+(e&&e.message||e))});
+}
+
+function loadContentSyncStatus() {
+  api('/api/admin/content-sync/status').then(function(d) {
+    if (!d) return;
+    var newsStatus = (d.news && d.news.lastRefresh) ? new Date(d.news.lastRefresh).toLocaleString() : '从未抓取或未知';
+    if (d.news && d.news.nextRefresh) newsStatus += ' (下次计划: ' + new Date(d.news.nextRefresh).toLocaleTimeString() + ')';
+    var photoStatus = (d.photos && d.photos.lastSync) ? new Date(d.photos.lastSync).toLocaleString() : '从未同步或未知';
+    setText('news-sync-status', newsStatus, '未知');
+    setText('photo-sync-status', photoStatus, '未知');
+  }).catch(function(e) {
+    setText('news-sync-status', '加载失败', '加载失败');
+    setText('photo-sync-status', '加载失败', '加载失败');
+  });
+}
+
+function triggerNewsSync() {
+  $('btn-sync-news').disabled = true;
+  api('/api/admin/content-sync/news', { method: 'POST' }).then(function(res) {
+    showMsg('sync-msg', '新闻同步已触发后台运行 (Job ID: ' + res.jobId + ')', 'success');
+    setTimeout(function() { $('btn-sync-news').disabled = false; loadContentSyncStatus(); }, 3000);
+  }).catch(function(e) {
+    $('btn-sync-news').disabled = false;
+    showMsg('sync-msg', '新闻同步触发失败: ' + (e&&e.message||e), 'error');
+  });
+}
+
+function triggerPhotoSync() {
+  $('btn-sync-photos').disabled = true;
+  api('/api/admin/content-sync/photos', { method: 'POST' }).then(function(res) {
+    showMsg('sync-msg', '图片同步已触发后台运行 (Job ID: ' + res.jobId + ')', 'success');
+    setTimeout(function() { $('btn-sync-photos').disabled = false; loadContentSyncStatus(); }, 3000);
+  }).catch(function(e) {
+    $('btn-sync-photos').disabled = false;
+    showMsg('sync-msg', '图片同步触发失败: ' + (e&&e.message||e), 'error');
+  });
 }
 
 // ── News Review ──
