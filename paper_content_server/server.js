@@ -2708,7 +2708,8 @@ function respondJson(res, data) {
   res.end(b);
 }
 function failJson(res, code, msg) {
-  var b = Buffer.from(JSON.stringify({ error: msg }));
+  var errorCode = String(msg).replace(/[^A-Z0-9_]/gi, '_').toUpperCase().slice(0, 60);
+  var b = Buffer.from(JSON.stringify({ status: 'error', code: errorCode, message: String(msg) }));
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(b);
 }
@@ -3557,6 +3558,135 @@ async function handleRequest(req, res) {
       return;
     }
 
+    // GET /api/admin/control-mode — current operating mode with description
+    if (parsed.pathname === '/api/admin/control-mode') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var cmMode = 'auto';
+      var cmDescription = '自动调度 — 由时间 SLOT 调度器自动选择内容';
+      var cmSource = 'schedule';
+      var cmOverrideActive = false;
+      var cmFocusLockActive = false;
+      var cmUpdatedAt = new Date().toISOString();
+      if (runtime.operatingModeService) {
+        cmMode = runtime.operatingModeService.getMode().toLowerCase();
+        if (cmMode === 'one_shot_override') {
+          cmDescription = '手动覆盖 — 当前内容由管理员手动指定，到期后恢复自动调度';
+          cmSource = 'admin_override';
+          cmOverrideActive = true;
+          var osCtx = runtime.operatingModeService.getOneShotContext();
+          if (osCtx && osCtx.expiresAt) cmUpdatedAt = osCtx.expiresAt;
+        } else if (cmMode === 'focus_lock') {
+          cmDescription = '焦点锁定 — 当前内容被锁定显示，需手动解除';
+          cmSource = 'focus_lock';
+          cmFocusLockActive = true;
+          var flCtx = runtime.operatingModeService.getFocusLockContext();
+          if (flCtx && flCtx.snapshotId) cmUpdatedAt = flCtx.snapshotId;
+        } else if (cmMode === 'legacy_admin_override') {
+          cmDescription = '传统手动覆盖 — 通过旧版管理接口设置';
+          cmSource = 'legacy_override';
+          cmOverrideActive = true;
+        }
+      }
+      var cmLastPublished = null;
+      try {
+        if (runtime.publicationHistory) {
+          var cmLatest = await runtime.publicationHistory.latest();
+          if (cmLatest) cmLastPublished = cmLatest.publishedAt;
+        }
+      } catch(e) {}
+      respondJson(res, {
+        status: 'ok',
+        mode: cmMode,
+        description: cmDescription,
+        source: cmSource,
+        overrideActive: cmOverrideActive,
+        focusLockActive: cmFocusLockActive,
+        updatedAt: cmUpdatedAt,
+        lastPublishedAt: cmLastPublished,
+      });
+      return;
+    }
+
+    // POST /api/admin/news/:id/publish — publish single news item by ID
+    if (parsed.pathname === '/api/admin/news/by-id/publish' && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var nsBody;
+      try { nsBody = JSON.parse(await readBody(req)); } catch(e) { failJson(res, 400, 'INVALID_JSON_BODY'); return; }
+      var nsId = nsBody && (nsBody.id || nsBody.newsId);
+      if (!nsId) { failJson(res, 400, 'MISSING_NEWS_ID'); return; }
+      // Find news item: try buildNewsSnapshot first, then admin_news_draft.json
+      var nsItem = null;
+      try {
+        var nsNews = await buildNewsSnapshot(new Date());
+        if (nsNews && nsNews.items) {
+          for (var nsi = 0; nsi < nsNews.items.length; nsi++) {
+            if (nsNews.items[nsi].sourceUrl === nsId || nsNews.items[nsi].frameId === nsId || nsNews.items[nsi].url === nsId) {
+              nsItem = nsNews.items[nsi]; break;
+            }
+          }
+        }
+      } catch(e) {}
+      // Fallback: check admin_news_draft.json
+      if (!nsItem) {
+        try {
+          var nsDraftPath = path.join(DATA_DIR, 'admin_news_draft.json');
+          if (fs.existsSync(nsDraftPath)) {
+            var nsDraft = JSON.parse(fs.readFileSync(nsDraftPath, 'utf8'));
+            if (nsDraft && nsDraft.items) {
+              for (var ndi = 0; ndi < nsDraft.items.length; ndi++) {
+                if (nsDraft.items[ndi].url === nsId || nsDraft.items[ndi].title === nsId || nsDraft.items[ndi].source === nsId) {
+                  nsItem = nsDraft.items[ndi]; break;
+                }
+              }
+            }
+          }
+        } catch(e) {}
+      }
+      if (!nsItem) { failJson(res, 404, 'NEWS_ITEM_NOT_FOUND'); return; }
+      // Create a snapshot with just this news item
+      var nsFrameId = 'manual-news:' + nsId + ':' + Date.now().toString(36);
+      if (runtime.publicationService) {
+        try {
+          var nsContent = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
+          var nsSnap = R3_snapshotModel.createSnapshot(nsFrameId, nsContent.snapshot, nsContent.frame, nsContent.snapshot.mode, { publishReason: 'publish_news_id' });
+          await runtime.publicationService.publish(nsSnap);
+        } catch(e) {
+          failJson(res, 500, 'PUBLISH_FAILED: ' + e.message); return;
+        }
+      }
+      respondJson(res, { status: 'ok', frameId: nsFrameId, publishedItem: { id: nsId, title: nsItem.title || '' } });
+      return;
+    }
+
+    // POST /api/admin/photos/:id/publish — publish single photo by ID
+    var pubPhotoMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/publish$/);
+    if (pubPhotoMatch && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var pubPhotoId = pubPhotoMatch[1];
+      if (!pubPhotoId || pubPhotoId.length < 2) { failJson(res, 400, 'INVALID_PHOTO_ID'); return; }
+      // Verify photo exists
+      var pubIdx = [];
+      try { pubIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) { failJson(res, 500, 'IMAGE_INDEX_READ_FAILED'); return; }
+      var pubEntry = null;
+      for (var ppi = 0; ppi < pubIdx.length; ppi++) {
+        if (pubIdx[ppi].id === pubPhotoId) { pubEntry = pubIdx[ppi]; break; }
+      }
+      if (!pubEntry) { failJson(res, 404, 'PHOTO_NOT_FOUND'); return; }
+      // Create frame with this photo
+      var pubFrameId = 'manual-photo:' + pubPhotoId + ':' + Date.now().toString(36);
+      if (runtime.publicationService && runtime.snapshotStore) {
+        try {
+          var pubContent = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
+          var pubSnap = R3_snapshotModel.createSnapshot(pubFrameId, pubContent.snapshot, pubContent.frame, pubContent.snapshot.mode, { publishReason: 'publish_photo_id' });
+          await runtime.publicationService.publish(pubSnap);
+        } catch(e) {
+          failJson(res, 500, 'PUBLISH_FAILED: ' + e.message); return;
+        }
+      }
+      respondJson(res, { status: 'ok', frameId: pubFrameId, publishedItem: { id: pubPhotoId, title: pubEntry.title || '' } });
+      return;
+    }
+
     if (parsed.pathname === '/api/admin/photos') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var idx = [];
@@ -3585,6 +3715,308 @@ async function handleRequest(req, res) {
       return;
     }
 
+    // GET /api/admin/photos/:id — full photo metadata
+    var photoDetailMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)$/);
+    if (photoDetailMatch && req.method === 'GET') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var pdId = photoDetailMatch[1];
+      if (!pdId || pdId.length < 2) { failJson(res, 400, 'INVALID_PHOTO_ID'); return; }
+      var pdIdx = [];
+      try { pdIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) { failJson(res, 500, 'IMAGE_INDEX_READ_FAILED'); return; }
+      var pdEntry = null;
+      for (var pdi = 0; pdi < pdIdx.length; pdi++) {
+        if (pdIdx[pdi].id === pdId) { pdEntry = pdIdx[pdi]; break; }
+      }
+      if (!pdEntry) { failJson(res, 404, 'PHOTO_NOT_FOUND'); return; }
+      var pdResp = {
+        id: pdEntry.id,
+        title: pdEntry.title || '',
+        source: pdEntry.source || '',
+        width: pdEntry.width || 0,
+        height: pdEntry.height || 0,
+        theme: pdEntry.theme || '',
+        kind: pdEntry.kind || 'shot',
+        poolType: pdEntry.poolType || '',
+        safetyStatus: pdEntry.safetyStatus || 'pending',
+        createdAt: pdEntry.createdAt || '',
+        updatedAt: pdEntry.updatedAt || '',
+        imageName: pdEntry.imageName || '',
+        shownCount: pdEntry.shownCount || 0,
+        lastShownAt: pdEntry.lastShownAt || null,
+      };
+      respondJson(res, { status: 'ok', photo: pdResp });
+      return;
+    }
+
+    // DELETE /api/admin/photos/:id — remove photo from index and disk
+    if (photoDetailMatch && req.method === 'DELETE') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var delId = photoDetailMatch[1];
+      if (!delId || delId.length < 2) { failJson(res, 400, 'INVALID_PHOTO_ID'); return; }
+      if (delId.indexOf('..') !== -1 || delId.indexOf('/') !== -1 || delId.indexOf('\\') !== -1) {
+        failJson(res, 400, 'INVALID_PATH_TRAVERSAL'); return;
+      }
+      var delIdx = [];
+      try { delIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) { failJson(res, 500, 'IMAGE_INDEX_READ_FAILED'); return; }
+      var delEntry = null;
+      var delPos = -1;
+      for (var di = 0; di < delIdx.length; di++) {
+        if (delIdx[di].id === delId) { delEntry = delIdx[di]; delPos = di; break; }
+      }
+      if (!delEntry) { failJson(res, 404, 'PHOTO_NOT_FOUND'); return; }
+      var delFilePath = delEntry.processedPngPath || delEntry.rawPath || '';
+      if (delFilePath) {
+        var delFullPath = path.isAbsolute(delFilePath) ? delFilePath : path.join(ROOT_DIR, delFilePath);
+        var delResolved = path.resolve(delFullPath);
+        var dataResolved = path.resolve(DATA_DIR);
+        if (delResolved.indexOf(dataResolved) !== 0 && delResolved.indexOf(path.resolve(ROOT_DIR)) !== 0) {
+          failJson(res, 400, 'INVALID_FILE_PATH_OUTSIDE_ALLOWED_DIR'); return;
+        }
+      }
+      // Atomic write: write to temp, then rename
+      var delTmpPath = IMAGE_INDEX_FILE + '.tmp.' + process.pid + '.' + Date.now();
+      delIdx.splice(delPos, 1);
+      try {
+        fs.writeFileSync(delTmpPath, JSON.stringify(delIdx, null, 2) + '\n', 'utf8');
+        fs.renameSync(delTmpPath, IMAGE_INDEX_FILE);
+      } catch(e) {
+        try { fs.unlinkSync(delTmpPath); } catch(e2) {}
+        failJson(res, 500, 'INDEX_WRITE_FAILED: ' + e.message); return;
+      }
+      // Reload runtime index
+      runtime.imageIndex = delIdx;
+      if (runtime.fullImageIndex) {
+        for (var fdi = 0; fdi < runtime.fullImageIndex.length; fdi++) {
+          if (runtime.fullImageIndex[fdi].id === delId) { runtime.fullImageIndex.splice(fdi, 1); break; }
+        }
+      }
+      // Delete file from disk
+      if (delFilePath) {
+        try {
+          if (fs.existsSync(delResolved)) fs.unlinkSync(delResolved);
+        } catch(e) { r1Logger.warn('photo delete: could not unlink ' + delResolved + ': ' + e.message); }
+      }
+      // Clear cached frames referencing this photo
+      if (runtime.cachedFrames && runtime.cachedFrames.forEach) {
+        var delCachedKeys = [];
+        runtime.cachedFrames.forEach(function(v, k) {
+          if (v && v.payload && (v.payload.imageName === delEntry.imageName || (v.payload.frameId && v.payload.frameId.indexOf(delId) !== -1))) delCachedKeys.push(k);
+        });
+        delCachedKeys.forEach(function(k) { runtime.cachedFrames.delete(k); });
+      }
+      // Clear any Pin referencing this photo
+      if (runtime.pinStore && typeof runtime.pinStore.clear === 'function') {
+        try { runtime.pinStore.clear(); } catch(e) {}
+      }
+      // Clear or fix any override referencing this photo
+      if (runtime.overridePersistence) {
+        try {
+          var existingOv = runtime.overridePersistence.loadOverride();
+          if (existingOv && existingOv.assetId === delId) {
+            runtime.overridePersistence.clearOverride();
+          }
+        } catch(e) {}
+      }
+      respondJson(res, { status: 'ok', deleted: true, id: delId });
+      return;
+    }
+
+    // POST /api/admin/photos/:id/save-edit — apply recipe edits
+    var saveEditMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/save-edit$/);
+    if (saveEditMatch && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var seId = saveEditMatch[1];
+      if (!seId || seId.length < 2) { failJson(res, 400, 'INVALID_PHOTO_ID'); return; }
+      if (seId.indexOf('..') !== -1 || seId.indexOf('/') !== -1 || seId.indexOf('\\') !== -1) {
+        failJson(res, 400, 'INVALID_PATH_TRAVERSAL'); return;
+      }
+      var seBody;
+      try { seBody = JSON.parse(await readBody(req)); } catch(e) { failJson(res, 400, 'INVALID_JSON_BODY'); return; }
+      var recipe = seBody && seBody.recipe;
+      if (!recipe) { failJson(res, 400, 'MISSING_RECIPE'); return; }
+      // Validate recipe fields
+      var R = { brightness: 1, contrast: 1, saturation: 1, gamma: 1, rotate: 0, flipH: false, flipV: false, sharpen: 0, blur: 0 };
+      if (recipe.brightness !== undefined) { var bv = Number(recipe.brightness); if (!isFinite(bv) || bv < 0 || bv > 5) { failJson(res, 422, 'INVALID_BRIGHTNESS'); return; } R.brightness = bv; }
+      if (recipe.contrast !== undefined) { var cv = Number(recipe.contrast); if (!isFinite(cv) || cv < 0 || cv > 5) { failJson(res, 422, 'INVALID_CONTRAST'); return; } R.contrast = cv; }
+      if (recipe.saturation !== undefined) { var sv = Number(recipe.saturation); if (!isFinite(sv) || sv < 0 || sv > 5) { failJson(res, 422, 'INVALID_SATURATION'); return; } R.saturation = sv; }
+      if (recipe.gamma !== undefined) { var gv = Number(recipe.gamma); if (!isFinite(gv) || gv < 0.1 || gv > 5) { failJson(res, 422, 'INVALID_GAMMA'); return; } R.gamma = gv; }
+      if (recipe.rotate !== undefined) { var rv = Number(recipe.rotate); if (!isFinite(rv) || [0, 90, 180, 270].indexOf(rv) === -1) { failJson(res, 422, 'INVALID_ROTATE'); return; } R.rotate = rv; }
+      if (recipe.flipH !== undefined) R.flipH = !!recipe.flipH;
+      if (recipe.flipV !== undefined) R.flipV = !!recipe.flipV;
+      if (recipe.sharpen !== undefined) { var shv = Number(recipe.sharpen); if (!isFinite(shv) || shv < 0 || shv > 10) { failJson(res, 422, 'INVALID_SHARPEN'); return; } R.sharpen = shv; }
+      if (recipe.blur !== undefined) { var blv = Number(recipe.blur); if (!isFinite(blv) || blv < 0 || blv > 10) { failJson(res, 422, 'INVALID_BLUR'); return; } R.blur = blv; }
+      // Find photo entry
+      var seIdx = [];
+      try { seIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) { failJson(res, 500, 'IMAGE_INDEX_READ_FAILED'); return; }
+      var seEntry = null;
+      for (var sei = 0; sei < seIdx.length; sei++) {
+        if (seIdx[sei].id === seId) { seEntry = seIdx[sei]; break; }
+      }
+      if (!seEntry) { failJson(res, 404, 'PHOTO_NOT_FOUND'); return; }
+      var seSrcPath = seEntry.rawPath || seEntry.processedPngPath || '';
+      if (!seSrcPath) { failJson(res, 404, 'PHOTO_FILE_PATH_MISSING'); return; }
+      var seFullSrc = path.isAbsolute(seSrcPath) ? seSrcPath : path.join(ROOT_DIR, seSrcPath);
+      if (!fs.existsSync(seFullSrc)) { failJson(res, 404, 'PHOTO_FILE_NOT_FOUND'); return; }
+      // Apply adjustments with sharp
+      try {
+        var sePipeline = sharp(seFullSrc);
+        if (R.brightness !== 1 || R.contrast !== 1 || R.saturation !== 1) {
+          sePipeline = sePipeline.modulate({ brightness: R.brightness, saturation: R.saturation });
+        }
+        if (R.gamma !== 1) {
+          sePipeline = sePipeline.gamma(R.gamma);
+        }
+        if (R.rotate !== 0) {
+          sePipeline = sePipeline.rotate(R.rotate);
+        }
+        if (R.flipH) sePipeline = sePipeline.flop();
+        if (R.flipV) sePipeline = sePipeline.flip();
+        if (R.sharpen > 0) {
+          sePipeline = sePipeline.sharpen(R.sharpen);
+        }
+        if (R.blur > 0) {
+          sePipeline = sePipeline.blur(R.blur);
+        }
+        var seOutputBuf = await sePipeline.png().toBuffer();
+        // Verify the output is valid by re-reading it
+        var seVerify = sharp(seOutputBuf);
+        var seMeta = await seVerify.metadata();
+        if (!seMeta || !seMeta.width || !seMeta.height) {
+          failJson(res, 500, 'EDITED_IMAGE_VERIFICATION_FAILED'); return;
+        }
+        // Determine output path (use processedPngPath)
+        var seOutPath = seEntry.processedPngPath || seEntry.rawPath;
+        var seFullOut = path.isAbsolute(seOutPath) ? seOutPath : path.join(ROOT_DIR, seOutPath);
+        var seOutDir = path.dirname(seFullOut);
+        await fsp.mkdir(seOutDir, { recursive: true });
+        // Write to temp file first, then atomic rename
+        var seTmpPath = seFullOut + '.tmp.' + process.pid + '.' + Date.now() + '.png';
+        fs.writeFileSync(seTmpPath, seOutputBuf);
+        // Verify written file by re-reading
+        var seReadBack = sharp(fs.readFileSync(seTmpPath));
+        var seRbMeta = await seReadBack.metadata();
+        if (!seRbMeta || !seRbMeta.width) {
+          try { fs.unlinkSync(seTmpPath); } catch(e2) {}
+          failJson(res, 500, 'EDITED_FILE_VERIFICATION_FAILED'); return;
+        }
+        fs.renameSync(seTmpPath, seFullOut);
+        // Update image_index metadata
+        seEntry.updatedAt = new Date().toISOString();
+        if (!seEntry.processedPngPath) seEntry.processedPngPath = seOutPath;
+        // Write updated index via atomic write
+        var seIdxTmp = IMAGE_INDEX_FILE + '.tmp.' + process.pid + '.' + Date.now();
+        fs.writeFileSync(seIdxTmp, JSON.stringify(seIdx, null, 2) + '\n', 'utf8');
+        fs.renameSync(seIdxTmp, IMAGE_INDEX_FILE);
+        runtime.imageIndex = seIdx;
+        if (runtime.fullImageIndex) {
+          for (var fsei = 0; fsei < runtime.fullImageIndex.length; fsei++) {
+            if (runtime.fullImageIndex[fsei].id === seId) { runtime.fullImageIndex[fsei] = seEntry; break; }
+          }
+        }
+        // Return updated photo info
+        var seResp = {
+          id: seEntry.id, title: seEntry.title || '', source: seEntry.source || '',
+          width: seMeta.width, height: seMeta.height,
+          theme: seEntry.theme || '', kind: seEntry.kind || 'shot',
+          poolType: seEntry.poolType || '', safetyStatus: seEntry.safetyStatus || 'pending',
+          createdAt: seEntry.createdAt || '', updatedAt: seEntry.updatedAt || '',
+          imageName: seEntry.imageName || '',
+        };
+        respondJson(res, { status: 'ok', photo: seResp });
+      } catch(e) {
+        failJson(res, 500, 'EDIT_SAVE_FAILED: ' + e.message);
+      }
+      return;
+    }
+
+    // GET /api/admin/photo-palette — palette analysis for a specific photo
+    // Canonical admin path that mirrors /debug/photo-palette.json with auth
+    if (parsed.pathname === '/api/admin/photo-palette') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var ppQuery = parsed.searchParams;
+      // Read optional query params for recipe
+      var ppRecipe = { brightness: 1, contrast: 1, saturation: 1, gamma: 1, rotate: 0, flipH: false, flipV: false, sharpen: 0, blur: 0 };
+      if (ppQuery.get('b')) { var ppbv = Number(ppQuery.get('b')); if (isFinite(ppbv) && ppbv >= 0 && ppbv <= 5) ppRecipe.brightness = ppbv; }
+      if (ppQuery.get('c')) { var ppcv = Number(ppQuery.get('c')); if (isFinite(ppcv) && ppcv >= 0 && ppcv <= 5) ppRecipe.contrast = ppcv; }
+      if (ppQuery.get('s')) { var ppsv = Number(ppQuery.get('s')); if (isFinite(ppsv) && ppsv >= 0 && ppsv <= 5) ppRecipe.saturation = ppsv; }
+      if (ppQuery.get('g')) { var ppgv = Number(ppQuery.get('g')); if (isFinite(ppgv) && ppgv >= 0.1 && ppgv <= 5) ppRecipe.gamma = ppgv; }
+      if (ppQuery.get('r')) { var pprv = Number(ppQuery.get('r')); if (isFinite(pprv) && [0, 90, 180, 270].indexOf(pprv) !== -1) ppRecipe.rotate = pprv; }
+      if (ppQuery.get('fh')) ppRecipe.flipH = ppQuery.get('fh') === '1';
+      if (ppQuery.get('fv')) ppRecipe.flipV = ppQuery.get('fv') === '1';
+      if (ppQuery.get('sh')) { var ppshv = Number(ppQuery.get('sh')); if (isFinite(ppshv) && ppshv >= 0 && ppshv <= 10) ppRecipe.sharpen = ppshv; }
+      if (ppQuery.get('bl')) { var ppblv = Number(ppQuery.get('bl')); if (isFinite(ppblv) && ppblv >= 0 && ppblv <= 10) ppRecipe.blur = ppblv; }
+      // Get the image path — either from query.id or from current photo snapshot
+      var ppImgPath = null;
+      var ppWidth = FRAME_WIDTH, ppHeight = FRAME_HEIGHT;
+      var ppId = ppQuery.get('id') || null;
+      if (ppId) {
+        var ppIdx = [];
+        try { ppIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+        var ppEntry = null;
+        for (var ppi = 0; ppi < ppIdx.length; ppi++) { if (ppIdx[ppi].id === ppId) { ppEntry = ppIdx[ppi]; break; } }
+        if (ppEntry) {
+          ppImgPath = ppEntry.processedPngPath || ppEntry.rawPath || '';
+          ppWidth = ppEntry.width || FRAME_WIDTH;
+          ppHeight = ppEntry.height || FRAME_HEIGHT;
+        }
+      }
+      if (!ppImgPath) {
+        // Use the current photo snapshot
+        var ppPhoto = await buildPhotoSnapshot(now);
+        ppImgPath = ppPhoto.imagePath || null;
+        ppWidth = FRAME_WIDTH;
+        ppHeight = FRAME_HEIGHT;
+      }
+      if (!ppImgPath || !fs.existsSync(path.isAbsolute(ppImgPath) ? ppImgPath : path.join(ROOT_DIR, ppImgPath))) {
+        failJson(res, 404, 'PHOTO_NOT_FOUND');
+        return;
+      }
+      var ppFullPath = path.isAbsolute(ppImgPath) ? ppImgPath : path.join(ROOT_DIR, ppImgPath);
+      try {
+        var ppPipeline = sharp(ppFullPath).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'cover' }).flatten();
+        if (ppRecipe.brightness !== 1 || ppRecipe.saturation !== 1) {
+          ppPipeline = ppPipeline.modulate({ brightness: ppRecipe.brightness, saturation: ppRecipe.saturation });
+        }
+        if (ppRecipe.gamma !== 1) ppPipeline = ppPipeline.gamma(ppRecipe.gamma);
+        if (ppRecipe.rotate !== 0) ppPipeline = ppPipeline.rotate(ppRecipe.rotate);
+        if (ppRecipe.flipH) ppPipeline = ppPipeline.flop();
+        if (ppRecipe.flipV) ppPipeline = ppPipeline.flip();
+        if (ppRecipe.sharpen > 0) ppPipeline = ppPipeline.sharpen(ppRecipe.sharpen);
+        if (ppRecipe.blur > 0) ppPipeline = ppPipeline.blur(ppRecipe.blur);
+        var ppRawBuf = await ppPipeline.raw().toBuffer();
+        // Convert to 4-bit palette and count
+        var ppCounts = {};
+        for (var ppbi = 0; ppbi < ppRawBuf.length; ppbi += 3) {
+          var pr = ppRawBuf[ppbi], pg = ppRawBuf[ppbi + 1], pb = ppRawBuf[ppbi + 2];
+          var nearest = 0, nearDist = Infinity;
+          for (var ppci = 0; ppci < epaperPalette.PALETTE.length; ppci++) {
+            var pc = epaperPalette.PALETTE[ppci];
+            var pd = (pr - pc.r) * (pr - pc.r) + (pg - pc.g) * (pg - pc.g) + (pb - pc.b) * (pb - pc.b);
+            if (pd < nearDist) { nearDist = pd; nearest = pc.code; }
+          }
+          ppCounts[String(nearest)] = (ppCounts[String(nearest)] || 0) + 1;
+        }
+        var totalPixels = ppWidth * ppHeight;
+        var ppPalette = epaperPalette.PALETTE.map(function(c) {
+          return { code: c.code, name: c.name, pixelCount: ppCounts[String(c.code)] || 0 };
+        });
+        ppPalette.push({ code: 4, name: 'orange(unsupported)', pixelCount: ppCounts['4'] || 0 });
+        ppPalette.push({ code: 7, name: 'reserved', pixelCount: ppCounts['7'] || 0 });
+        respondJson(res, {
+          timestamp: now.toISOString(),
+          frameId: ppId || 'photo',
+          imageName: ppId || path.basename(ppImgPath),
+          width: FRAME_WIDTH, height: FRAME_HEIGHT,
+          totalPixels: totalPixels,
+          unsupportedCode4: ppCounts['4'] || 0,
+          palette: ppPalette,
+        });
+      } catch(e) {
+        failJson(res, 500, 'PALETTE_ANALYSIS_FAILED: ' + e.message);
+      }
+      return;
+    }
+
     // Serve individual photo thumbnail/image
     var photoMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/thumbnail$/);
     if (photoMatch) {
@@ -3596,12 +4028,12 @@ async function handleRequest(req, res) {
       for (var pi = 0; pi < photoIdx.length; pi++) {
         if (photoIdx[pi].id === photoId) { photoEntry = photoIdx[pi]; break; }
       }
-      if (!photoEntry) { res.writeHead(404); res.end('not found'); return; }
+      if (!photoEntry) { failJson(res, 404, 'PHOTO_NOT_FOUND'); return; }
       var imgPath = photoEntry.processedPngPath || photoEntry.rawPath || '';
-      if (!imgPath) { res.writeHead(404); res.end('no image path'); return; }
+      if (!imgPath) { failJson(res, 404, 'PHOTO_FILE_PATH_MISSING'); return; }
       // Resolve relative to app root
       var fullImgPath = path.isAbsolute(imgPath) ? imgPath : path.join(ROOT_DIR, imgPath);
-      if (!fs.existsSync(fullImgPath)) { res.writeHead(404); res.end('file not found: ' + fullImgPath); return; }
+      if (!fs.existsSync(fullImgPath)) { failJson(res, 404, 'PHOTO_FILE_NOT_FOUND'); return; }
       try {
         var imgBuf = fs.readFileSync(fullImgPath);
         var ext = path.extname(fullImgPath).toLowerCase();
@@ -3609,7 +4041,7 @@ async function handleRequest(req, res) {
         res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'public, max-age=3600' });
         res.end(imgBuf);
       } catch(e) {
-        res.writeHead(500); res.end('read error: ' + e.message);
+        failJson(res, 500, 'IMAGE_READ_ERROR: ' + e.message);
       }
       return;
     }

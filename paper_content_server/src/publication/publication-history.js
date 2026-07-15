@@ -13,12 +13,18 @@ function PublicationHistory(historyFile, logger) {
 
   function append(entry) {
     return store.readOrDefault({ entries: [], schemaVersion: SCHEMA_VERSION }).then(function(data) {
+      // Enforce single CURRENT: archive all existing entries before adding the new one
+      for (var ei = 0; ei < data.entries.length; ei++) {
+        if (data.entries[ei].status === 'active' || !data.entries[ei].status) {
+          data.entries[ei].status = 'archived';
+        }
+      }
       data.entries.unshift(entry);
       if (data.entries.length > MAX_ENTRIES) data.entries.length = MAX_ENTRIES;
       data.schemaVersion = SCHEMA_VERSION;
       return store.write(data);
     }).then(function() {
-      logger.info('History appended: ' + entry.frameId + ' [' + entry.type + ']');
+      logger.info('History appended: ' + entry.frameId + ' [' + entry.type + '] (previous entries archived)');
     });
   }
 
