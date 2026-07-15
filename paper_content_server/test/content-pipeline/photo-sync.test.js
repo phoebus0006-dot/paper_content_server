@@ -51,11 +51,37 @@ async function main() {
   try { fs.mkdirSync(TMPDIR, { recursive: true }); } catch(e) {}
   
   var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8', TRUST_PROXY: 'false', DATA_DIR: TMPDIR, TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false', PHOTO_API_URL: 'http://127.0.0.1:' + MOCK_PHOTO_PORT + '/photos' });
+  var fetchScriptPath = path.join(ROOT, 'scripts', 'fetch-images.js');
+  var processScriptPath = path.join(ROOT, 'scripts', 'process-images.js');
+  var fetchBackup = fs.readFileSync(fetchScriptPath, 'utf8');
+  var processBackup = fs.readFileSync(processScriptPath, 'utf8');
+  
+  fs.writeFileSync(fetchScriptPath, `
+    var fs = require('fs'); var path = require('path');
+    exports.runFetchImages = async function() {
+      var idx = [{id:"p1", title:"Mock Photo 1", source:"Mock", width:800, height:480}];
+      fs.writeFileSync(path.join(process.env.DATA_DIR, 'image_index.json'), JSON.stringify(idx));
+      fs.writeFileSync(path.join(process.env.DATA_DIR, 'p1.jpg'), 'fake_image_data');
+      return { fetched: 1 };
+    };
+  `);
+  fs.writeFileSync(processScriptPath, `
+    exports.runProcessImages = async function() {
+      return { processed: 1 };
+    };
+  `);
+
   var server = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env: env, cwd: ROOT, stdio: ['ignore', 'ignore', 'ignore'] });
   
   await new Promise(r => mockPhotoServer.listen(MOCK_PHOTO_PORT, '127.0.0.1', r));
   
-  if (!await waitForServer()) { console.log('FAIL: server did not start'); server.kill(); mockPhotoServer.close(); process.exit(1); }
+  if (!await waitForServer()) { 
+    console.log('FAIL: server did not start'); 
+    server.kill(); mockPhotoServer.close(); 
+    fs.writeFileSync(fetchScriptPath, fetchBackup);
+    fs.writeFileSync(processScriptPath, processBackup);
+    process.exit(1); 
+  }
   
   var indexPath = path.join(TMPDIR, 'image_index.json');
   var photoCountBefore = 0;
@@ -109,6 +135,8 @@ async function main() {
   
   server.kill();
   mockPhotoServer.close();
+  fs.writeFileSync(fetchScriptPath, fetchBackup);
+  fs.writeFileSync(processScriptPath, processBackup);
   try { fs.rmSync(TMPDIR, { recursive: true, force: true }); } catch(e) {}
   console.log('Done: ' + passed + ' passed, ' + failed + ' failed');
   process.exit(exitCode);
