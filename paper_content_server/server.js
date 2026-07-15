@@ -3216,6 +3216,26 @@ async function handleRequest(req, res) {
         }
       }
       if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+      // Compatibility rewrites for restored 74c4d50 frontend:
+      if (parsed.pathname.startsWith('/api/admin/photos/') && req.method === 'DELETE') {
+        var photoId = parsed.pathname.slice('/api/admin/photos/'.length);
+        if (photoId && photoId.indexOf('/') < 0) {
+          parsed.pathname = '/api/admin/library/' + photoId;
+          if (!parsed.searchParams.has('reason')) {
+            parsed.searchParams.set('reason', 'UNSAFE');
+          }
+        }
+      }
+      if (parsed.pathname === '/api/admin/photo-palette') {
+        parsed.pathname = '/debug/photo-palette.json';
+      }
+      if (parsed.pathname.startsWith('/api/admin/photos/') && parsed.pathname.endsWith('/save-edit') && req.method === 'POST') {
+        var photoId = parsed.pathname.slice('/api/admin/photos/'.length, -'/save-edit'.length);
+        if (photoId && photoId.indexOf('/') < 0) {
+          parsed.pathname = '/api/admin/library/' + photoId;
+          req.method = 'PATCH';
+        }
+      }
     }
     if (parsed.pathname === '/api/admin/access-mode') {
       respondJson(res, { mode: ADMIN_ACCESS_MODE });
