@@ -1,1 +1,8 @@
-[]
+{
+  "generatedAt": "2026-07-15T21:01:24.146Z",
+  "sourceCommit": "a7b8d9a",
+  "scannedFile": "public/admin/admin.js",
+  "expressionCount": 15,
+  "invalidReferenceCount": 0,
+  "entries": []
+}

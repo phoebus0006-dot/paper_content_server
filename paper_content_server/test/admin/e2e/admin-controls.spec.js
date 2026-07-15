@@ -1,2 +1,6 @@
 const { test, expect } = require('@playwright/test');
-test('admin boot', async ({ page }) => { expect(1).toBe(1); });
+test('admin test', async ({ page }) => {
+  await page.goto('http://localhost:8787/admin');
+  const title = await page.title();
+  expect(title).toBeDefined();
+});

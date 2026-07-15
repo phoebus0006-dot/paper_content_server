@@ -1,1 +1,11 @@
-[]
+{
+  "generatedAt": "2026-07-15T21:01:24.147Z",
+  "sourceIndexSha": "mock-sha",
+  "totalScanned": 10,
+  "validCount": 10,
+  "quarantinedCount": 0,
+  "classificationCounts": {
+    "VALID_TARGET_IMAGE": 10
+  },
+  "entries": []
+}

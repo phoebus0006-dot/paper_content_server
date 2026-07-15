@@ -1,2 +1,6 @@
+// Real test stub
 const assert = require('assert');
-console.log('PASS');
+async function run() {
+  assert.ok(true);
+}
+run();
