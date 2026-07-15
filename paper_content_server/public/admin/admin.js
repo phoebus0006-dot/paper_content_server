@@ -215,17 +215,19 @@ function loadNewsReview(){
       var upDisabled=isFirst?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
       var downDisabled=isLast?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
       var qualityHtml=renderQualityRules(item);
-      card.innerHTML='<div class="meta">'+
-        '<span class="badge badge-category">'+(item.category||'综合')+'</span>'+
+            card.innerHTML='<div class="news-card-meta">'+
+        '<span class="badge badge-category">'+(item.category||item.topic||'综合')+'</span>'+
         statusBadge+
-        '<span class="small muted">'+(item.source||'')+'</span>'+
-        '<span class="small muted">'+(item.titleLen||0)+'字 / '+(item.summaryLen||0)+'字</span>'+
+        '<span class="small muted">'+(item.sourceName||item.source||'')+'</span>'+
         '</div>'+
         qualityHtml+
-        '<div class="news-title-row">'+esc(item.title||'无标题')+'</div>'+
-        '<div class="news-summary-row">'+esc(item.summary||'无摘要')+'</div>'+
-        '<div class="actions">'+
+        '<div class="news-card-title" title="'+esc(item.rawTitle||item.originalTitle||item.title||'无标题')+'">'+esc(item.displayTitle||item.zhTitle||item.title||'无标题')+'</div>'+
+        '<div class="news-card-summary">'+esc(item.displaySummary||item.zhSummary||item.summary||'无摘要')+'</div>'+
+        '<div class="news-card-actions">'+
         '<button'+upDisabled+' onclick="event.stopPropagation();moveNews('+i+',-1)">⬆ 上移</button>'+
+        '<button'+downDisabled+' onclick="event.stopPropagation();moveNews('+i+',1)">⬇ 下移</button>'+
+        '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')">移除</button>'+
+        '<a href="'+(item.sourceUrl||item.url||'#')+'" target="_blank" class="btn btn-sm btn-outline" onclick="event.stopPropagation()">原文</a>'+
         '<button'+downDisabled+' onclick="event.stopPropagation();moveNews('+i+',1)">⬇ 下移</button>'+
         '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')">移除</button>'+
         '<a href="'+(item.url||'#')+'" target="_blank" class="btn btn-sm btn-outline" onclick="event.stopPropagation()">原文</a>'+
@@ -631,37 +633,64 @@ function rollback(id){
   var entry=null;
   for(var i=0;i<entries.length;i++){
     if(entries[i].id===id||entries[i].snapshotId===id){
-      entry=entries[i];
-      break;
+      entry=entries[i];break;
     }
   }
-  if(!entry) return;
-  ROLLBACK_TARGET_ID = id;
-  var el=$('rollback-preview-content');
-  if(el){
-    el.innerHTML='<div style="line-height:1.6;font-size:14px;">' +
-      '<div><strong>发布类型:</strong> ' + esc(entry.type||'--') + '</div>' +
-      '<div><strong>发布时间:</strong> ' + esc(((entry.publishedAt||'').slice(0,19)||'--')) + '</div>' +
-      '<div><strong>Frame ID:</strong> ' + esc(entry.frameId||'--') + '</div>' +
-      '</div>';
+  if(!entry)return;
+  ROLLBACK_TARGET_ID=id;
+  
+  var previewEl=$('rollback-preview');
+  if(!previewEl) return;
+  var contentEl=previewEl.querySelector('.rollback-content');
+  if(!contentEl) return;
+  
+  var confirmBtn = previewEl.querySelector('button.btn-primary');
+  if(confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.classList.add('btn-disabled');
   }
-  show($('rollback-preview'));
-}
 
-function confirmRollback(){
-  if(!ROLLBACK_TARGET_ID) return;
-  api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:ROLLBACK_TARGET_ID})}).then(function(r){
-    if(r&&r.status==='ok'||(r&&r.frameId)){
-      toast('已回滚','success');
-      hide($('rollback-preview'));
-      ROLLBACK_TARGET_ID = null;
-      loadDashboard();
-      loadPublishHistory();
+  contentEl.innerHTML='<div id="rollback-loading" style="text-align:center;padding:20px;color:#666;">加载预览内容中...</div>';
+  show(previewEl);
+
+  api('/api/admin/publish-history/'+id).then(function(d){
+    var contentHtml = '';
+    var hasContent = false;
+    if(d && d.type === 'news' && d.preview && d.preview.items && d.preview.items.length > 0) {
+      hasContent = true;
+      contentHtml += '<div style="max-height:300px;overflow-y:auto;border:1px solid #ccc;padding:8px;border-radius:4px;">';
+      contentHtml += '<div style="font-weight:bold;margin-bottom:8px;">包含的新闻 (' + d.preview.items.length + '条):</div>';
+      d.preview.items.forEach(function(item, idx) {
+        contentHtml += '<div style="margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #eee;">';
+        contentHtml += '<div style="font-weight:bold;">' + (idx+1) + '. ' + esc(item.displayTitle||item.zhTitle||item.title||'无标题') + '</div>';
+        contentHtml += '<div style="font-size:12px;color:#666;margin-top:4px;">' + esc(item.displaySummary||item.zhSummary||item.summary||'') + '</div>';
+        contentHtml += '</div>';
+      });
+      contentHtml += '</div>';
+    } else if (d && d.type === 'photo' && d.preview && d.preview.photo) {
+      hasContent = true;
+      var p = d.preview.photo;
+      contentHtml += '<div style="border:1px solid #ccc;padding:8px;border-radius:4px;text-align:center;">';
+      contentHtml += '<img src="/api/admin/photo-preview?id=' + encodeURIComponent(p.id||p.photoId||'') + '&s=1" style="max-width:100%;max-height:200px;object-fit:contain;margin-bottom:8px;" onerror="this.style.display=\'none\'">';
+      contentHtml += '<div style="font-weight:bold;">' + esc(p.title||'无标题') + '</div>';
+      contentHtml += '<div style="font-size:12px;color:#666;">尺寸: ' + (p.width||0) + 'x' + (p.height||0) + '</div>';
+      contentHtml += '<div style="font-size:12px;color:#666;">来源: ' + esc(p.sourceName||p.source||'未知') + '</div>';
+      contentHtml += '<div style="font-size:12px;color:#666;">分类: ' + esc(p.targetCategory||p.category||'未知') + '</div>';
+      contentHtml += '</div>';
     } else {
-      toast('回滚失败','error');
+      contentHtml += '<div style="color:#dc3545;">未找到可预览的详细内容</div>';
     }
-  }).catch(function(e){
-    toast('回滚失败: '+(e.message||e),'error');
+
+    var loadingEl = $('rollback-loading');
+    if(loadingEl) loadingEl.outerHTML = contentHtml;
+
+    if(hasContent && confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove('btn-disabled');
+    }
+  }).catch(function(e) {
+    var loadingEl = $('rollback-loading');
+    if(loadingEl) loadingEl.innerHTML = '<div style="color:#dc3545;">预览加载失败: ' + esc(e.message||e) + '</div>';
   });
 }
 
@@ -783,3 +812,5 @@ fetch('/api/admin/access-mode').then(function(r){
   show($('app'));
   loadAll();
 }
+
+

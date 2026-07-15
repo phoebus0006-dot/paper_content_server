@@ -2,7 +2,7 @@
   "sources": [
     {
       "type": "url_list",
-      "enabled": true,
+      "enabled": false,
       "poolType": "decorative_photos",
       "urls": [
         { "url": "https://images-assets.nasa.gov/image/iss070e023460/iss070e023460~orig.jpg", "theme": "wide_shot", "title": "ISS Earth View", "source": "NASA" },
@@ -57,6 +57,11 @@
       "poolType": "study_frames",
       "importDir": "data/import_images"
     }
+  ],
+    "IMAGE_ALLOWED_SOURCE_IDS": ["wikimedia_category", "wikimedia_commons", "local_import", "local-import"],
+  "IMAGE_ALLOWED_CATEGORIES": [
+    "Storyboards", "Medium_shots", "Long_shots", "Full_shots",
+    "Night_photography", "Group_portraits", "Film_frames"
   ],
   "minImageWidth": 800,
   "minImageHeight": 480,

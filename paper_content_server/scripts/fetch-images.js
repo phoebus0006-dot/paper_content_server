@@ -373,6 +373,35 @@ async function addCandidate(candidate, index, options) {
   const normalizedUrl = canonicalUrl(candidate.url);
   if (isDuplicateByUrl(normalizedUrl, index)) return { status: 'skipped', reason: 'duplicate-url' };
 
+      // Runtime Rejection (Target Contract Enforcement)
+    const sourceId = (candidate.sourceId || candidate.sourceType || candidate.source || '').toLowerCase();
+    const sourceName = (candidate.sourceName || candidate.source || '').toLowerCase();
+    const titleLow = (candidate.title || '').toLowerCase();
+    
+    // Load config dynamically or use defaults
+    let allowedSourceIds = ['wikimedia_category', 'wikimedia_commons', 'local_import', 'local-import'];
+    let allowedCategories = ['storyboards', 'medium_shots', 'long_shots', 'full_shots', 'night_photography', 'group_portraits', 'film_frames'];
+    try {
+      const pCfg = JSON.parse(fs.readFileSync(PHOTO_CONFIG_FILE, 'utf8'));
+      if (pCfg.IMAGE_ALLOWED_SOURCE_IDS) allowedSourceIds = pCfg.IMAGE_ALLOWED_SOURCE_IDS.map(s => s.toLowerCase());
+      if (pCfg.IMAGE_ALLOWED_CATEGORIES) allowedCategories = pCfg.IMAGE_ALLOWED_CATEGORIES.map(s => s.toLowerCase());
+    } catch(e) {}
+    
+    if (!allowedSourceIds.includes(sourceId)) {
+      return { status: 'skipped', reason: 'rejected-unauthorized-sourceId' };
+    }
+    
+    // Check specific blacklists even if sourceId is valid (defense in depth)
+    if (sourceName.includes('nasa') || titleLow.includes('nasa') || titleLow.includes('astronomy')) {
+      return { status: 'skipped', reason: 'rejected-forbidden-topic-nasa' };
+    }
+    if (sourceName.includes('unsplash') || sourceName.includes('picsum') || sourceName.includes('random')) {
+      return { status: 'skipped', reason: 'rejected-forbidden-source-random' };
+    }
+    if (titleLow.includes('scenery') || titleLow.includes('landscape') || titleLow.includes('nature wallpaper')) {
+      return { status: 'skipped', reason: 'rejected-forbidden-topic-scenery' };
+    }
+
   // Content safety: domain check before download
   if (options.safeDomains || options.blocklistWords) {
     const safety = contentSafetyCheck(candidate, options.safeDomains, options.blocklistWords);
@@ -806,3 +835,4 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+

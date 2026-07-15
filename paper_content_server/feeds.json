@@ -1,121 +1,13 @@
 {
   "feeds": [
     {
-      "id": "lemonde-international",
-      "source": "Le Monde",
-      "country": "France",
-      "category": "international",
-      "language": "fr",
-      "url": "https://www.lemonde.fr/international/rss_full.xml",
-      "weight": 10
-    },
-    {
-      "id": "lemonde-economie",
-      "source": "Le Monde",
-      "country": "France",
-      "category": "economy",
-      "language": "fr",
-      "url": "https://www.lemonde.fr/economie/rss_full.xml",
-      "weight": 10
-    },
-    {
-      "id": "lemonde-pixels",
-      "source": "Le Monde",
-      "country": "France",
-      "category": "technology",
-      "language": "fr",
-      "url": "https://www.lemonde.fr/pixels/rss_full.xml",
-      "weight": 9
-    },
-    {
-      "id": "lemonde-culture",
-      "source": "Le Monde",
-      "country": "France",
-      "category": "culture",
-      "language": "fr",
-      "url": "https://www.lemonde.fr/culture/rss_full.xml",
-      "weight": 9
-    },
-    {
-      "id": "france24-en",
-      "source": "France 24",
-      "country": "France",
-      "category": "international",
-      "language": "en",
-      "url": "https://www.france24.com/en/rss",
-      "weight": 9
-    },
-    {
-      "id": "france24-france",
-      "source": "France 24",
-      "country": "France",
-      "category": "international",
-      "language": "en",
-      "url": "https://www.france24.com/en/france/rss",
-      "weight": 8
-    },
-    {
-      "id": "nyt-world",
-      "source": "NYT",
-      "country": "United States",
-      "category": "world",
-      "language": "en",
-      "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-      "weight": 10
-    },
-    {
-      "id": "nyt-politics",
-      "source": "NYT",
-      "country": "United States",
-      "category": "politics",
-      "language": "en",
-      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
-      "weight": 10
-    },
-    {
-      "id": "nyt-business",
-      "source": "NYT",
-      "country": "United States",
-      "category": "economy",
-      "language": "en",
-      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
-      "weight": 10
-    },
-    {
-      "id": "nyt-technology",
-      "source": "NYT",
+      "id": "hacker-news",
+      "source": "Hacker News",
       "country": "United States",
       "category": "technology",
       "language": "en",
-      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+      "url": "https://news.ycombinator.com/rss",
       "weight": 10
-    },
-    {
-      "id": "nyt-movies",
-      "source": "NYT",
-      "country": "United States",
-      "category": "movies",
-      "language": "en",
-      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Movies.xml",
-      "weight": 7
-    },
-    {
-      "id": "npr-world",
-      "source": "NPR",
-      "country": "United States",
-      "category": "world",
-      "language": "en",
-      "url": "https://feeds.npr.org/1004/rss.xml",
-      "weight": 9
-    },
-    {
-      "id": "npr-business",
-      "source": "NPR",
-      "country": "United States",
-      "category": "business",
-      "language": "en",
-      "url": "https://feeds.npr.org/1006/rss.xml",
-      "weight": 9
     },
     {
       "id": "ithome-news",
@@ -135,23 +27,15 @@
       "url": "https://36kr.com/feed",
       "weight": 8
     },
-    {
-      "id": "initium-news",
-      "source": "端传媒",
-      "country": "Hong Kong",
-      "category": "international",
-      "language": "zh",
-      "url": "https://theinitium.com/zh-hans/feed/",
-      "weight": 8
-    },
-    {
-      "id": "cn-nyt",
-      "source": "NYT中文",
-      "country": "China",
-      "category": "international",
-      "language": "zh",
-      "url": "https://cn.nytimes.com/rss/",
-      "weight": 10
+        {
+      "id": "github-trending",
+      "source": "GitHub",
+      "country": "Global",
+      "category": "technology",
+      "language": "en",
+      "url": "https://mshang.ca/github-trending-rss/daily/all.xml",
+      "weight": 9
     }
   ]
 }
+
