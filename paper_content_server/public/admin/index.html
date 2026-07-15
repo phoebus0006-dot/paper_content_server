@@ -120,10 +120,21 @@
       <div class="card">
         <h3 class="card-title">快捷操作</h3>
         <div class="actions">
-          <button class="btn btn-primary" onclick="publishNews()">📰 立即发布所选新闻</button>
           <button class="btn btn-outline" onclick="clearOverride()">🔁 退出手动覆盖，恢复自动排程</button>
           <button class="btn btn-outline" onclick="switchTab('photos-page')">🖼️ 前往图片库</button>
           <button class="btn btn-outline" onclick="refreshAll()">🔄 刷新状态</button>
+        </div>
+        <div class="quick-publish-row">
+          <select id="quick-news-select" class="quick-select" onchange="document.getElementById('btn-quick-publish-news').disabled=!this.value">
+            <option value="">-- 选择新闻 --</option>
+          </select>
+          <button class="btn btn-primary" id="btn-quick-publish-news" onclick="quickPublishNews()" disabled>📰 立即发布所选新闻</button>
+        </div>
+        <div class="quick-publish-row">
+          <select id="quick-photo-select" class="quick-select" onchange="document.getElementById('btn-quick-publish-photo').disabled=!this.value">
+            <option value="">-- 选择图片 --</option>
+          </select>
+          <button class="btn btn-primary" id="btn-quick-publish-photo" onclick="quickPublishPhoto()" disabled>🖼️ 立即发布所选图片</button>
         </div>
         <div id="publish-msg" class="msg-area" style="display:none"></div>
         <div id="confirm-dialog-area" style="margin-top:8px"></div>
