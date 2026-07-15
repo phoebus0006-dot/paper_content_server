@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "id": "news-0",
+      "source": "",
+      "category": "",
+      "zhTitle": "News 2",
+      "zhSummary": "Sum 2",
+      "originalTitle": "News 2",
+      "originalSummary": "Sum 2",
+      "sourceUrl": "",
+      "publishedAt": "2026-07-15T11:24:13.462Z",
+      "translationStatus": "translated",
+      "updatedAt": "2026-07-15T11:24:13.462Z"
+    },
+    {
+      "id": "news-1",
+      "source": "",
+      "category": "",
+      "zhTitle": "News 3",
+      "zhSummary": "Sum 3",
+      "originalTitle": "News 3",
+      "originalSummary": "Sum 3",
+      "sourceUrl": "",
+      "publishedAt": "2026-07-15T11:24:13.462Z",
+      "translationStatus": "translated",
+      "updatedAt": "2026-07-15T11:24:13.462Z"
+    }
+  ]
+}

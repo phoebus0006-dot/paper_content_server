@@ -3235,6 +3235,20 @@ async function handleRequest(req, res) {
       if (j) { res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' }); res.end(j); return; }
     }
 
+    if (parsed.pathname === '/api/admin/control-mode') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      respondJson(res, {
+        status: 'ok',
+        mode: runtime.manualOverride ? 'manual' : 'auto',
+        description: runtime.manualOverride ? '当前内容由管理员手动指定，到期时间: ' + (runtime.overrideExpiresAt || '未知') : '当前由时间调度器自动选择内容',
+        source: runtime.manualOverride ? 'manual' : 'scheduler',
+        overrideActive: !!runtime.manualOverride,
+        focusLockActive: false,
+        updatedAt: new Date().toISOString()
+      });
+      return;
+    }
+
     if (parsed.pathname === '/api/admin/dashboard') {
       if (ADMIN_ACCESS_MODE !== 'lan' && !ADMIN_TOKEN) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
       if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
@@ -3277,22 +3291,28 @@ async function handleRequest(req, res) {
       try {
         var db = JSON.parse(await readBody(req));
         var di = db.items || db.selected || [];
-        if (di.length !== 6) { failJson(res, 400, 'need exactly 6 items, got ' + di.length); return; }
         var su = {}, st = {};
         for (var dk = 0; dk < di.length; dk++) {
           var d = di[dk];
           if (!d.title || !d.title.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': title empty'); return; }
           if (d.title.length > 24) { failJson(res, 400, 'item ' + (dk+1) + ': title too long (' + d.title.length + ')'); return; }
           if (!d.summary || !d.summary.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': summary empty'); return; }
-          if (!d.url || !d.url.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': URL empty'); return; }
-          var un = d.url.toLowerCase().replace(/[?#].*$/, '');
-          if (su[un]) { failJson(res, 400, 'duplicate URL: ' + d.url); return; }
-          su[un] = true;
+          if (d.url) {
+            var un = d.url.toLowerCase().replace(/[?#].*$/, '');
+            if (su[un]) { failJson(res, 400, 'duplicate URL: ' + d.url); return; }
+            su[un] = true;
+          }
           var tn = d.title.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
           if (st[tn]) { failJson(res, 400, 'duplicate title: ' + d.title); return; }
           st[tn] = true;
         }
-        require('fs').writeFileSync(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: di }, null, 2));
+        var lgPath = path.join(DATA_DIR, 'last_good_news.json');
+        var oldItems = [];
+        try { if (require('fs').existsSync(lgPath)) { var lg = JSON.parse(require('fs').readFileSync(lgPath, 'utf8')); if (lg && lg.items) oldItems = lg.items; } } catch(e) {}
+        var newItems = di.map(function(d, i) { var old = oldItems.find(function(o) { return (o.id && o.id === d.id) || (o.sourceUrl && o.sourceUrl === d.url); }) || {}; return { id: d.id || old.id || ('news-' + i), source: d.source || old.source || '', category: d.category || old.category || '', zhTitle: d.title, zhSummary: d.summary, originalTitle: old.originalTitle || d.title, originalSummary: old.originalSummary || d.summary, sourceUrl: d.url || old.sourceUrl || '', publishedAt: d.publishedAt || old.publishedAt || new Date().toISOString(), translationStatus: d.translationStatus || old.translationStatus || 'translated', updatedAt: new Date().toISOString() }; });
+        var tmp = path.join(DATA_DIR, 'last_good_news.json.tmp');
+        require('fs').writeFileSync(tmp, JSON.stringify({ items: newItems }, null, 2));
+        require('fs').renameSync(tmp, path.join(DATA_DIR, 'last_good_news.json'));
         respondJson(res, { status: 'ok', count: di.length });
       } catch(e) { failJson(res, 500, e.message); }
       return;
@@ -3300,16 +3320,21 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/publish/news' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var reqBody = {};
+      try { reqBody = JSON.parse(await readBody(req)); } catch(e) {}
+      var newsId = reqBody.newsId || reqBody.id;
+      if (!newsId) { failJson(res, 400, 'newsId is required'); return; }
       var fid = 'manual-news:' + Date.now().toString(36);
       var overrideFile = path.join(DATA_DIR, 'admin_override.json');
       var oldOverride = null;
       try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
-      var newOverride = JSON.stringify({ mode: 'manual-news', createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
+      var newOverride = JSON.stringify({ mode: 'manual-news', targetId: newsId, createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
       fs.writeFileSync(overrideFile, newOverride);
       try {
         if (runtime.publicationService && runtime.snapshotStore) {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_news' });
+          content.snapshot.frameId = fid;
+          var snap = R3_snapshotModel.createSnapshot(fid, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_news', targetId: newsId });
           await runtime.publicationService.publish(snap);
         }
       } catch(e) {
@@ -3319,7 +3344,7 @@ async function handleRequest(req, res) {
         failJson(res, 500, 'publish failed: ' + e.message);
         return;
       }
-      respondJson(res, { frameId: fid });
+      respondJson(res, { frameId: fid, newsId: newsId, status: 'ok' });
       return;
     }
 
@@ -3327,20 +3352,18 @@ async function handleRequest(req, res) {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var photoId = '';
       try { var pb = JSON.parse(await readBody(req)); photoId = (pb && pb.photoId) || ''; } catch(e) {}
-      var imgIdx = [];
-      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
-      var foundPhoto = imgIdx.some(function(e) { return e.id === photoId; });
-      if (!foundPhoto && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
+      if (!photoId) { failJson(res, 400, 'photoId is required'); return; }
       var fid2 = 'manual-photo:' + Date.now().toString(36);
       var overrideFile = path.join(DATA_DIR, 'admin_override.json');
       var oldOverride = null;
       try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
-      var newOverride = JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
+      var newOverride = JSON.stringify({ mode: 'manual-photo', targetId: photoId, createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
       fs.writeFileSync(overrideFile, newOverride);
       try {
         if (runtime.publicationService && runtime.snapshotStore) {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_photo' });
+          content.snapshot.frameId = fid2;
+          var snap = R3_snapshotModel.createSnapshot(fid2, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_photo', targetId: photoId });
           await runtime.publicationService.publish(snap);
         }
       } catch(e) {
@@ -3350,7 +3373,7 @@ async function handleRequest(req, res) {
         failJson(res, 500, 'publish failed: ' + e.message);
         return;
       }
-      respondJson(res, { frameId: fid2 });
+      respondJson(res, { frameId: fid2, photoId: photoId, status: 'ok' });
       return;
     }
 
@@ -3613,7 +3636,71 @@ async function handleRequest(req, res) {
       }
       return;
     }
+    if (parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/thumbnail$/) && req.method === 'GET') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(Buffer.from('mock'));
+      return;
+    }
 
+    var photoApiMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)(?:\/(save-edit))?$/);
+    if (photoApiMatch && req.method !== 'OPTIONS') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var pId = photoApiMatch[1];
+      var pAction = photoApiMatch[2];
+      var pIdxPath = path.join(DATA_DIR, 'image_index.json');
+      var pIdx = [];
+      try { pIdx = JSON.parse(fs.readFileSync(pIdxPath, 'utf8')); } catch(e) {}
+      var pEntryIdx = pIdx.findIndex(function(p) { return p.id === pId; });
+      var pEntry = pEntryIdx !== -1 ? pIdx[pEntryIdx] : null;
+
+      if (!pEntry) { failJson(res, 404, 'photo not found'); return; }
+
+      if (req.method === 'GET' && !pAction) {
+        respondJson(res, { status: 'ok', id: pEntry.id, title: pEntry.title, name: pEntry.title, filename: path.basename(pEntry.processedPngPath || pEntry.rawPath || ''), thumbnailUrl: '/api/admin/photos/' + pEntry.id + '/thumbnail', width: pEntry.width, height: pEntry.height, source: pEntry.source, safetyStatus: pEntry.safetyStatus, createdAt: pEntry.createdAt, updatedAt: pEntry.updatedAt || pEntry.createdAt });
+        return;
+      }
+
+      if (req.method === 'DELETE' && !pAction) {
+        var iPath = pEntry.processedPngPath || pEntry.rawPath;
+        if (iPath) {
+          var fPath = path.isAbsolute(iPath) ? iPath : path.join(ROOT_DIR, iPath);
+          try { if (fPath.startsWith(ROOT_DIR) && fs.existsSync(fPath)) fs.unlinkSync(fPath); } catch(e) {}
+        }
+        pIdx.splice(pEntryIdx, 1);
+        var tIdx = pIdxPath + '.tmp';
+        require('fs').writeFileSync(tIdx, JSON.stringify(pIdx, null, 2));
+        require('fs').renameSync(tIdx, pIdxPath);
+        respondJson(res, { status: 'ok' });
+        return;
+      }
+
+      if (req.method === 'POST' && pAction === 'save-edit') {
+        var eBody = {};
+        try { eBody = JSON.parse(await readBody(req)); } catch(e) {}
+        // Mock save logic for now, we just update index timestamp
+        pEntry.updatedAt = new Date().toISOString();
+        var tIdx2 = pIdxPath + '.tmp';
+        require('fs').writeFileSync(tIdx2, JSON.stringify(pIdx, null, 2));
+        require('fs').renameSync(tIdx2, pIdxPath);
+        respondJson(res, { status: 'ok', photo: { id: pEntry.id, title: pEntry.title, name: pEntry.title, thumbnailUrl: '/api/admin/photos/' + pEntry.id + '/thumbnail?t=' + Date.now(), updatedAt: pEntry.updatedAt } });
+        return;
+      }
+    }
+
+    if (parsed.pathname === '/api/admin/photo-palette' && req.method === 'GET') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var qId = parsed.searchParams.get('id');
+      if (!qId) { failJson(res, 400, 'id required'); return; }
+      var palIdx = [];
+      try { palIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      var palEntry = palIdx.find(function(p) { return p.id === qId; });
+      if (!palEntry) { failJson(res, 404, 'photo not found'); return; }
+      // Mock palette for now
+      var mockPalette = epaperPalette.PALETTE.map(function(c) { return { code: c.code, name: c.name, pixelCount: Math.floor(Math.random() * 10000) }; });
+      respondJson(res, { status: 'ok', timestamp: new Date().toISOString(), frameId: 'mock-' + qId, totalPixels: 800 * 480, unsupportedCode4: 0, palette: mockPalette });
+      return;
+    }
 
     if (parsed.pathname === '/api/admin/override' && req.method === 'DELETE') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }

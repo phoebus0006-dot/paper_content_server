@@ -162,7 +162,24 @@ function addStatusDetail(el,text,type){
 }
 
 // ── Dashboard ──
+
+function loadControlMode() {
+  var el = $('control-mode-info');
+  if(!el) return;
+  el.innerHTML = '<div class="empty-state">加载中…</div>';
+  api('/api/admin/control-mode').then(function(d) {
+    if(!d) {
+      el.innerHTML = '<div class="empty-state error">获取数据失败</div><button class="btn btn-sm" onclick="loadControlMode()">重试</button>';
+      return;
+    }
+    el.innerHTML = '<div class="control-mode-title">控制模式</div>' + esc(d.description);
+  }).catch(function(e) {
+    el.innerHTML = '<div class="empty-state error">加载失败: ' + esc(e.message) + '</div><button class="btn btn-sm" onclick="loadControlMode()">重试</button>';
+  });
+}
+
 function loadDashboard(){
+  loadControlMode();
   api('/api/admin/dashboard').then(function(d){
     if(!d)return;
     setText('dash-mode',d.currentMode,'未设置');
@@ -175,20 +192,6 @@ function loadDashboard(){
     setText('dash-override',d.manualOverride||'auto','auto');
     setText('dash-override-expires',d.overrideExpiresAt,'未设置');
     setText('dash-lastpublish',d.lastPublishedAt||'未发布','未发布');
-    var modeEl=$('dash-control-mode');
-    if(!modeEl){
-      modeEl=document.createElement('div');
-      modeEl.id='dash-control-mode';
-      modeEl.className='control-mode-box';
-      var dash=$('dashboard');
-      var cards=dash.querySelectorAll('.card');
-      cards[cards.length-1].parentNode.insertBefore(modeEl,cards[cards.length-1].nextSibling);
-    }
-    if(d.manualOverride==null||d.manualOverride===undefined){
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>自动调度 — 由时间 SLOT 调度器自动选择内容';
-    }else{
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>手动覆盖 — 当前内容由管理员手动指定，到期时间: '+(d.overrideExpiresAt||'未知');
-    }
     STATE.dashboard=d;
   }).catch(function(e){showErrorBox('dashboard load failed: '+(e&&e.message||e))});
 }
@@ -202,6 +205,7 @@ function loadNewsReview(){
     el.innerHTML='';
     var items=(d.selected||[]);
     NEWS_BASELINE=JSON.parse(JSON.stringify(items));
+    populateNewsSelector(items);
     if(items.length===0){
       el.innerHTML='<div class="empty-state">暂无新闻数据。请检查新闻源配置或刷新。</div>';
       return;
@@ -303,12 +307,16 @@ async function saveNewsDraft(){
   summaries.forEach(function(inp,i){if(items[i])items[i].summary=inp.value});
   var changed=false;
   if(NEWS_BASELINE){
-    for(var i=0;i<items.length;i++){
-      var base=NEWS_BASELINE[i];
-      var cur=items[i];
-      if(base&&cur&&(base.title!==cur.title||base.summary!==cur.summary)){
-        changed=true;
-        break;
+    if (items.length !== NEWS_BASELINE.length) {
+      changed = true;
+    } else {
+      for(var i=0;i<items.length;i++){
+        var base=NEWS_BASELINE[i];
+        var cur=items[i];
+        if(!base || base.title!==cur.title||base.summary!==cur.summary||base.url!==cur.url){
+          changed=true;
+          break;
+        }
       }
     }
   }else{
@@ -361,6 +369,7 @@ function moveNews(idx,dir){
   if(SELECTED_NEWS_IDX===idx)SELECTED_NEWS_IDX=target;
   else if(SELECTED_NEWS_IDX===target)SELECTED_NEWS_IDX=idx;
   loadNewsReview();
+  saveNewsDraft();
 }
 
 function removeNews(idx){
@@ -379,7 +388,8 @@ function removeNews(idx){
       }
     }
     loadNewsReview();
-  });
+  saveNewsDraft();
+});
 }
 
 // ── Photos ──
@@ -390,6 +400,7 @@ function loadPhotos(){
     if(!el)return;
     el.innerHTML='';
     var photos=d.photos||[];
+    populatePhotoSelector(photos);
     var countEl=$('photo-count');
     if(countEl)countEl.textContent='共 '+photos.length+' 张';
     // Handle upload availability from server response
@@ -624,26 +635,42 @@ function loadPublishHistory(){
   });
 }
 
+
+var ROLLBACK_TARGET = null;
 function rollback(id){
-  var entries=STATE.publishHistory||[];
-  var entry=null;
-  for(var i=0;i<entries.length;i++){
-    if(entries[i].id===id||entries[i].snapshotId===id){
-      entry=entries[i];
-      break;
-    }
-  }
-  var msg='确认恢复到此版本？';
-  if(entry){
-    msg='发布类型: '+(entry.type||'--')+'\n发布时间: '+((entry.publishedAt||'').slice(0,19)||'--')+'\nFrame ID: '+(entry.frameId||'--');
-  }
-  showConfirm('恢复版本',msg,function(){
-    api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:id})}).then(function(r){
-      if(r&&r.frameId){toast('已回滚: '+r.frameId.slice(0,20)+'...','success');loadDashboard();loadPublishHistory()}
-      else toast('回滚失败','error');
-    }).catch(function(e){toast('回滚失败: '+(e.message||e),'error')});
+  ROLLBACK_TARGET = id;
+  var rec = (STATE.publishHistory&&STATE.publishHistory.history||[]).find(function(h){return h.id===id});
+  if(!rec) { toast('记录未找到', 'error'); return; }
+  var rbox = $('rollback-preview');
+  var rcon = $('rollback-preview-content');
+  rcon.innerHTML = '<div><strong>类型:</strong> '+(rec.type==='news'?'新闻':'图片')+'</div>'+
+    '<div><strong>发布时间:</strong> '+rec.publishedAt+'</div>'+
+    '<div class="stat-mono" style="font-size:12px"><strong>frameId:</strong> '+rec.frameId+'</div>';
+  rbox.style.display = 'block';
+  rbox.scrollIntoView({behavior:'smooth'});
+}
+function closeRollbackPreview(){
+  ROLLBACK_TARGET = null;
+  $('rollback-preview').style.display = 'none';
+  var btn = document.querySelector('#rollback-preview .btn-danger');
+  if(btn){btn.disabled=false;btn.textContent='确认恢复';}
+}
+function confirmRollback(){
+  if(!ROLLBACK_TARGET) return;
+  var btn = document.querySelector('#rollback-preview .btn-danger');
+  if(btn){btn.disabled=true;btn.textContent='恢复中...';}
+  api('/api/admin/rollback', {method:'POST', body:JSON.stringify({snapshotId: ROLLBACK_TARGET})}).then(function(r){
+    toast('回滚成功', 'success');
+    closeRollbackPreview();
+    loadDashboard();
+    loadPublishHistory();
+  }).catch(function(e){
+    toast('回滚失败: ' + e.message, 'error');
+  }).finally(function(){
+    if(btn){btn.disabled=false;btn.textContent='确认恢复';}
   });
 }
+
 
 // ── Override ──
 function clearOverride(){
@@ -757,4 +784,92 @@ fetch('/api/admin/access-mode').then(function(r){
   showErrorBox('init failed: '+(e&&e.message||e));
   show($('app'));
   loadAll();
+}
+
+
+function populateNewsSelector(items) {
+  var sel = $('quick-news-select');
+  var btn = $('quick-publish-news-btn');
+  if(!sel || !btn) return;
+  var oldVal = sel.value;
+  sel.innerHTML = '';
+  if(!items || items.length === 0) {
+    sel.innerHTML = '<option value="">暂无可发布新闻</option>';
+    sel.disabled = true;
+    btn.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  items.forEach(function(item) {
+    var opt = document.createElement('option');
+    opt.value = item.id;
+    opt.textContent = item.title || '无标题新闻';
+    sel.appendChild(opt);
+  });
+  if(oldVal && items.some(function(i){return i.id===oldVal;})) sel.value = oldVal;
+  btn.disabled = false;
+}
+
+function quickPublishNews() {
+  var sel = $('quick-news-select');
+  var btn = $('quick-publish-news-btn');
+  if(!sel || !sel.value) return;
+  var id = sel.value;
+  btn.disabled = true;
+  var oldText = btn.textContent;
+  btn.textContent = '发布中...';
+  api('/api/admin/publish/news', { method: 'POST', body: JSON.stringify({ newsId: id }) }).then(function(r) {
+    toast('新闻发布成功', 'success');
+    loadDashboard();
+    loadPublishHistory();
+  }).catch(function(e) {
+    toast('发布失败: ' + e.message, 'error');
+  }).finally(function() {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  });
+}
+
+
+function populatePhotoSelector(photos) {
+  var sel = $('quick-photo-select');
+  var btn = $('quick-publish-photo-btn');
+  if(!sel || !btn) return;
+  var oldVal = sel.value;
+  sel.innerHTML = '';
+  if(!photos || photos.length === 0) {
+    sel.innerHTML = '<option value="">暂无可发布图片</option>';
+    sel.disabled = true;
+    btn.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  photos.forEach(function(p) {
+    var opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.title || p.name;
+    sel.appendChild(opt);
+  });
+  if(oldVal && photos.some(function(p){return p.id===oldVal;})) sel.value = oldVal;
+  btn.disabled = false;
+}
+
+function quickPublishPhoto() {
+  var sel = $('quick-photo-select');
+  var btn = $('quick-publish-photo-btn');
+  if(!sel || !sel.value) return;
+  var id = sel.value;
+  btn.disabled = true;
+  var oldText = btn.textContent;
+  btn.textContent = '发布中...';
+  api('/api/admin/publish/photo', { method: 'POST', body: JSON.stringify({ photoId: id }) }).then(function(r) {
+    toast('图片发布成功', 'success');
+    loadDashboard();
+    loadPublishHistory();
+  }).catch(function(e) {
+    toast('发布失败: ' + e.message, 'error');
+  }).finally(function() {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  });
 }

@@ -1,0 +1,29 @@
+{
+  "snapshotId": "snap_mrlzm22j_9b4c34be",
+  "frameId": "manual-photo:mrlzm22h",
+  "payload": {
+    "panelIndex": 49,
+    "panelName": "7.3 inch E6",
+    "width": 800,
+    "height": 480,
+    "mode": "photo",
+    "frameId": "manual-photo:mrlzm22h",
+    "title": "NO_IMAGES",
+    "nextSwitchAt": "2026-07-15T11:30:00.000Z",
+    "nextSwitchLocal": "2026-07-15 13:30",
+    "timezone": "Europe/Paris",
+    "timestamp": "2026-07-15T11:18:58.554Z",
+    "imageStatus": "empty",
+    "imageName": "",
+    "imageSource": "",
+    "imageTheme": "",
+    "kind": "shot"
+  },
+  "mode": "photo",
+  "frameSha256": "7db531ca3cd2c9ab572046c674ffb13ae0af5ccb286fc883fad04a1f7b0125ad",
+  "frameLength": 192010,
+  "contentHash": "d4f8ea2a07112bca",
+  "createdAt": "2026-07-15T11:18:58.555Z",
+  "schemaVersion": 2,
+  "publishReason": "manual_photo"
+}
