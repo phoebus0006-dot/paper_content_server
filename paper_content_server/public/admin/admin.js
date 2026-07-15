@@ -213,14 +213,37 @@ function loadDashboard(){
 function loadContentSyncStatus() {
   api('/api/admin/content-sync/status').then(function(d) {
     if (!d) return;
-    var newsStatus = (d.news && d.news.lastRefresh) ? new Date(d.news.lastRefresh).toLocaleString() : '从未抓取或未知';
-    if (d.news && d.news.nextRefresh) newsStatus += ' (下次计划: ' + new Date(d.news.nextRefresh).toLocaleTimeString() + ')';
-    var photoStatus = (d.photos && d.photos.lastSync) ? new Date(d.photos.lastSync).toLocaleString() : '从未同步或未知';
-    setText('news-sync-status', newsStatus, '未知');
-    setText('photo-sync-status', photoStatus, '未知');
+    
+    function formatStatus(s) {
+      if (!s) return '未知';
+      var html = '';
+      if (s.jobRunning) html += '<span class="badge badge-active" style="margin-bottom:4px;display:inline-block">正在运行</span><br>';
+      if (s.lastAttemptAt) html += '<div class="small">最近尝试: ' + new Date(s.lastAttemptAt).toLocaleString() + '</div>';
+      if (s.lastSuccessAt) html += '<div class="small">最近成功: ' + new Date(s.lastSuccessAt).toLocaleString() + '</div>';
+      if (s.lastFailureAt) html += '<div class="small" style="color:var(--danger)">最近失败: ' + new Date(s.lastFailureAt).toLocaleString() + '</div>';
+      if (s.lastError) html += '<div class="small" style="color:var(--danger)">错误信息: ' + esc(s.lastError) + '</div>';
+      if (s.itemsFetched !== undefined) html += '<div class="small">抓取数量: ' + s.itemsFetched + '</div>';
+      if (s.itemsProcessed !== undefined) html += '<div class="small">处理数量: ' + s.itemsProcessed + '</div>';
+      if (s.nextRunAt) html += '<div class="small muted">下次自动: ' + new Date(s.nextRunAt).toLocaleTimeString() + '</div>';
+      return html || '尚未运行';
+    }
+
+    var nBox = $('news-sync-status');
+    var pBox = $('photo-sync-status');
+    if (nBox) nBox.innerHTML = formatStatus(d.news);
+    if (pBox) pBox.innerHTML = formatStatus(d.photos);
+    
+    // Update button state
+    var btnN = $('btn-sync-news');
+    var btnP = $('btn-sync-photos');
+    if (btnN) btnN.disabled = d.news && d.news.jobRunning;
+    if (btnP) btnP.disabled = d.photos && d.photos.jobRunning;
+    
   }).catch(function(e) {
-    setText('news-sync-status', '加载失败', '加载失败');
-    setText('photo-sync-status', '加载失败', '加载失败');
+    var nBox = $('news-sync-status');
+    var pBox = $('photo-sync-status');
+    if (nBox) nBox.innerHTML = '<span class="error">加载失败</span>';
+    if (pBox) pBox.innerHTML = '<span class="error">加载失败</span>';
   });
 }
 

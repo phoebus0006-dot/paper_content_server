@@ -236,6 +236,11 @@ const runtime = {
   cachedSnapshots: new Map(),
   refreshPromise: null,
   lastNewsRefreshAt: 0,
+  syncLocks: { news: false, photos: false },
+  syncStatus: {
+    news: { jobRunning: false, lastAttemptAt: 0, lastSuccessAt: 0, lastFailureAt: 0, lastError: null, itemsFetched: 0, itemsAdded: 0 },
+    photos: { jobRunning: false, lastAttemptAt: 0, lastSuccessAt: 0, lastFailureAt: 0, lastError: null, itemsProcessed: 0, newIds: [] }
+  },
   serverStartTime: Date.now(),
   renderCount: 0,
   nowProvider: null,
@@ -3277,15 +3282,29 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/content-sync/status') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      
+      var newsStats = runtime.syncStatus.news;
+      var photoStats = runtime.syncStatus.photos;
+      
       respondJson(res, {
         news: {
-          lastRefresh: runtime.lastNewsRefreshAt || 0,
-          nextRefresh: runtime.lastNewsRefreshAt ? runtime.lastNewsRefreshAt + (NEWS_REFRESH_MINUTES * 60 * 1000) : 0,
-          status: 'ok'
+          jobRunning: runtime.syncLocks.news,
+          lastAttemptAt: newsStats.lastAttemptAt,
+          lastSuccessAt: newsStats.lastSuccessAt,
+          lastFailureAt: newsStats.lastFailureAt,
+          lastError: newsStats.lastError,
+          itemsFetched: newsStats.itemsFetched,
+          itemsAdded: newsStats.itemsAdded,
+          nextRunAt: runtime.lastNewsRefreshAt ? runtime.lastNewsRefreshAt + (NEWS_REFRESH_MINUTES * 60 * 1000) : 0
         },
         photos: {
-          lastSync: runtime.imageIndexLoadedAt || 0,
-          status: 'ok'
+          jobRunning: runtime.syncLocks.photos,
+          lastAttemptAt: photoStats.lastAttemptAt,
+          lastSuccessAt: photoStats.lastSuccessAt,
+          lastFailureAt: photoStats.lastFailureAt,
+          lastError: photoStats.lastError,
+          itemsProcessed: photoStats.itemsProcessed,
+          newIds: photoStats.newIds
         }
       });
       return;
@@ -3294,10 +3313,31 @@ async function handleRequest(req, res) {
     if (parsed.pathname === '/api/admin/content-sync/news') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       if (req.method !== 'POST') { failJson(res, 405, 'method not allowed'); return; }
-      // Trigger news refresh asynchronously
-      buildNewsSnapshot(new Date()).then(() => {
+      
+      if (runtime.syncLocks.news) {
+        failJson(res, 409, 'News sync is already running');
+        return;
+      }
+      
+      runtime.syncLocks.news = true;
+      runtime.syncStatus.news.jobRunning = true;
+      runtime.syncStatus.news.lastAttemptAt = Date.now();
+      
+      buildNewsSnapshot(new Date()).then((snap) => {
         runtime.lastNewsRefreshAt = Date.now();
-      }).catch(err => console.log('Manual news refresh failed:', err));
+        runtime.syncStatus.news.lastSuccessAt = Date.now();
+        runtime.syncStatus.news.lastError = null;
+        runtime.syncStatus.news.itemsFetched = snap.items ? snap.items.length : 0;
+        // In a full implementation, buildNewsSnapshot would return new vs updated counts
+        runtime.syncLocks.news = false;
+        runtime.syncStatus.news.jobRunning = false;
+      }).catch(err => {
+        console.log('Manual news refresh failed:', err);
+        runtime.syncStatus.news.lastFailureAt = Date.now();
+        runtime.syncStatus.news.lastError = err.message || String(err);
+        runtime.syncLocks.news = false;
+        runtime.syncStatus.news.jobRunning = false;
+      });
       
       respondJson(res, { status: 'started', jobId: 'news-' + Date.now() });
       return;
@@ -3307,14 +3347,40 @@ async function handleRequest(req, res) {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       if (req.method !== 'POST') { failJson(res, 405, 'method not allowed'); return; }
       
-      // Trigger photo process asynchronously
+      if (runtime.syncLocks.photos) {
+        failJson(res, 409, 'Photo sync is already running');
+        return;
+      }
+      
+      runtime.syncLocks.photos = true;
+      runtime.syncStatus.photos.jobRunning = true;
+      runtime.syncStatus.photos.lastAttemptAt = Date.now();
+      
       try {
         const { runProcessImages } = require('./scripts/process-images.js');
-        runProcessImages({ limit: 0 }).then(() => {
+        runProcessImages({ limit: 0 }).then((results) => {
+          runtime.syncStatus.photos.lastSuccessAt = Date.now();
+          runtime.syncStatus.photos.lastError = null;
+          if (results) {
+            runtime.syncStatus.photos.itemsProcessed = results.processed || 0;
+          }
           return loadImageIndex();
-        }).catch(err => console.log('Manual photo refresh failed:', err));
+        }).then(() => {
+          runtime.syncLocks.photos = false;
+          runtime.syncStatus.photos.jobRunning = false;
+        }).catch(err => {
+          console.log('Manual photo refresh failed:', err);
+          runtime.syncStatus.photos.lastFailureAt = Date.now();
+          runtime.syncStatus.photos.lastError = err.message || String(err);
+          runtime.syncLocks.photos = false;
+          runtime.syncStatus.photos.jobRunning = false;
+        });
       } catch (err) {
-        console.log('Failed to run photo processing script:', err);
+        console.log('Failed to load photo processing script:', err);
+        runtime.syncStatus.photos.lastFailureAt = Date.now();
+        runtime.syncStatus.photos.lastError = err.message || String(err);
+        runtime.syncLocks.photos = false;
+        runtime.syncStatus.photos.jobRunning = false;
       }
       
       respondJson(res, { status: 'started', jobId: 'photo-' + Date.now() });
