@@ -36,7 +36,15 @@ function api(path,opts){
   if(TOKEN) h['Authorization']='Bearer '+TOKEN;
   return fetch(path,Object.assign({headers:h},opts)).then(function(r){
     if(r.status===401||r.status===403){
-      if(ACCESS_MODE==='token'&&!TOKEN){showLogin();throw new Error('unauthorized')}
+      if(ACCESS_MODE==='token'&&!TOKEN){showLogin();throw new Error('unauthorized');}
+    }
+    if(!r.ok){
+      return r.json().then(function(errBody){
+        throw new Error(errBody.message||errBody.code||('HTTP '+r.status));
+      }).catch(function(e){
+        if(e.message)throw e;
+        throw new Error('HTTP '+r.status);
+      });
     }
     if(r.status===204)return null;
     return r.json().catch(function(){return null});
@@ -94,6 +102,7 @@ document.querySelectorAll('.sidebar nav a').forEach(function(a){
 
 function loadAll(){
   loadDashboard();loadNewsReview();loadPhotos();loadPublishHistory();loadStatus();loadHealth();
+  loadControlMode();populateNewsSelector();populatePhotoSelector();
   updateRefreshTime();
 }
 
@@ -175,20 +184,6 @@ function loadDashboard(){
     setText('dash-override',d.manualOverride||'auto','auto');
     setText('dash-override-expires',d.overrideExpiresAt,'未设置');
     setText('dash-lastpublish',d.lastPublishedAt||'未发布','未发布');
-    var modeEl=$('dash-control-mode');
-    if(!modeEl){
-      modeEl=document.createElement('div');
-      modeEl.id='dash-control-mode';
-      modeEl.className='control-mode-box';
-      var dash=$('dashboard');
-      var cards=dash.querySelectorAll('.card');
-      cards[cards.length-1].parentNode.insertBefore(modeEl,cards[cards.length-1].nextSibling);
-    }
-    if(d.manualOverride==null||d.manualOverride===undefined){
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>自动调度 — 由时间 SLOT 调度器自动选择内容';
-    }else{
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>手动覆盖 — 当前内容由管理员手动指定，到期时间: '+(d.overrideExpiresAt||'未知');
-    }
     STATE.dashboard=d;
   }).catch(function(e){showErrorBox('dashboard load failed: '+(e&&e.message||e))});
 }
@@ -478,7 +473,13 @@ if(photoForm){
 
 function deletePhoto(id){
   showConfirm('删除图片','确认删除该图片？此操作不可撤销。',function(){
-    api('/api/admin/photos/'+id,{method:'DELETE'}).then(function(){toast('已删除','info');loadPhotos()}).catch(function(e){toast('删除失败: '+(e.message||e),'error')});
+    api('/api/admin/photos/'+id,{method:'DELETE'}).then(function(){
+      toast('已删除','info');loadPhotos();populatePhotoSelector();
+    }).catch(function(e){
+      var msg=(e&&e.message)||e;
+      if(msg&&msg.indexOf('404')>=0){toast('资源已不存在','error');loadPhotos();populatePhotoSelector();}
+      else toast('删除失败: '+msg,'error');
+    });
   });
 }
 
@@ -496,9 +497,19 @@ function openEditor(id){
   switchTab('photo-editor-page');
   EDITOR_STATE.id=id;
   EDITOR_STATE.recipe={brightness:1,contrast:1,saturation:1,gamma:1,rotate:0,flipH:false,flipV:false,sharpen:0,blur:0};
+  $('editor-title').textContent='加载中…';
   loadEditorPreview();
   api('/api/admin/photos/'+id).then(function(d){
-    if(d){$('editor-title').textContent=d.title||id.slice(0,12)}
+    if(d&&d.title){$('editor-title').textContent=d.title;}
+    else{$('editor-title').textContent=id.slice(0,12);}
+  }).catch(function(e){
+    var msg=(e&&e.message)||e;
+    if(msg&&msg.indexOf('404')>=0){
+      $('editor-title').textContent='资源已不存在 ('+id.slice(0,12)+')';
+      toast('图片资源已不存在','error');
+    }else{
+      $('editor-title').textContent=id.slice(0,12);
+    }
   });
   var editorHeader=$('photo-editor-page').querySelector('h2');
   if(editorHeader){
@@ -587,7 +598,12 @@ function updateEditorParam(key,val){
 function saveEdit(){
   api('/api/admin/photos/'+EDITOR_STATE.id+'/save-edit',{method:'POST',body:JSON.stringify({recipe:EDITOR_STATE.recipe})}).then(function(){
     toast('编辑已保存','success');
-  }).catch(function(e){toast('保存失败: '+(e.message||e),'error')});
+    loadPhotos();
+  }).catch(function(e){
+    var msg=(e&&e.message)||e;
+    if(msg&&msg.indexOf('404')>=0){toast('资源已不存在','error');loadPhotos();switchTab('photos-page');}
+    else toast('保存失败: '+msg,'error');
+  });
 }
 
 // ── Publish History ──
@@ -633,16 +649,43 @@ function rollback(id){
       break;
     }
   }
-  var msg='确认恢复到此版本？';
-  if(entry){
-    msg='发布类型: '+(entry.type||'--')+'\n发布时间: '+((entry.publishedAt||'').slice(0,19)||'--')+'\nFrame ID: '+(entry.frameId||'--');
+  STATE.rollbackTarget=id;
+  var preview=$('rollback-preview');
+  var content=$('rollback-preview-content');
+  if(preview&&content){
+    var html='<div class="detail-field"><div class="detail-label">版本 ID</div><div class="detail-value">'+esc(id)+'</div></div>';
+    if(entry){
+      html+='<div class="detail-field"><div class="detail-label">类型</div><div class="detail-value">'+esc(entry.type||'--')+'</div></div>';
+      html+='<div class="detail-field"><div class="detail-label">发布时间</div><div class="detail-value">'+esc((entry.publishedAt||'').slice(0,19)||'--')+'</div></div>';
+      html+='<div class="detail-field"><div class="detail-label">Frame ID</div><div class="detail-value">'+esc(entry.frameId||'--')+'</div></div>';
+    }
+    content.innerHTML=html;
+    show(preview);
+    var btn=qs('#rollback-preview .btn-danger');
+    if(btn){btn.disabled=false;btn.textContent='确认恢复';}
   }
-  showConfirm('恢复版本',msg,function(){
-    api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:id})}).then(function(r){
-      if(r&&r.frameId){toast('已回滚: '+r.frameId.slice(0,20)+'...','success');loadDashboard();loadPublishHistory()}
-      else toast('回滚失败','error');
-    }).catch(function(e){toast('回滚失败: '+(e.message||e),'error')});
+}
+
+function confirmRollback(){
+  var target=STATE.rollbackTarget;
+  if(!target){toast('没有选择恢复目标','error');return;}
+  var btn=qs('#rollback-preview .btn-danger');
+  if(btn){btn.disabled=true;btn.textContent='恢复中...';}
+  api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:target})}).then(function(r){
+    if(r&&r.frameId){toast('已回滚: '+r.frameId.slice(0,20)+'...','success');loadDashboard();loadPublishHistory();closeRollbackPreview()}
+    else{toast('回滚失败','error');if(btn){btn.disabled=false;btn.textContent='确认恢复';}}
+  }).catch(function(e){
+    toast('回滚失败: '+(e.message||e),'error');
+    if(btn){btn.disabled=false;btn.textContent='确认恢复';}
   });
+}
+
+function closeRollbackPreview(){
+  var preview=$('rollback-preview');
+  if(preview)hide(preview);
+  STATE.rollbackTarget=null;
+  var btn=qs('#rollback-preview .btn-danger');
+  if(btn){btn.disabled=false;btn.textContent='确认恢复';}
 }
 
 // ── Override ──
@@ -651,6 +694,101 @@ function clearOverride(){
     api('/api/admin/override',{method:'DELETE'}).then(function(){
       toast('已恢复自动调度','success');loadDashboard()
     }).catch(function(e){toast('操作失败: '+(e.message||e),'error')});
+  });
+}
+
+// ── Control Mode ──
+function loadControlMode(){
+  var el=$('control-mode-info');
+  if(!el)return;
+  el.innerHTML='加载中…';
+  el.className='control-mode-box';
+  var timedOut=false;
+  var timer=setTimeout(function(){
+    if(!timedOut){
+      timedOut=true;
+      el.innerHTML='加载失败（超时）<button class="btn btn-sm btn-outline" onclick="loadControlMode()" style="margin-left:8px">重试</button>';
+    }
+  },5000);
+  api('/api/admin/control-mode').then(function(d){
+    if(timedOut)return;
+    clearTimeout(timer);
+    if(!d||!d.mode){
+      el.innerHTML='暂无控制方式信息';
+      return;
+    }
+    var html='<div class="control-mode-title">'+esc(d.mode)+'</div>';
+    if(d.description)html+='<div>'+esc(d.description)+'</div>';
+    if(d.source)html+='<div class="small muted">来源: '+esc(d.source)+'</div>';
+    el.innerHTML=html;
+  }).catch(function(e){
+    if(timedOut)return;
+    clearTimeout(timer);
+    el.innerHTML='加载失败<button class="btn btn-sm btn-outline" onclick="loadControlMode()" style="margin-left:8px">重试</button>';
+  });
+}
+
+// ── Quick publish selectors ──
+function populateNewsSelector(){
+  var sel=$('quick-news-select');
+  if(!sel)return;
+  sel.innerHTML='<option value="">-- 选择新闻 --</option>';
+  var items=(STATE.news&&STATE.news.selected)||[];
+  items.forEach(function(item,i){
+    var opt=document.createElement('option');
+    opt.value=i;
+    opt.textContent=(item.title||'无标题').slice(0,40);
+    sel.appendChild(opt);
+  });
+  var btn=$('btn-quick-publish-news');
+  if(btn)btn.disabled=true;
+}
+
+function quickPublishNews(){
+  var sel=$('quick-news-select');
+  if(!sel||!sel.value){toast('请选择新闻','error');return;}
+  var btn=$('btn-quick-publish-news');
+  if(btn){btn.disabled=true;btn.textContent='发布中...';}
+  var idx=parseInt(sel.value);
+  var items=(STATE.news&&STATE.news.selected)||[];
+  var item=items[idx];
+  if(!item){toast('新闻数据不存在','error');if(btn){btn.disabled=false;btn.textContent='📰 立即发布所选新闻';}return;}
+  api('/api/admin/publish/news',{method:'POST',body:JSON.stringify({newsId:item.id||item.url})}).then(function(r){
+    if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard();}
+    else toast('发布失败','error');
+  }).catch(function(e){toast('发布失败: '+(e.message||e),'error');}).finally(function(){
+    if(btn){btn.disabled=false;btn.textContent='📰 立即发布所选新闻';}
+  });
+}
+
+function populatePhotoSelector(){
+  var sel=$('quick-photo-select');
+  if(!sel)return;
+  sel.innerHTML='<option value="">-- 选择图片 --</option>';
+  api('/api/admin/photos').then(function(d){
+    if(!d||!d.photos)return;
+    d.photos.forEach(function(p){
+      var opt=document.createElement('option');
+      opt.value=p.id;
+      opt.textContent=(p.title||p.id.slice(0,12)).slice(0,40);
+      sel.appendChild(opt);
+    });
+  }).catch(function(){});
+  var btn=$('btn-quick-publish-photo');
+  if(btn)btn.disabled=true;
+}
+
+function quickPublishPhoto(){
+  var sel=$('quick-photo-select');
+  if(!sel||!sel.value){toast('请选择图片','error');return;}
+  var btn=$('btn-quick-publish-photo');
+  if(btn){btn.disabled=true;btn.textContent='发布中...';}
+  var photoId=sel.value;
+  api('/api/admin/publish/photo',{method:'POST',body:JSON.stringify({photoId:photoId})}).then(function(r){
+    if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard();}
+    else toast('发布失败','error');
+  }).catch(function(e){toast('发布失败: '+(e.message||e),'error');}).finally(function(){
+    if(btn){btn.disabled=false;btn.textContent='🖼️ 立即发布所选图片';}
   });
 }
 
