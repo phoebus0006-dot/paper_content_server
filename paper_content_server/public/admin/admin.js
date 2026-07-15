@@ -773,6 +773,94 @@ function loadStatus(){
   });
 }
 
+// ── Selectors (V2) ──
+var selectedPhotoIdForPublish = null;
+
+function showPhotoSelector() {
+  selectedPhotoIdForPublish = null;
+  var btn = $('btn-confirm-photo-publish');
+  if (btn) btn.disabled = true;
+  var el = $('photo-selector-grid');
+  if (el) el.innerHTML = '<div class="empty-state">加载中…</div>';
+  show($('photo-selector-modal'));
+
+  api('/api/admin/photos').then(function(d) {
+    if (!d || !d.photos) return;
+    if (el) el.innerHTML = '';
+    var photos = d.photos || [];
+    if (photos.length === 0) {
+      if (el) el.innerHTML = '<div class="empty-state">图片库为空。</div>';
+      return;
+    }
+    photos.forEach(function(p) {
+      var item = document.createElement('div');
+      item.className = 'photo-item';
+      item.style.cursor = 'pointer';
+      item.onclick = function() {
+        document.querySelectorAll('#photo-selector-grid .photo-item').forEach(function(node) {
+          node.style.borderColor = '#eef0f3';
+          node.style.background = '#fff';
+        });
+        item.style.borderColor = '#4a9eff';
+        item.style.background = '#f0f7ff';
+        selectedPhotoIdForPublish = p.id;
+        if (btn) btn.disabled = false;
+      };
+      var thumbUrl = '/api/admin/photos/' + p.id + '/thumbnail?' + Date.now();
+      item.innerHTML = '<div class="thumb"><img src="' + thumbUrl + '" alt="' + esc(p.title || '') + '" loading="lazy" onerror="this.parentElement.classList.add(\'broken\');this.style.display=\'none\'"></div>' +
+        '<div class="info">' +
+        '<div class="name">' + esc(p.title || p.id.slice(0,12)) + '</div>' +
+        '<div class="meta-row"><span>' + esc(p.source || '未知') + ' · ' + (p.width || 0) + 'x' + (p.height || 0) + '</span></div></div>';
+      if (el) el.appendChild(item);
+    });
+  }).catch(function(e) {
+    if (el) el.innerHTML = '<div class="empty-state">图片加载失败: ' + esc(e.message || e) + '</div>';
+  });
+}
+
+function hidePhotoSelector() {
+  hide($('photo-selector-modal'));
+}
+
+function confirmPhotoPublish() {
+  if (!selectedPhotoIdForPublish) return;
+  hidePhotoSelector();
+  publishPhoto(selectedPhotoIdForPublish);
+}
+
+function showNewsSelector() {
+  var el = $('news-selector-content');
+  var btn = $('btn-confirm-news-publish');
+  if (el) el.innerHTML = '<div class="empty-state">加载中…</div>';
+  if (btn) btn.disabled = true;
+  show($('news-selector-modal'));
+
+  api('/api/admin/news').then(function(d) {
+    if (!d || !d.news || d.news.length === 0) {
+      if (el) el.innerHTML = '<div class="empty-state">当前草稿箱没有新闻。请先在“新闻审查”中获取或编写新闻。</div>';
+      return;
+    }
+    var html = '<ul style="padding-left: 20px;">';
+    d.news.forEach(function(n) {
+      html += '<li style="margin-bottom:8px"><strong>' + esc(n.title) + '</strong><br><span class="muted small">' + esc(n.summary || '').substring(0,60) + '...</span></li>';
+    });
+    html += '</ul>';
+    if (el) el.innerHTML = html;
+    if (btn) btn.disabled = false;
+  }).catch(function(e) {
+    if (el) el.innerHTML = '<div class="empty-state">新闻加载失败: ' + esc(e.message || e) + '</div>';
+  });
+}
+
+function hideNewsSelector() {
+  hide($('news-selector-modal'));
+}
+
+function confirmNewsPublish() {
+  hideNewsSelector();
+  publishNews();
+}
+
 // ── Init ──
 try{
   (function(){

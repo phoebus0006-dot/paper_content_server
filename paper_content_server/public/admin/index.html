@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>电子纸管理后台</title>
-<link rel="stylesheet" href="/admin/admin.css">
+<link rel="stylesheet" href="/admin/admin.css?v=2">
 </head>
 <body>
 
@@ -237,6 +237,14 @@
     <!-- ───────── Publish Center ───────── -->
     <section id="publish-page" class="page">
       <div class="card">
+        <h3 class="card-title">定向发布</h3>
+        <p class="muted small mb-3">强制屏幕显示指定内容。若该内容无时效性，将一直显示，直到手动恢复自动排程。</p>
+        <div style="display:flex;gap:12px">
+          <button class="btn btn-primary" onclick="showNewsSelector()">📰 发布新闻</button>
+          <button class="btn btn-primary" onclick="showPhotoSelector()">🖼️ 发布全屏图片</button>
+        </div>
+      </div>
+      <div class="card">
         <p class="small muted">这里记录每次新闻或图片发布生成的版本。"恢复此版本"会把所选历史版本重新设为当前显示版本，不会修改原始新闻或图片。</p>
       </div>
       <div class="card" id="rollback-preview" style="display:none">
@@ -388,6 +396,35 @@
   </main>
 </div>
 
-<script src="/admin/admin.js"></script>
+<!-- Photo Selector Modal -->
+<div id="photo-selector-modal" class="login-overlay" style="display:none;z-index:200;">
+  <div class="card" style="width: 800px; max-width: 90vw; max-height: 85vh; overflow-y: auto;">
+    <h3 class="card-title">选择图片进行发布</h3>
+    <div id="photo-selector-grid" class="photo-grid" style="margin-bottom: 16px;">
+      <div class="empty-state">加载中…</div>
+    </div>
+    <div class="actions" style="justify-content: flex-end; display: flex; gap: 12px;">
+      <button class="btn btn-outline" onclick="hidePhotoSelector()">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-photo-publish" disabled onclick="confirmPhotoPublish()">确定发布</button>
+    </div>
+  </div>
+</div>
+
+<!-- News Selector Modal -->
+<div id="news-selector-modal" class="login-overlay" style="display:none;z-index:200;">
+  <div class="card" style="width: 600px; max-width: 90vw; max-height: 85vh; overflow-y: auto;">
+    <h3 class="card-title">发布当前新闻草稿</h3>
+    <p class="small muted mb-3" style="margin-bottom: 12px;">将当前在“新闻审查”页中已保存的最新草稿，生成一个快照并强制推送到电子纸上显示。</p>
+    <div id="news-selector-content" style="margin-bottom: 16px; background: #f8f8fa; padding: 12px; border-radius: 6px;">
+      <div class="empty-state">加载中…</div>
+    </div>
+    <div class="actions" style="justify-content: flex-end; display: flex; gap: 12px;">
+      <button class="btn btn-outline" onclick="hideNewsSelector()">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-news-publish" disabled onclick="confirmNewsPublish()">立即发布</button>
+    </div>
+  </div>
+</div>
+
+<script src="/admin/admin.js?v=2"></script>
 </body>
 </html>
