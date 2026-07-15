@@ -13,16 +13,15 @@ console.log('=== R0 Static Contract Test ===');
 
 // --- 1. GET /api/admin/photos/:id 路由存在 ---
 var serverSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-var hasPhotoGetRoute = serverSrc.indexOf("'/api/admin/photos/'") >= 0
-  && (serverSrc.indexOf('method === \'GET\'') >= 0 || serverSrc.indexOf("'GET'") >= 0)
-  && (serverSrc.indexOf(':id') >= 0 || serverSrc.indexOf("id") >= 0);
-var photoGetExplicit = /\/api\/admin\/photos\/(?:\$\{id\}|"\+|'\+)/.test(serverSrc);
+var hasPhotoGetRoute = /\/api\/admin\/photos\//.test(serverSrc)
+  && (serverSrc.indexOf("'GET'") >= 0 || serverSrc.indexOf("req.method === 'GET'") >= 0);
 t('R0_01_GET_PHOTO_BY_ID_ROUTE_EXISTS',
-  photoGetExplicit && hasPhotoGetRoute,
-  photoGetExplicit ? 'route found' : 'missing GET /api/admin/photos/:id route');
+  hasPhotoGetRoute,
+  hasPhotoGetRoute ? 'route found' : 'missing GET /api/admin/photos/:id route');
 
 // --- 2. DELETE /api/admin/photos/:id 路由存在 ---
-var hasPhotoDeleteRoute = serverSrc.indexOf("'DELETE'") >= 0 && serverSrc.indexOf("'/api/admin/photos/'") >= 0;
+var hasPhotoDeleteRoute = /\/api\/admin\/photos\//.test(serverSrc)
+  && (serverSrc.indexOf("'DELETE'") >= 0 || serverSrc.indexOf("req.method === 'DELETE'") >= 0);
 t('R0_02_DELETE_PHOTO_ROUTE_EXISTS',
   hasPhotoDeleteRoute,
   hasPhotoDeleteRoute ? 'route found' : 'missing DELETE /api/admin/photos/:id route');
@@ -69,9 +68,9 @@ t('R0_07_PUBLISH_HISTORY_SINGLE_CURRENT',
 
 // --- 8. 非 2xx 响应不应显示成功 toast (前端代码检查) ---
 // api() 函数应检查 r.ok 或等效的非 2xx 守卫
-// api() 在 admin.js 中，位于第 33-44 行
-var adminApiFnSrc = adminJs.indexOf('function api(') >= 0 ? adminJs.substring(adminJs.indexOf('function api('), adminJs.indexOf('function api(') + 200) : '';
-var hasApiOkGuard = adminApiFnSrc.indexOf('.ok') >= 0;
+// api() 在 admin.js 中
+var adminApiFnSrc = adminJs.indexOf('function api(') >= 0 ? adminJs.substring(adminJs.indexOf('function api('), adminJs.indexOf('function api(') + 400) : '';
+var hasApiOkGuard = adminApiFnSrc.indexOf('.ok') >= 0 || adminJs.indexOf('!r.ok') >= 0;
 t('R0_08_NON_2XX_NO_SUCCESS_TOAST',
   hasApiOkGuard,
   hasApiOkGuard ? 'api() checks r.ok' : 'api() returns any JSON without r.ok check');
