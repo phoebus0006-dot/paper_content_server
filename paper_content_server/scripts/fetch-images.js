@@ -748,7 +748,7 @@ function parseArgs(argv) {
   return args;
 }
 
-async function main() {
+async function runFetchImages(argsOverride) {
   await ensureDir(DATA_DIR);
   await ensureDir(RAW_IMAGES_DIR);
   await ensureDir(IMPORT_IMAGES_DIR);
@@ -758,7 +758,7 @@ async function main() {
   let index = await readJson(RAW_INDEX_FILE, []);
   if (!Array.isArray(index)) index = [];
 
-  const args = parseArgs(process.argv);
+  const args = argsOverride || parseArgs(process.argv);
 
   // Always scan images/ directory as built-in local source
   // Supports: images/shots/<theme>/, images/storyboard/<theme>/, images/<theme>/
@@ -800,9 +800,14 @@ async function main() {
 
   await writeJson(RAW_INDEX_FILE, index);
   console.log(`fetch done: ${results.downloaded} downloaded, ${results.skipped} skipped, ${results.failed} failed (total candidates ${limited.length})`);
+  return results;
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  runFetchImages().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+module.exports = { runFetchImages };

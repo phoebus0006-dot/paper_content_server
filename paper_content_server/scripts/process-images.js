@@ -275,7 +275,7 @@ async function processImage(rawEntry, imageIndex) {
   return { status: 'processed', id: entry.id, path: processedPngPath };
 }
 
-async function main() {
+async function runProcessImages(argsOverride) {
   await ensureDir(DATA_DIR);
   await ensureDir(RAW_IMAGES_DIR);
   await ensureDir(PROCESSED_IMAGES_DIR);
@@ -302,9 +302,14 @@ async function main() {
   const merged = mergeImageIndex(imageIndex, latestOnDisk);
   await writeJson(IMAGE_INDEX_FILE, merged);
   console.log(`process done: ${results.processed} processed, ${results.skipped} skipped, ${results.failed} failed (pending ${pending.length}, limited ${limited.length})`);
+  return results;
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  runProcessImages().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+module.exports = { runProcessImages };
