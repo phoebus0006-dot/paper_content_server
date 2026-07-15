@@ -22,6 +22,17 @@ function check(name, cond, detail) {
   else { fail++; exitCode = 1; console.log('FAIL ' + name + (detail ? ' : ' + detail : '')); }
 }
 
+process.on('uncaughtException', function(err) {
+  console.error('UNCAUGHT:', err.message);
+  console.error(err.stack);
+  process.exit(1);
+});
+process.on('unhandledRejection', function(err) {
+  console.error('UNHANDLED REJECTION:', err && err.message || err);
+  if (err && err.stack) console.error(err.stack);
+  process.exit(1);
+});
+
 async function main() {
   var playwright;
   try {
@@ -60,11 +71,13 @@ async function main() {
     CUSTOM_LIBRARY_ENABLED: 'false'
   });
 
-  var server = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
+  var server = spawn(process.execPath, [path.join(ROOT, 'server.js'), '--port', String(TEST_PORT)], {
     env: env, cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe']
   });
 
+  var stdout_data = '';
   var stderr = '';
+  server.stdout.on('data', function(d) { stdout_data += d.toString(); });
   server.stderr.on('data', function(d) { stderr += d.toString(); });
 
   // Wait for server to be ready
@@ -88,7 +101,8 @@ async function main() {
   }
   if (!ready) {
     console.log('FATAL: local server did not start on port ' + TEST_PORT);
-    console.log('stderr: ' + stderr);
+    console.log('stdout: ' + stdout_data.slice(0, 2000));
+    console.log('stderr: ' + stderr.slice(0, 2000));
     if (server) server.kill();
     // Cleanup
     try { require('child_process').spawnSync('rm', ['-rf', tmpDir], { shell: true }); } catch(e) {}
