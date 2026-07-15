@@ -3781,6 +3781,45 @@ async function handleRequest(req, res) {
       return;
     }
 
+    var photoGetMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)$/);
+    if (photoGetMatch && req.method === 'GET') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var pId = photoGetMatch[1];
+      var imgIdx = [];
+      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      var found = imgIdx.find(function(e) { return e.id === pId; });
+      if (!found) { failJson(res, 404, 'photo not found'); return; }
+      respondJson(res, { photo: found });
+      return;
+    }
+
+    var photoSaveMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/save-edit$/);
+    if (photoSaveMatch && req.method === 'POST') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var pId = photoSaveMatch[1];
+      var imgIdx = [];
+      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      var fIdx = imgIdx.findIndex(function(e) { return e.id === pId; });
+      if (fIdx === -1) { failJson(res, 404, 'photo not found'); return; }
+      try {
+        var body = JSON.parse(await readBody(req));
+        if (body.recipe) {
+          imgIdx[fIdx].recipe = body.recipe;
+          fs.writeFileSync(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
+        }
+        respondJson(res, { status: 'ok' });
+      } catch (e) {
+        failJson(res, 400, 'invalid body: ' + e.message);
+      }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/photo-palette' && req.method === 'GET') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      respondJson(res, { colors: ['#ffffff', '#000000', '#ff0000', '#00ff00', '#0000ff'] });
+      return;
+    }
+
     var delMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)$/);
     if (delMatch && req.method === 'DELETE') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
