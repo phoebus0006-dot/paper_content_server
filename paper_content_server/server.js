@@ -417,6 +417,9 @@ async function main() {
     r1Logger.info('  http://' + ip + ':' + PORT + '/api/news.json');
   }
 
+  // Start internal content schedulers
+  warmRefreshLoop();
+
   function gracefulShutdown(signal) {
     r1Logger.info('Received ' + signal + ', shutting down...');
     var forceExitMs = (APP_CONFIG.process && APP_CONFIG.process.forceExitTimeoutMs) || (boot.config.lifecycle && boot.config.lifecycle.forceExitTimeoutMs) || 12000;
@@ -3269,6 +3272,52 @@ async function handleRequest(req, res) {
         slot: snap2 ? snap2.slotKey : null,
         nextSwitchAt: snap2 ? snap2.nextSwitchLocal : null
       });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/content-sync/status') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      respondJson(res, {
+        news: {
+          lastRefresh: runtime.lastNewsRefreshAt || 0,
+          nextRefresh: runtime.lastNewsRefreshAt ? runtime.lastNewsRefreshAt + (NEWS_REFRESH_MINUTES * 60 * 1000) : 0,
+          status: 'ok'
+        },
+        photos: {
+          lastSync: runtime.imageIndexLoadedAt || 0,
+          status: 'ok'
+        }
+      });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/content-sync/news') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (req.method !== 'POST') { failJson(res, 405, 'method not allowed'); return; }
+      // Trigger news refresh asynchronously
+      buildNewsSnapshot(new Date()).then(() => {
+        runtime.lastNewsRefreshAt = Date.now();
+      }).catch(err => console.log('Manual news refresh failed:', err));
+      
+      respondJson(res, { status: 'started', jobId: 'news-' + Date.now() });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/content-sync/photos') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (req.method !== 'POST') { failJson(res, 405, 'method not allowed'); return; }
+      
+      // Trigger photo process asynchronously
+      try {
+        const { runProcessImages } = require('./scripts/process-images.js');
+        runProcessImages({ limit: 0 }).then(() => {
+          return loadImageIndex();
+        }).catch(err => console.log('Manual photo refresh failed:', err));
+      } catch (err) {
+        console.log('Failed to run photo processing script:', err);
+      }
+      
+      respondJson(res, { status: 'started', jobId: 'photo-' + Date.now() });
       return;
     }
 
