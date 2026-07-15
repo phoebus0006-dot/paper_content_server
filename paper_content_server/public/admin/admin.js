@@ -39,7 +39,13 @@ function api(path,opts){
       if(ACCESS_MODE==='token'&&!TOKEN){showLogin();throw new Error('unauthorized')}
     }
     if(r.status===204)return null;
-    return r.json().catch(function(){return null});
+    return r.json().then(function(data){
+      if(!r.ok) throw new Error(data.error || data.message || ('HTTP ' + r.status));
+      return data;
+    }).catch(function(e){
+      if(!r.ok) throw e;
+      return null;
+    });
   });
 }
 
@@ -536,13 +542,14 @@ if(photoForm){
     if(!fileInput||!fileInput.files[0]){toast('请选择文件','error');return;}
     var btn=qs('#photo-upload-form button[type="submit"]');
     if(btn){btn.disabled=true;btn.textContent='上传中...';}
-    var fd=new FormData();fd.append('photo',fileInput.files[0]);
-    fetch('/api/admin/photos/upload',{method:'POST',headers:{},body:fd}).then(function(r){
+    var file = fileInput.files[0];
+    var h={'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream'};
+    if(TOKEN) h['Authorization']='Bearer '+TOKEN;
+    fetch('/api/admin/photos/upload',{method:'POST',headers:h,body:file}).then(function(r){
       if(r.ok){toast('上传成功','success');fileInput.value='';loadPhotos()}
       else{
-        r.text().then(function(body){
-          toast('上传失败: HTTP '+r.status+' — '+(body||'未知错误'),'error');
-          if(r.status===503){checkUploadEnabled()}
+        r.json().then(function(body){
+          toast('上传失败: HTTP '+r.status+' — '+(body.error||'未知错误'),'error');
         }).catch(function(){
           toast('上传失败: HTTP '+r.status,'error');
         });

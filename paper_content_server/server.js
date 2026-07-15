@@ -3753,27 +3753,73 @@ async function handleRequest(req, res) {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var idx = [];
       try { idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
-      respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, poolType: e.poolType || '', safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }), uploadAvailable: false, uploadDisabledReason: '安全分类器未就绪，暂不可上传' });
+      respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, poolType: e.poolType || '', safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }), uploadAvailable: true });
       return;
     }
 
     if (parsed.pathname === '/api/admin/photos/upload' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      // Check if photo upload is supported
-      var uploadDisabled = true;
-      var uploadReason = '安全分类器未就绪，暂不可上传';
-      if (uploadDisabled) {
-        failJson(res, 503, uploadReason);
-        return;
+      try {
+        var fname = req.headers['x-file-name'] ? decodeURIComponent(req.headers['x-file-name']) : 'upload.png';
+        var ext = path.extname(fname).toLowerCase();
+        if (!ext) ext = '.png';
+        var rawBuf = await readBody(req, 20*1024*1024);
+        var fid = 'upload-' + Date.now().toString(36);
+        var rawDir = path.join(DATA_DIR, 'raw_images');
+        if (!fs.existsSync(rawDir)) fs.mkdirSync(rawDir, { recursive: true });
+        var fpath = path.join(rawDir, fid + ext);
+        fs.writeFileSync(fpath, rawBuf);
+        var imgIdx = [];
+        try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+        imgIdx.push({ id: fid, rawPath: 'data/raw_images/' + path.basename(fpath), status: 'raw', addedAt: new Date().toISOString(), title: fname });
+        fs.writeFileSync(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
+        require('child_process').spawn('npm', ['run', 'process'], { detached: true, stdio: 'ignore' }).unref();
+        respondJson(res, { status: 'ok', photoId: fid });
+      } catch (e) {
+        failJson(res, 500, 'Upload failed: ' + e.message);
       }
-      // TODO: Implement actual file upload handling
-      failJson(res, 501, '上传功能尚未实现');
+      return;
+    }
+
+    var delMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)$/);
+    if (delMatch && req.method === 'DELETE') {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var delId = delMatch[1];
+      var imgIdx = [];
+      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      var foundIdx = imgIdx.findIndex(function(e) { return e.id === delId; });
+      if (foundIdx === -1) { failJson(res, 404, 'photo not found'); return; }
+      var p = imgIdx[foundIdx];
+      imgIdx.splice(foundIdx, 1);
+      fs.writeFileSync(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
+      if (p.rawPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.rawPath)); } catch(e) {}
+      if (p.processedPngPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.processedPngPath)); } catch(e) {}
+      if (p.processedEpfPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.processedEpfPath)); } catch(e) {}
+      respondJson(res, { status: 'ok' });
       return;
     }
 
     if (parsed.pathname === '/api/admin/photo-preview' || parsed.pathname === '/api/admin/photo-eink-preview') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      failJson(res, 501, '图片预览服务未就绪');
+      try {
+        var pId = parsed.query.photoId;
+        var imgIdx = [];
+        try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+        var pEntry = imgIdx.find(function(e) { return e.id === pId; });
+        if (!pEntry) { failJson(res, 404, 'photo not found'); return; }
+        var srcPath = pEntry.rawPath ? path.join(ROOT_DIR, pEntry.rawPath) : (pEntry.processedPngPath ? path.join(ROOT_DIR, pEntry.processedPngPath) : '');
+        if (!fs.existsSync(srcPath)) { failJson(res, 404, 'source file not found'); return; }
+        
+        var b = parseFloat(parsed.query.brightness) || 1.0;
+        var s = parseFloat(parsed.query.saturation) || 1.0;
+        var sharp = require('sharp');
+        var outBuf = await sharp(srcPath).rotate().resize(800, 480, { fit: 'cover', position: 'centre' })
+          .modulate({ brightness: b, saturation: s }).png().toBuffer();
+        res.writeHead(200, { 'Content-Type': 'image/png' });
+        res.end(outBuf);
+      } catch (err) {
+        failJson(res, 500, 'preview failed: ' + err.message);
+      }
       return;
     }
 
