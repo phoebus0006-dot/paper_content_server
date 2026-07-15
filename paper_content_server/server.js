@@ -3249,6 +3249,29 @@ async function handleRequest(req, res) {
       return;
     }
 
+    if (parsed.pathname === '/api/admin/control-mode') {
+      if (ADMIN_ACCESS_MODE !== 'lan' && !ADMIN_TOKEN) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
+      if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var snap2 = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
+      var mode = runtime.manualOverride ? 'manual' : (snap2 ? snap2.mode : 'unknown');
+      var description = '';
+      if (mode === 'manual') description = '手动覆盖 — 当前内容由管理员手动指定';
+      else if (mode === 'unknown') description = '暂无排程信息 — 调度器可能尚未运行';
+      else description = '自动调度 — 由时间 SLOT 调度器自动选择内容';
+      respondJson(res, {
+        status: 'ok',
+        mode: mode,
+        modeLabel: mode === 'manual' ? '手动覆盖' : (mode === 'unknown' ? '未知' : '自动调度'),
+        description: description,
+        overrideActive: !!runtime.manualOverride,
+        overrideExpiresAt: runtime.overrideExpiresAt || null,
+        slot: snap2 ? snap2.slotKey : null,
+        nextSwitchAt: snap2 ? snap2.nextSwitchLocal : null
+      });
+      return;
+    }
+
     if (parsed.pathname === '/api/admin/news') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var sel = [];
@@ -3553,7 +3576,53 @@ async function handleRequest(req, res) {
           return;
         } catch(e) {}
       }
-      respondJson(res, { history: [] });
+      failJson(res, 503, 'history unavailable');
+      return;
+    }
+
+    if (parsed.pathname.startsWith('/api/admin/publish-history/') && parsed.pathname.endsWith('/preview')) {
+      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var historyId = parsed.pathname.split('/')[4];
+      if (!historyId || !/^[a-zA-Z0-9_-]+$/.test(historyId)) { failJson(res, 400, 'invalid historyId'); return; }
+      if (runtime.publicationHistory && runtime.publicationService) {
+        try {
+          var histList = await runtime.publicationHistory.list();
+          var entry = histList.filter(function(e) { return e.id === historyId || e.snapshotId === historyId; })[0];
+          if (!entry) { failJson(res, 404, 'history entry not found'); return; }
+          var snap = await runtime.publicationService.loadSnapshot(entry.snapshotId);
+          if (!snap) { failJson(res, 404, 'snapshot not found'); return; }
+          
+          var previewData = {};
+          if (entry.type === 'news' || snap.mode === 'news') {
+            previewData = {
+              items: snap.items || []
+            };
+          } else if (entry.type === 'photo' || snap.mode === 'photo') {
+            var photoId = snap.id || snap.photoId || '';
+            previewData = {
+              photoId: photoId,
+              title: snap.title || snap.imageName || '',
+              thumbnailUrl: photoId ? ('/photos/' + photoId) : (snap.imageSource || ''), // Assuming imageSource might be a URL if not an ID
+              width: snap.width || 0,
+              height: snap.height || 0
+            };
+          }
+          respondJson(res, {
+            historyId: entry.id,
+            snapshotId: entry.snapshotId,
+            type: entry.type || snap.mode,
+            publishedAt: entry.publishedAt,
+            frameId: entry.frameId || snap.frameId,
+            preview: previewData,
+            canRollback: entry.restorable !== false
+          });
+          return;
+        } catch(e) {
+          failJson(res, 500, 'preview failed: ' + e.message);
+          return;
+        }
+      }
+      failJson(res, 503, 'service unavailable');
       return;
     }
 
