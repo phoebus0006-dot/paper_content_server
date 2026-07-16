@@ -1,0 +1,17 @@
+✔ isolated server started on dynamic port and configs applied (523.1736ms)
+✔ upload valid PNG (68.5222ms)
+✔ upload valid JPEG (19.264ms)
+✔ upload valid WebP (30.379ms)
+✔ upload HTML disguised as PNG (27.9319ms)
+✔ upload SVG (3.1555ms)
+✔ upload corrupt image (27.499ms)
+✔ upload oversize file (45.7215ms)
+✔ restart persistence verification (1040.9616ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11385.7483

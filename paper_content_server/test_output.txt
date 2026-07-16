@@ -1,0 +1,80 @@
+✔ isolated server started on dynamic port and configs applied (528.7261ms)
+✖ upload valid PNG (30.3535ms)
+✖ upload valid JPEG (3.9861ms)
+✖ upload valid WebP (2.9589ms)
+✔ upload HTML disguised as PNG (3.3829ms)
+✔ upload SVG (1.9905ms)
+✔ upload corrupt image (1.968ms)
+✔ upload oversize file (9.3265ms)
+✖ restart persistence verification (10526.3809ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 5
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11191.6129
+
+✖ failing tests:
+
+test at test\content-pipeline\real-photo-upload.test.js:25:1
+✖ upload valid PNG (30.3535ms)
+  AssertionError [ERR_ASSERTION]: HTTP status should be 2xx
+  
+  403 !== 200
+  
+      at TestContext.<anonymous> (D:\开发板\wt-v2-integration\paper_content_server\test\content-pipeline\real-photo-upload.test.js:36:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 403,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test\content-pipeline\real-photo-upload.test.js:63:1
+✖ upload valid JPEG (3.9861ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  403 !== 200
+  
+      at TestContext.<anonymous> (D:\开发板\wt-v2-integration\paper_content_server\test\content-pipeline\real-photo-upload.test.js:68:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 403,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test\content-pipeline\real-photo-upload.test.js:71:1
+✖ upload valid WebP (2.9589ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  403 !== 200
+  
+      at TestContext.<anonymous> (D:\开发板\wt-v2-integration\paper_content_server\test\content-pipeline\real-photo-upload.test.js:76:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 403,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test\content-pipeline\real-photo-upload.test.js:116:1
+✖ restart persistence verification (10526.3809ms)
+  Error: Restart timeout
+      at Timeout._onTimeout (D:\开发板\wt-v2-integration\paper_content_server\test\content-pipeline\real-photo-upload.test.js:146:70)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7)

@@ -1,0 +1,42 @@
+鈻?Image Governance: Pure Logic Validation
+  鉁?accepts valid source, category, and provenance (0.6705ms)
+  鉁?rejects NASA explicitly even with valid sourceId (0.6085ms)
+  鉁?rejects scenery and landscape (0.1376ms)
+  鉁?rejects random fallback providers (0.1131ms)
+  鉁?rejects missing provenance (0.0874ms)
+  鉁?rejects valid provider but wrong category (0.09ms)
+鉁?Image Governance: Pure Logic Validation (2.8386ms)
+source url_list: 4 candidates
+[
+  {
+    url: 'http://example.com/nasa.jpg',
+    status: 'skipped',
+    reason: 'rejected-missing-provenance'
+  },
+  {
+    url: 'http://example.com/valid.jpg',
+    status: 'downloaded',
+    id: '1b83db54b833ab8d5d45074e7a2cd3329b63f59c',
+    path: 'D:\\寮€鍙戞澘\\wt-v2-integration\\paper_content_server\\data\\raw_images\\1b83db54b833ab8d5d45074e7a2cd3329b63f59c.jpeg'
+  },
+  {
+    url: 'http://example.com/scenery.jpg',
+    status: 'skipped',
+    reason: 'rejected-missing-provenance'
+  },
+  {
+    url: 'http://example.com/unknown.jpg',
+    status: 'skipped',
+    reason: 'rejected-missing-provenance'
+  }
+]
+source url_list: 1 candidates
+鉁?Image Governance: Integrated Fetch Pipeline (8113.7668ms)
+鈩?tests 8
+鈩?suites 0
+鈩?pass 8
+鈩?fail 0
+鈩?cancelled 0
+鈩?skipped 0
+鈩?todo 0
+鈩?duration_ms 8239.9751

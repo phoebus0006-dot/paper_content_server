@@ -1,0 +1,31 @@
+✔ isolated server started on dynamic port and configs applied (522.8729ms)
+✔ upload valid PNG (65.6758ms)
+✔ upload valid JPEG (22.1984ms)
+✔ upload valid WebP (31.7023ms)
+✔ upload HTML disguised as PNG (27.3621ms)
+✔ upload SVG (3.133ms)
+✔ upload corrupt image (28.6872ms)
+✖ upload oversize file (304826.4585ms)
+✔ restart persistence verification (1042.1144ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 8
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 316151.6953
+
+✖ failing tests:
+
+test at test\content-pipeline\real-photo-upload.test.js:107:1
+✖ upload oversize file (304826.4585ms)
+  [TypeError: fetch failed] {
+    [cause]: Error [HeadersTimeoutError]: Headers Timeout Error
+        at FastTimer.onParserTimeout [as _onTimeout] (node:internal/deps/undici/undici:7594:32)
+        at Timeout.onTick [as _onTimeout] (node:internal/deps/undici/undici:731:17)
+        at listOnTimeout (node:internal/timers:605:17)
+        at process.processTimers (node:internal/timers:541:7) {
+      code: 'UND_ERR_HEADERS_TIMEOUT'
+    }
+  }

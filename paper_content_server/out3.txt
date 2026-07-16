@@ -1,0 +1,15 @@
+鈻?News Pipeline: Semantic Truncation
+  鉁?short text remains unchanged (0.4602ms)
+  鉁?truncates at sentence boundary (0.2154ms)
+  鉁?hard truncates if no punctuation is available (0.129ms)
+  鉁?buildNewsDisplayContent preserves raw data and applies truncation safely (0.4917ms)
+  鉁?buildNewsDisplayContent cleans up unnecessary source tags in displaySummary (0.423ms)
+鉁?News Pipeline: Semantic Truncation (2.5673ms)
+鈩?tests 6
+鈩?suites 0
+鈩?pass 6
+鈩?fail 0
+鈩?cancelled 0
+鈩?skipped 0
+鈩?todo 0
+鈩?duration_ms 65.6868

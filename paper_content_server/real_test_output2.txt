@@ -1,0 +1,97 @@
+✔ isolated server started on dynamic port and configs applied (520.418ms)
+✖ upload valid PNG (75.9552ms)
+✔ upload valid JPEG (48.4845ms)
+✖ upload valid WebP (52.6742ms)
+✖ upload HTML disguised as PNG (6.5047ms)
+✖ upload SVG (2.968ms)
+✖ upload corrupt image (2.6632ms)
+✖ upload oversize file (9.6691ms)
+✔ restart persistence verification (1027.712ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 3
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11329.8328
+
+✖ failing tests:
+
+test at test\content-pipeline\real-photo-upload.test.js:25:1
+✖ upload valid PNG (75.9552ms)
+  AssertionError [ERR_ASSERTION]: Response success must be true
+      at TestContext.<anonymous> (D:\开发板\wt-v2-integration\paper_content_server\test\content-pipeline\real-photo-upload.test.js:38:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test\content-pipeline\real-photo-upload.test.js:71:1
+✖ upload valid WebP (52.6742ms)
+  [TypeError: fetch failed] {
+    [cause]: Error: read ECONNRESET
+        at TCP.onStreamRead (node:internal/stream_base_commons:216:20) {
+      errno: -4077,
+      code: 'ECONNRESET',
+      syscall: 'read'
+    }
+  }
+
+test at test\content-pipeline\real-photo-upload.test.js:79:1
+✖ upload HTML disguised as PNG (6.5047ms)
+  [TypeError: fetch failed] {
+    [cause]: Error: connect ECONNREFUSED 127.0.0.1:62900
+        at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1645:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 62900
+    }
+  }
+
+test at test\content-pipeline\real-photo-upload.test.js:92:1
+✖ upload SVG (2.968ms)
+  [TypeError: fetch failed] {
+    [cause]: Error: connect ECONNREFUSED 127.0.0.1:62900
+        at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1645:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 62900
+    }
+  }
+
+test at test\content-pipeline\real-photo-upload.test.js:99:1
+✖ upload corrupt image (2.6632ms)
+  [TypeError: fetch failed] {
+    [cause]: Error: connect ECONNREFUSED 127.0.0.1:62900
+        at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1645:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 62900
+    }
+  }
+
+test at test\content-pipeline\real-photo-upload.test.js:107:1
+✖ upload oversize file (9.6691ms)
+  [TypeError: fetch failed] {
+    [cause]: Error: connect ECONNREFUSED 127.0.0.1:62900
+        at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1645:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 62900
+    }
+  }
