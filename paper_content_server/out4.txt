@@ -1,7 +1,0 @@
-
-Running 2 tests using 2 workers
-
-  ok 1 test\admin\e2e\real-admin-core.spec.js:15:3 鈥?Admin Core Layout 鈥?core layout and dashboard loaded (288ms)
-  ok 2 test\admin\e2e\real-admin-content.spec.js:29:3 鈥?Admin Content UI 鈥?News Card Styling and Content Proportions (339ms)
-
-  2 passed (1.5s)
