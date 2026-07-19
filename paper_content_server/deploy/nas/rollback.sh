@@ -72,4 +72,4 @@ fi
 
 echo "OK: rollback completed, verifying..."
 sleep 3
-"$SCRIPT_DIR/verify.sh"
+bash "$SCRIPT_DIR/verify.sh"

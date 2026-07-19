@@ -66,7 +66,7 @@ mkdir -p "$DATA_DIR" "$IMAGE_DIR"
 
 # Backup existing staging data (uses same STAGING_ROOT/DATA_DIR)
 STAGING_ROOT="$STAGING_ROOT" DATA_DIR="$DATA_DIR" BACKUP_DIR="${BACKUP_DIR:-$STAGING_ROOT/backups}" \
-  "$SCRIPT_DIR/backup.sh"
+  bash "$SCRIPT_DIR/backup.sh"
 
 # Stop and remove existing staging container
 docker stop paper-content-staging 2>/dev/null || true
@@ -94,4 +94,4 @@ echo "OK: container paper-content-staging started on port $STAGING_PORT"
 
 # Verify
 sleep 4
-"$SCRIPT_DIR/verify.sh"
+bash "$SCRIPT_DIR/verify.sh"
