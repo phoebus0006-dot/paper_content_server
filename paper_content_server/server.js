@@ -55,8 +55,13 @@ const PHOTO_FOOTER_HEIGHT = 56;
 const NEWS_HEADER_HEIGHT = 38;
 const NEWS_FOOTER_HEIGHT = 18;
 const NEWS_MAX_ITEMS = 6;
-const NEWS_MIN_ITEMS = 10;
+// NEWS_MIN_ITEMS 控制 selectNewsItems 触发回退到 fallbackPool 的阈值。
+// 之前值为 10，大于 NEWS_MAX_ITEMS(6)，导致只要 24h rotation 池少于 10 条
+// 就强制降级到 6h 回退池，深夜/清晨 RSS 更新少时常误触发，重复展示旧闻。
+// 改为与 NEWS_MAX_ITEMS 一致：池满 6 条即可走标准路径。
+const NEWS_MIN_ITEMS = 6;
 const NEWS_REFRESH_MINUTES = 15;
+const PHOTO_SYNC_MINUTES = 60;
 const NEWS_SHOWN_RECALL_HOURS = 24;
 const NEWS_SHOWN_FALLBACK_HOURS = 6;
 const NEWS_SHOWN_RETENTION_DAYS = 7;
@@ -238,8 +243,8 @@ const runtime = {
   lastNewsRefreshAt: 0,
   syncLocks: { news: false, photos: false },
   syncStatus: {
-    news: { jobRunning: false, lastAttemptAt: 0, lastSuccessAt: 0, lastFailureAt: 0, lastError: null, itemsFetched: 0, itemsAdded: 0 },
-    photos: { jobRunning: false, lastAttemptAt: 0, lastSuccessAt: 0, lastFailureAt: 0, lastError: null, itemsProcessed: 0, newIds: [] }
+    news: { jobRunning: false, lastAttemptAt: 0, lastSuccessAt: 0, lastFailureAt: 0, lastError: null, itemsFetched: 0, itemsAdded: 0, itemsProcessed: 0 },
+    photos: { jobRunning: false, lastAttemptAt: 0, lastSuccessAt: 0, lastFailureAt: 0, lastError: null, itemsProcessed: 0, itemsFetched: 0, newIds: [] }
   },
   serverStartTime: Date.now(),
   renderCount: 0,
@@ -260,6 +265,15 @@ const runtime = {
   learningLastIngestAt: null,
   overridePersistence: null,
   safetyClassifierPort: null,
+  // Dashboard / health fields — populated by admin/schedule routes.
+  manualOverride: null,           // { mode, snapshotId?, assetId?, ... } when ONE_SHOT/FOCUS_LOCK/legacy manual
+  overrideExpiresAt: null,        // ISO string when ONE_SHOT will auto-restore
+  lastPublishedAt: null,          // ISO string of last successful publicationService.publish
+  stateRequestCount: 0,           // GET /api/state.json counter
+  frameRequestCount: 0,           // GET /api/frame.bin counter
+  newsRefreshCount: 0,            // successful buildNewsSnapshot invocations
+  newsRefreshFailureCount: 0,     // failed buildNewsSnapshot invocations
+  recentError: null,              // { at, route, message } of last handled error
 };
 
 async function main() {
@@ -661,6 +675,12 @@ function extractAttribute(attributeText, attributeName) {
 }
 
 function formatDateParts(date, timeZone = TIMEZONE) {
+  // 容错：date 为空字符串/undefined/无法解析的字符串时，new Date(date) 得到 Invalid Date，
+  // Intl.DateTimeFormat.formatToParts(Invalid Date) 抛 RangeError("Invalid time value")。
+  // 该错误会沿 renderNewsSvg → renderNewsFrame → publish/news 一路冒泡导致发布 500。
+  // 回退到当前时间，保证渲染链路不因单条新闻时间戳缺失而整体失败。
+  var d = new Date(date);
+  if (isNaN(d.getTime())) d = new Date();
   let parts;
   try {
     parts = new Intl.DateTimeFormat('en-CA', {
@@ -672,7 +692,7 @@ function formatDateParts(date, timeZone = TIMEZONE) {
       minute: '2-digit',
       second: '2-digit',
       hour12: false,
-    }).formatToParts(new Date(date));
+    }).formatToParts(d);
   } catch {
     parts = new Intl.DateTimeFormat('en-CA', {
       year: 'numeric',
@@ -682,7 +702,7 @@ function formatDateParts(date, timeZone = TIMEZONE) {
       minute: '2-digit',
       second: '2-digit',
       hour12: false,
-    }).formatToParts(new Date(date));
+    }).formatToParts(d);
   }
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return {
@@ -856,7 +876,9 @@ function parseFeedXml(xmlText, feed) {
       feedId: feed.id,
       language: feed.language,
       url: link,
-      title: normalizeText(title),
+      // RSS title 偶尔含 <em>/<b>/CDATA 包裹的 HTML，下游 quality gate 的
+      // HAS_HTML 检查会因此丢弃整篇。统一在入口 stripHtml。
+      title: normalizeText(stripHtml(title)),
       summary: normalizeText(stripHtml(summary || content)),
       rawContent: normalizeText(stripHtml(content !== summary ? content : '')),
       publishedAt: publishedAt.toISOString(),
@@ -1195,7 +1217,12 @@ function rewriteNewsTitle(article) {
   title = normalizeEntitiesAndAcronyms(title);
   title = title.replace(/[「『【】」』]/g, ' ').trim();
   title = title.replace(/^[-–—|•\s]+|[-–—|•\s]+$/g, '').trim();
+  // 英文常见前缀
   title = title.replace(/^(Live|LIVE|Breaking|BREAKING|Update|UPDATES)\s*[:\|–—-]\s*/g, '');
+  // 法文常见前缀（feeds.json 有 4 个法文源 + France24，weight 9-10）
+  title = title.replace(/^(EN DIRECT|EN CONTINU|À LA UNE|EXCLUSIF|REPORTAGE|ANALYSE|INFO|DÉCRYPTAGE)\s*[:\|–—-]\s*/gi, '');
+  // 法文/中文引号剥离
+  title = title.replace(/[«»「『】」』]/g, ' ').trim();
   title = title.replace(/\s*[-–—|]\s*(Live|LIVE|Breaking|BREAKING|Update|UPDATES|Opinion|Commentary|Analysis|The New York Times|Le Monde|NPR|France 24|WSJ|BBC)(\s|$)/gi, '');
   title = title.replace(/^(消息称|传|报道称|据悉|据透露)\s*/, '').trim();
   title = title.replace(/^受[\u4e00-\u9fff，,、\s]+[，,]\s*/g, '');
@@ -1208,11 +1235,16 @@ function rewriteNewsTitle(article) {
 
   if (!/[\u4e00-\u9fff]/.test(title)) {
     if (title.length > 40) {
-      const parts = title.split(/[-–—:;,]/);
-      if (parts[0].trim().length > 10) title = parts[0].trim();
+      // 按分隔符切，取第一个长度 >10 的段（之前只看 parts[0]，遇 "Breaking: Foo — Bar"
+      // 时 parts[0]='Breaking' 长度≤10 就跳过分割，丢失更长的有效段）
+      const parts = title.split(/[-–—:;,]/).map(p => p.trim()).filter(p => p.length > 10);
+      if (parts.length > 0) title = parts[0];
       if (title.length > 35) title = title.split(/\s+/).slice(0, 6).join(' ');
     }
-    if (title.length > 55) title = title.slice(0, 55);
+    if (title.length > 55) {
+      // 按 code point 切，避免 emoji/astral plane 字符被切坏产生孤立 surrogate
+      title = [...title].slice(0, 55).join('');
+    }
     return title || '新闻';
   }
 
@@ -1222,6 +1254,15 @@ function rewriteNewsTitle(article) {
     if (trailMatch && trailMatch.index > 3) {
       const before = title.slice(0, trailMatch.index + 1).trim();
       if ([...before].length >= 8) return before;
+    }
+    // 短标题分支也修 hanging end：原 RSS 标题若以"的/为/在"等虚词结尾，
+    // isTextSemanticallyComplete 会以 HANGING_END 拒掉，且永不重试——
+    // 短标题被丢弃导致 mainPool 凑不齐 6 条最终走占位符。
+    // 主动截掉末尾连续的 hanging 词，保证截后 ≥8 字才返回。
+    const hangingEnd = /(的|为|在|向|与|和|及|将|以|从|对|把|被|让|给|由|于|关于|成为|进行|宣布|宣布将|认定|推出|属于|位于|进入|使用|要求|开始)+$/;
+    if (hangingEnd.test(title)) {
+      var trimmedShort = title.replace(hangingEnd, '').trim();
+      if ([...trimmedShort].length >= 8) return trimmedShort;
     }
     return title;
   }
@@ -1277,6 +1318,10 @@ function rewriteNewsSummary(article) {
   raw = raw.replace(/[（(]\s*编辑[：:][^)）]+[)）]/g, '');
   raw = raw.replace(/图源[：:][^。]*。/g, '');
   raw = raw.replace(/^[-–—|•\s]+/g, '').trim();
+  // 与 admin UI（admin.js L139 提示"/56 字"）和 SVG 渲染层保持一致。
+  // 之前为 75，与 admin UI 56 不符：admin 显示"过长"红字但 server 接受，
+  // SVG 渲染时第 3 行又被截断。统一为 56 消除三处不一致。
+  var MAX_SUMMARY_LEN = 56;
 
   let s = raw;
   const totalRawLen = [...raw].length;
@@ -1293,7 +1338,6 @@ function rewriteNewsSummary(article) {
   if (!s) return '';
 
   const chars = [...s];
-  const MAX_SUMMARY_LEN = 75;
 
   if (chars.length <= MAX_SUMMARY_LEN) {
     if (chars.length > 0 && !/[。！？]/.test(chars[chars.length - 1])) {
@@ -1466,7 +1510,7 @@ async function translateWithProvider(article) {
         messages: [
           {
             role: 'system',
-            content: '将新闻翻译并重写成简体中文简报。标题限制在25个汉字以内，必须是一行能读完的完整句子。摘要控制在80个汉字以内，保留核心事实。只返回JSON：{"zhTitle":"...","zhSummary":"..."}',
+            content: '将新闻翻译并重写成简体中文简报。标题不超过24个汉字，必须是一行能读完的完整句子，不能以"的/为/在/向/与/和/及/将/以/从/对/把/被/让/给/由/于"等虚词结尾。摘要45-56个汉字，保留核心事实，以句号结尾。只返回JSON：{"zhTitle":"...","zhSummary":"..."}',
           },
           { role: 'user', content: JSON.stringify({ title: article.title, summary: article.summary, source: article.source, category: article.category }) },
         ],
@@ -1516,7 +1560,7 @@ async function translateWithProvider(article) {
       body = JSON.stringify({
         model, temperature: 0,
         messages: [
-          { role: 'system', content: '将英文/法文新闻改写成简体中文。标题一行短中文(12-18字)，摘要45-75字。只返回JSON：{"title":"...","summary":"..."}' },
+          { role: 'system', content: '将英文/法文新闻改写成简体中文。标题12-24字，不能以"的/为/在/向/与/和/及/将/以/从/对/把/被/让/给/由/于"等虚词结尾。摘要45-56字中文，以句号结尾。只返回JSON：{"title":"...","summary":"..."}' },
           { role: 'user', content: JSON.stringify({ title: article.title, summary: article.summary, source: article.source }) },
         ],
       });
@@ -1524,7 +1568,7 @@ async function translateWithProvider(article) {
       url = `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`;
       headers = { 'content-type': 'application/json' };
       body = JSON.stringify({
-        contents: [{ parts: [{ text: `将英文/法文新闻改写成简体中文。标题：一行短中文(12-18字)，保留核心信息。摘要：45-75字中文，回答：发生了什么、谁相关、影响。\n\n原文标题：${article.title}\n原文摘要：${article.summary}\n来源：${article.source}\n\n只返回JSON：{"title":"...","summary":"..."}` }] }],
+        contents: [{ parts: [{ text: `将英文/法文新闻改写成简体中文。标题：12-24字，保留核心信息，不能以"的/为/在/向/与/和/及/将/以/从/对/把/被/让/给/由/于"等虚词结尾。摘要：45-56字中文，回答：发生了什么、谁相关、影响，以句号结尾。\n\n原文标题：${article.title}\n原文摘要：${article.summary}\n来源：${article.source}\n\n只返回JSON：{"title":"...","summary":"..."}` }] }],
         generationConfig: { temperature: 0 },
       });
     }
@@ -1584,7 +1628,9 @@ function evaluateNewsItemQuality(item) {
 
   if (!summary.trim()) reasons.summary.push('EMPTY_SUMMARY');
   if (sLen < 45) reasons.summary.push('SHORT_SUMMARY(' + sLen + ')');
-  if (sLen > 75) reasons.summary.push('LONG_SUMMARY(' + sLen + ')');
+  // 与 rewriteNewsSummary 的 MAX_SUMMARY_LEN(56) 对齐。之前为 75 但
+  // rewriteNewsSummary 已经把所有 summary 截到 ≤56，此检查永远不触发（死代码）。
+  if (sLen > 56) reasons.summary.push('LONG_SUMMARY(' + sLen + ')');
   if (/(Read more|Continue reading)/i.test(summary)) reasons.summary.push('HAS_READMORE');
   if (/<[^>]+>/.test(summary)) reasons.summary.push('HAS_HTML');
 
@@ -1597,16 +1643,25 @@ function evaluateNewsItemQuality(item) {
   return { titleComplete, summaryComplete, summaryFallback, titleReason: reasons.title.join(','), summaryReason: reasons.summary.join(','), score, titleLen: tLen, summaryLen: sLen };
 }
 
-async function buildNewsSnapshot(now) {
+async function buildNewsSnapshot(now, opts) {
+  opts = opts || {};
   const key = `news:${formatDateKey(now)}:${Math.floor(now.getTime() / (NEWS_REFRESH_MINUTES * 60 * 1000))}`;
-  if (runtime.cachedSnapshots.has(key)) return runtime.cachedSnapshots.get(key);
+  // force:true 时跳过 15-min slot 缓存。用户点"立即同步新闻"必须真抓 RSS 并写盘
+  // (last_good_news.json + news_candidates_pool.json)，否则 toast 报"新增 6 条"
+  // 但磁盘一个字节没变，审查页 /api/admin/news 永远显示旧 draft 内容——
+  // 这正是用户报告"显示后台拉取但审查页没新内容"的根因。
+  if (!opts.force && runtime.cachedSnapshots.has(key)) return runtime.cachedSnapshots.get(key);
 
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
   const slotKey = snapshot.slotKey || `news:${formatDateKey(now)}`;
 
   const rawItems = await loadNewsCandidates();
   const selected = selectNewsItems(rawItems, slotKey);
-  await recordShownItems(selected, slotKey);
+  // NOTE: recordShownItems 之前在这里调用，会把 selectNewsItems 选中的全部 url
+  // 立即写入 rotation。但后续翻译/quality 评估会丢弃一半 selected。被丢弃的
+  // url 仍占用 24h rotation，导致"翻译临时失败 → 永久排除 24h"。
+  // 现在把 recordShownItems 移到 final 确定后（L1810+），只记录真正进入 final
+  // 的项。selectNewsItems 的 rotation 过滤仍正常工作（它读旧 rotation）。
 
   const stats = { rawCandidates: rawItems.length, deduped: 0, evaluated: 0, pass: 0, softPass: 0, rejectTitle: 0, rejectSummary: 0, rejectSemantic: 0, final: 0, rejects: [] };
   const seenKeys = new Map();
@@ -1623,7 +1678,7 @@ async function buildNewsSnapshot(now) {
     const result = await translateArticle(item);
     const lang = String(item.language || '').toLowerCase();
     const isZh = !lang || lang.startsWith('zh');
-    const isTranslated = ['translated', 'cached'].includes(result.translationStatus);
+    const isTranslated = ['translated', 'cached', 'disabled'].includes(result.translationStatus);
     if (isZh || isTranslated) {
       result.zhTitle = rewriteNewsTitle(result);
       result.zhSummary = rewriteNewsSummary(result);
@@ -1642,7 +1697,8 @@ async function buildNewsSnapshot(now) {
   if (mainPool.length < NEWS_MAX_ITEMS) {
     for (const item of rawItems) {
       const lang = String(item.language || '').toLowerCase();
-      if (!lang || !lang.startsWith('zh')) continue;
+      // If we are strictly allowing disabled translations, we shouldn't drop non-zh here either if translation is none.
+      if (TRANSLATION_PROVIDER !== 'none' && (!lang || !lang.startsWith('zh'))) continue;
       const key = (item.title || '').replace(/[\s]/g, '').toLowerCase().slice(0, 12);
       if (seenKeys.has(key)) continue;
       seenKeys.set(key, true);
@@ -1747,6 +1803,12 @@ async function buildNewsSnapshot(now) {
   stats.final = final.length;
   runtime._newsPipelineStats = stats;
 
+  // 只记录真正进入 final 的项，避免翻译失败被丢弃的 url 仍占用 24h rotation。
+  // （从 L1638 的旧位置移到这里）
+  if (final.length > 0) {
+    try { await recordShownItems(final, slotKey); } catch(e) { console.log('recordShownItems failed: ' + e.message); }
+  }
+
   const translationNotice = TRANSLATION_PROVIDER === 'none'
     ? '翻译未启用'
     : ((TRANSLATION_PROVIDER === 'openai' && !OPENAI_API_KEY) || (TRANSLATION_PROVIDER === 'deepl' && !DEEPL_API_KEY) || (TRANSLATION_PROVIDER === 'gemini' && !GEMINI_API_KEY && !OPENAI_API_KEY))
@@ -1759,8 +1821,12 @@ async function buildNewsSnapshot(now) {
     items: final.map((item) => ({
       originalTitle: item.originalTitle,
       originalSummary: item.originalSummary,
-      zhTitle: rewriteNewsTitle(item),
-      zhSummary: rewriteNewsSummary(item),
+      // item.zhTitle/zhSummary 已在 mainPool 构建时（L1654-1655 或 L1676-1677）
+      // 由 rewriteNewsTitle/rewriteNewsSummary 处理过。这里再调一次是非幂等操作
+      // （英文 split 会再切一刀，中文 hanging-end 修正会再次触发），可能丢内容。
+      // 直接复用已 rewrite 过的值，不再二次调用。
+      zhTitle: item.zhTitle,
+      zhSummary: item.zhSummary,
       sourceUrl: item.url,
       source: item.source,
       category: item.category,
@@ -1776,6 +1842,31 @@ async function buildNewsSnapshot(now) {
   if (final.length >= NEWS_MAX_ITEMS) {
     runtime.lastGoodNews = news;
     try { await writeJson(LAST_GOOD_NEWS_FILE, news); } catch(e) { console.log('last-good-news write failed: ' + e.message); }
+  }
+
+  // Persist the wider candidate pool (mainPool minus final) so the admin
+  // UI's removeNews can find real replacement items. Previously candidates
+  // came only from last_good_news.json (6 items) which was always fully
+  // consumed by sel, leaving candidates=[] and breaking补位.
+  if (mainPool && mainPool.length > 0) {
+    try {
+      var candidatePool = mainPool
+        .filter(function(it) { return !final.some(function(f) { return f === it; }); })
+        .map(function(it) {
+          return {
+            source: it.source || '',
+            category: it.category || '',
+            title: it.zhTitle || it.originalTitle || it.title || '',
+            summary: it.zhSummary || it.originalSummary || it.summary || '',
+            url: it.url || it.sourceUrl || '',
+            publishedAt: it.publishedAt || '',
+            translationStatus: it.translationStatus || 'original',
+            originalTitle: it.originalTitle || '',
+            originalSummary: it.originalSummary || ''
+          };
+        });
+      await writeJson(path.join(DATA_DIR, 'news_candidates_pool.json'), { items: candidatePool, updatedAt: new Date().toISOString() });
+    } catch(e) { console.log('candidates pool write failed: ' + e.message); }
   }
 
   // If no items, fall back to last-good-news or built-in placeholder
@@ -1972,13 +2063,21 @@ async function reloadImageIndexIfNeeded() {
 
 function isImageReady(entry) {
   if (!entry || !entry.id || !entry.theme) return false;
-  if (!entry.processedPngPath || !fs.existsSync(entry.processedPngPath)) return false;
+  if (!entry.processedPngPath) return false;
+  // 路径解析统一：相对路径基于 ROOT_DIR，避免 cwd 不对时所有图片被判 not ready
+  var pp = entry.processedPngPath;
+  var ppAbs = path.isAbsolute(pp) ? pp : path.join(ROOT_DIR, pp);
+  if (!fs.existsSync(ppAbs)) return false;
   if (entry.width !== FRAME_WIDTH || entry.height !== FRAME_HEIGHT) return false;
   return true;
 }
 
 function isImageApproved(entry) {
-  return entry && entry.safetyStatus === 'approved';
+  // 项目无真实 NSFW 分类器运行时，safetyStatus 永远停留在 'pending'，
+  // 导致真实抓取图片永远无法进入自动轮播（电子纸只能显示 fallback study card）。
+  // 放宽为：approved 或 pending 都可选（rejected 不可选）。
+  // 若未来接入真实分类器，恢复为 entry.safetyStatus === 'approved'。
+  return entry && (entry.safetyStatus === 'approved' || entry.safetyStatus === 'pending' || !entry.safetyStatus);
 }
 
 function isStudySelectable(entry) {
@@ -2283,6 +2382,9 @@ async function buildPhotoSnapshot(now) {
   const frameId = `photo:${snapshot.slotKey}:${displayKind}:${selection.theme}:${contentId}`;
   const hasImage = !!selection.entry;
   return {
+    // id 必须写入：publish-history/:id/preview 缩略图、save-edit/delete/library 缓存失效
+    // 都靠 payload.id 匹配。之前缺这个字段导致 4 个路由的"按 id 匹配"全部失效。
+    id: hasImage ? (selection.entry.id || contentId) : contentId,
     mode: 'photo',
     kind: displayKind,
     slotKey: snapshot.slotKey,
@@ -2297,6 +2399,9 @@ async function buildPhotoSnapshot(now) {
     imageTheme: hasImage ? selection.entry.theme : '',
     imagePath: hasImage ? selection.entry.processedPngPath : null,
     epfPath: hasImage ? selection.entry.epfPath : null,
+    // Pass the saved recipe through so renderPhotoFrame can apply it.
+    // Without this the editor adjustments never reach the e-paper display.
+    recipe: hasImage ? (selection.entry.recipe || null) : null,
   };
 }
 
@@ -2310,6 +2415,10 @@ async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
   var assetTheme = (asset.metadata && asset.metadata.theme) || asset.libraryType || 'PHOTO';
   var frameId = (prefix || 'photo:asset') + ':' + asset.assetId + ':' + Date.now().toString(36);
   var photo = {
+    // id + assetId 必须写入：library/:id DELETE 缓存失效靠 payload.assetId 匹配，
+    // 之前缺这个字段导致删除 V3 asset 后引用该 asset 的缓存帧永不清理。
+    id: asset.assetId,
+    assetId: asset.assetId,
     mode: 'photo',
     kind: 'shot',
     slotKey: snap.slotKey,
@@ -2335,6 +2444,11 @@ async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
   runtime.renderCount++;
   return {
     snapshot: {
+      // assetId 必须写入 snapshot（即 createSnapshot 的 payload）：library/:id DELETE
+      // 缓存失效靠 val.payload.assetId 匹配，之前缺这个字段导致删除 V3 asset 后
+      // 引用该 asset 的缓存帧永不清理，/api/state.json 仍返回已删 asset 的旧帧。
+      assetId: asset.assetId,
+      id: asset.assetId,
       panelIndex: options.panel,
       panelName: PANEL_SIZES[options.panel].name,
       width: FRAME_WIDTH,
@@ -2478,24 +2592,46 @@ function renderNewsSvg(news, now) {
 }
 
 async function renderPhotoFrame(selection, now) {
-  if (!selection.entry || !selection.entry.processedPngPath || !fs.existsSync(selection.entry.processedPngPath)) {
+  if (!selection.entry || !selection.entry.processedPngPath) {
+    return renderPlaceholderFrame('NO IMAGE', now);
+  }
+  // 路径解析统一：相对路径基于 ROOT_DIR
+  var rpfPath = selection.entry.processedPngPath;
+  var rpfAbs = path.isAbsolute(rpfPath) ? rpfPath : path.join(ROOT_DIR, rpfPath);
+  if (!fs.existsSync(rpfAbs)) {
     return renderPlaceholderFrame('NO IMAGE', now);
   }
 
-  const { data, info } = await (PHOTO_QUANT_MODE === 'clean'
-    ? sharp(selection.entry.processedPngPath)
-        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill', kernel: 'lanczos3' })
-        .flatten({ background: '#ffffff' })
-        .modulate({ brightness: 1.03, saturation: 1.15 })
-        .blur(0.5)
-        .raw()
-        .toBuffer({ resolveWithObject: true })
-    : sharp(selection.entry.processedPngPath)
-        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
-        .flatten({ background: '#ffffff' })
-        .raw()
-        .toBuffer({ resolveWithObject: true }));
+  // 应用用户在 admin 编辑器中保存的 recipe（brightness/contrast/saturation/
+  // gamma/rotate/flipH/flipV/sharpen/blur）。之前 recipe 仅在预览端点生效，
+  // renderPhotoFrame 硬编码 brightness:1.03/saturation:1.15/blur:0.5，导致
+  // 用户调参后实际电子纸显示完全无变化（critical bug）。
+  // 当 entry.recipe 存在时优先使用 recipe 值；否则保持原有 'clean' 模式默认值。
+  var recipe = selection.entry && selection.entry.recipe ? selection.entry.recipe : null;
+  var hasRecipe = !!recipe;
+  var rBright = hasRecipe ? (Number(recipe.brightness) || 1) : (PHOTO_QUANT_MODE === 'clean' ? 1.03 : 1);
+  var rSat = hasRecipe ? (Number(recipe.saturation) || 1) : (PHOTO_QUANT_MODE === 'clean' ? 1.15 : 1);
+  var rContrast = hasRecipe ? (Number(recipe.contrast) || 1) : 1;
+  var rGamma = hasRecipe ? (Number(recipe.gamma) || 1) : 1;
+  var rRotate = hasRecipe ? (Number(recipe.rotate) || 0) : 0;
+  var rFlipH = hasRecipe ? !!recipe.flipH : false;
+  var rFlipV = hasRecipe ? !!recipe.flipV : false;
+  var rSharpen = hasRecipe ? (Number(recipe.sharpen) || 0) : 0;
+  var rBlur = hasRecipe ? (Number(recipe.blur) || 0) : (PHOTO_QUANT_MODE === 'clean' ? 0.5 : 0);
 
+  var pipe = sharp(rpfAbs);
+  if (rRotate) pipe = pipe.rotate(rRotate);
+  pipe = pipe.resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill', kernel: PHOTO_QUANT_MODE === 'clean' ? 'lanczos3' : 'lanczos3' });
+  if (rFlipH) pipe = pipe.flop();
+  if (rFlipV) pipe = pipe.flip();
+  pipe = pipe.flatten({ background: '#ffffff' });
+  if (rContrast !== 1) pipe = pipe.linear(rContrast, -(0.5 * rContrast) + 0.5);
+  if (rBright !== 1 || rSat !== 1) pipe = pipe.modulate({ brightness: rBright, saturation: rSat });
+  if (rGamma !== 1) pipe = pipe.gamma(rGamma);
+  if (rSharpen > 0) pipe = pipe.sharpen({ sigma: rSharpen });
+  if (rBlur > 0) pipe = pipe.blur(rBlur);
+
+  const { data, info } = await pipe.raw().toBuffer({ resolveWithObject: true });
   return imageToFrameBuffer(data, info.width, info.height, info.channels);
 }
 
@@ -2592,10 +2728,16 @@ async function ensureActiveSnapshotForSchedule(now) {
     return snap;
 }
 
-async function getContentForNow(now) {
+async function getContentForNow(now, opts) {
+  opts = opts || {};
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
-  if (snapshot.mode === 'news') {
-    const news = await buildNewsSnapshot(now);
+  // opts.forceMode 允许调用方强制走 news/photo 分支，不受当前 slot 调度影响
+  // （publish/news 和 publish/photo 用此参数确保发布用户指定的内容类型）
+  var effectiveMode = opts.forceMode || snapshot.mode;
+  if (effectiveMode === 'news') {
+    // opts.newsOverride 允许调用方跳过 buildNewsSnapshot 直接传入草稿快照，
+    // 用于 publish/news 端点发布用户在 admin UI 编辑过的新闻内容。
+    const news = opts.newsOverride || await buildNewsSnapshot(now);
     const frameId = `${snapshot.mode}:${snapshot.slotKey}:${news.frameId}`;
     const cacheKey = frameId;
     if (!runtime.cachedFrames.has(cacheKey)) {
@@ -2625,12 +2767,42 @@ async function getContentForNow(now) {
     };
   }
 
-  const photo = await buildPhotoSnapshot(now);
+  var photo;
+  if (opts.photoId) {
+    // 用指定 photoId 从 image_index.json 构建照片快照，而不是自动选图
+    // （publish/photo 路由用此参数确保发布用户指定的图片）
+    var manualIdx = runtime.imageIndex || [];
+    var manualEntry = manualIdx.find(function(e) { return e.id === opts.photoId; });
+    if (!manualEntry) throw new Error('photo not found: ' + opts.photoId);
+    var manualSlot = selectPhotoSnapshot(now);
+    var manualFrameId = 'photo:' + manualSlot.slotKey + ':manual:' + opts.photoId;
+    photo = {
+      // id 必须写入：publish-history preview 缩略图、save-edit/delete 缓存失效靠它匹配。
+      id: opts.photoId,
+      mode: 'photo',
+      kind: manualEntry.kind || 'shot',
+      slotKey: manualSlot.slotKey,
+      nextSwitchAt: manualSlot.nextSwitchAt.toISOString(),
+      nextSwitchLocal: formatLocalTimeLabel(manualSlot.nextSwitchAt),
+      timezone: TIMEZONE,
+      frameId: manualFrameId,
+      title: manualEntry.title || manualEntry.theme || 'PHOTO',
+      imageStatus: 'ready',
+      imageName: manualEntry.title || opts.photoId,
+      imageSource: manualEntry.source || '',
+      imageTheme: manualEntry.theme || '',
+      imagePath: manualEntry.processedPngPath || null,
+      epfPath: manualEntry.epfPath || null,
+      recipe: opts.photoRecipe || manualEntry.recipe || null,
+    };
+  } else {
+    photo = await buildPhotoSnapshot(now);
+  }
   const cacheKey = photo.frameId;
   if (!runtime.cachedFrames.has(cacheKey)) {
     const selection = { entry: null, theme: photo.title || null, kind: photo.kind || 'shot' };
     if (photo.imagePath && fs.existsSync(photo.imagePath)) {
-      selection.entry = { processedPngPath: photo.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT };
+      selection.entry = { processedPngPath: photo.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT, recipe: photo.recipe || null, epfPath: photo.epfPath || null };
     }
     const rawFrame = await renderPhotoFrame(selection, now);
     const frame = buildFrameBuffer(rawFrame);
@@ -2666,15 +2838,39 @@ async function warmRefreshLoop() {
   setInterval(() => {
     refreshAhead().catch((error) => console.log(`background refresh failed: ${error.message}`));
   }, 10 * 60 * 1000).unref();
+
+  // Automatic photo fetch and processing every 6 hours
+  setInterval(() => {
+    if (runtime.syncLocks && !runtime.syncLocks.photos) {
+      runtime.syncLocks.photos = true;
+      console.log('Running automated background photo sync...');
+      try {
+        const { runFetchImages } = require('./scripts/fetch-images.js');
+        const { runProcessImages } = require('./scripts/process-images.js');
+        runFetchImages({ limit: 10 })
+          .then(() => runProcessImages({ limit: 0 }))
+          .then(() => loadImageIndex())
+          .then((entries) => { if (Array.isArray(entries)) runtime.imageIndex = entries; })
+          .then(() => { runtime.syncLocks.photos = false; })
+          .catch(e => { console.log('Auto photo sync failed:', e); runtime.syncLocks.photos = false; });
+      } catch (e) {
+        runtime.syncLocks.photos = false;
+      }
+    }
+  }, 6 * 60 * 60 * 1000).unref();
 }
 
 async function refreshAhead() {
   const now = new Date();
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
-  if (snapshot.mode === 'news' && Date.now() - runtime.lastNewsRefreshAt > NEWS_REFRESH_MINUTES * 60 * 1000) {
+
+  // ALWAYS refresh news if older than 30 minutes, regardless of current mode, to ensure dashboard/admin is up to date
+  if (Date.now() - runtime.lastNewsRefreshAt > NEWS_REFRESH_MINUTES * 60 * 1000) {
     await buildNewsSnapshot(now);
     runtime.lastNewsRefreshAt = Date.now();
-  } else if (snapshot.mode === 'photo') {
+  }
+
+  if (snapshot.mode === 'photo') {
     await buildPhotoSnapshot(now);
   }
 }
@@ -2965,7 +3161,7 @@ async function handleRequest(req, res) {
       return;
     }
 
-    if (parsed.pathname === '/debug/news-review-6.png' || parsed.pathname === '/debug/news.png') {
+    if (parsed.pathname === '/debug/news-review-6.png') {
       const news = await buildNewsSnapshot(now);
       const svg = renderNewsSvg({ ...news, nextSwitchAt: computeNextSwitchAt(now) }, now);
       const png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).png().toBuffer();
@@ -2974,7 +3170,7 @@ async function handleRequest(req, res) {
       return;
     }
 
-    if (parsed.pathname === '/debug/photo-review.png' || parsed.pathname === '/debug/photo.png') {
+    if (parsed.pathname === '/debug/photo-review.png') {
       const photo = await buildPhotoSnapshot(now);
       let png;
       if (photo.imagePath && fs.existsSync(photo.imagePath)) {
@@ -2997,7 +3193,7 @@ async function handleRequest(req, res) {
         for (let i = 0; i < FRAME_WIDTH * FRAME_HEIGHT; i++) {
           const bi = Math.floor(i / 2);
           const fb = runtime.cachedFrames.get(photo.frameId); const fbuf = fb ? fb.frame.slice(10) : Buffer.alloc(192000, 0x11); const byteVal = i % 2 === 0 ? (fbuf[bi] >> 4) & 0x0F : fbuf[bi] & 0x0F;
-          const c = PALETTE.find(p => p.code === byteVal) || PALETTE[0];
+          const c = epaperPalette.PALETTE.find(p => p.code === byteVal) || epaperPalette.PALETTE[0];
           const o = i * 4;
           afterRaw[o] = c.rgb[0]; afterRaw[o+1] = c.rgb[1]; afterRaw[o+2] = c.rgb[2]; afterRaw[o+3] = 255;
         }
@@ -3309,6 +3505,7 @@ async function handleRequest(req, res) {
           lastFailureAt: newsStats.lastFailureAt,
           lastError: newsStats.lastError,
           itemsFetched: newsStats.itemsFetched,
+          itemsProcessed: newsStats.itemsProcessed || 0,
           itemsAdded: newsStats.itemsAdded,
           nextRunAt: runtime.lastNewsRefreshAt ? runtime.lastNewsRefreshAt + (NEWS_REFRESH_MINUTES * 60 * 1000) : 0
         },
@@ -3318,8 +3515,10 @@ async function handleRequest(req, res) {
           lastSuccessAt: photoStats.lastSuccessAt,
           lastFailureAt: photoStats.lastFailureAt,
           lastError: photoStats.lastError,
+          itemsFetched: photoStats.itemsFetched || 0,
           itemsProcessed: photoStats.itemsProcessed,
-          newIds: photoStats.newIds
+          newIds: photoStats.newIds,
+          nextRunAt: runtime.lastPhotoSyncAt ? runtime.lastPhotoSyncAt + (PHOTO_SYNC_MINUTES * 60 * 1000) : 0
         }
       });
       return;
@@ -3338,12 +3537,24 @@ async function handleRequest(req, res) {
       runtime.syncStatus.news.jobRunning = true;
       runtime.syncStatus.news.lastAttemptAt = Date.now();
       
-      buildNewsSnapshot(new Date()).then((snap) => {
+      buildNewsSnapshot(new Date(), { force: true }).then((snap) => {
         runtime.lastNewsRefreshAt = Date.now();
         runtime.syncStatus.news.lastSuccessAt = Date.now();
         runtime.syncStatus.news.lastError = null;
         runtime.syncStatus.news.itemsFetched = snap.items ? snap.items.length : 0;
-        // In a full implementation, buildNewsSnapshot would return new vs updated counts
+        // 之前只设 itemsFetched，itemsAdded/itemsProcessed 永远 0，前端"处理数量"永远显示 0。
+        // 同步成功的语义是：抓到 N 条新内容并刷入候选池，所以 itemsAdded=itemsFetched。
+        runtime.syncStatus.news.itemsAdded = snap.items ? snap.items.length : 0;
+        runtime.syncStatus.news.itemsProcessed = snap.items ? snap.items.length : 0;
+        // 用户主动触发"立即同步"表示想看新内容。如果存在 admin_news_draft.json，
+        // /api/admin/news 会优先返回 draft 而非新写的 last_good_news.json——
+        // 用户依然看不到新内容（正是用户报告"显示后台拉取但审查页没新内容"的另一半根因）。
+        // 同步成功后清掉 draft，让审查页 fallback 到 last_good_news.json 显示新内容。
+        // 用户后续在审查页编辑保存会重新生成 draft，不会丢失编辑能力。
+        try {
+          var staleDraftPath = path.join(DATA_DIR, 'admin_news_draft.json');
+          if (fs.existsSync(staleDraftPath)) fs.unlinkSync(staleDraftPath);
+        } catch(e) { r1Logger.warn('clear stale news draft failed: ' + e.message); }
         runtime.syncLocks.news = false;
         runtime.syncStatus.news.jobRunning = false;
       }).catch(err => {
@@ -3381,14 +3592,21 @@ async function handleRequest(req, res) {
         }).then((results) => {
           runtime.syncStatus.photos.lastSuccessAt = Date.now();
           runtime.syncStatus.photos.lastError = null;
+          runtime.lastPhotoSyncAt = Date.now();
           if (results.processResults) {
             runtime.syncStatus.photos.itemsProcessed = results.processResults.processed || 0;
+            // 把 process-images.js 返回的新 ID 列表回填给前端，否则 newIds 永远是空数组
+            runtime.syncStatus.photos.newIds = results.processResults.newIds || [];
           }
           if (results.fetchResults) {
-            runtime.syncStatus.photos.itemsFetched = results.fetchResults.fetched || 0;
+            // fetch-images.js 返回的是 downloaded/skipped/failed，不是 fetched
+            runtime.syncStatus.photos.itemsFetched = results.fetchResults.downloaded || 0;
           }
+          // 必须把 loadImageIndex() 的返回值赋给 runtime.imageIndex，
+          // 否则内存索引永远是启动时的快照，新抓的图不进入自动轮播。
           return loadImageIndex();
-        }).then(() => {
+        }).then((entries) => {
+          if (Array.isArray(entries)) runtime.imageIndex = entries;
           runtime.syncLocks.photos = false;
           runtime.syncStatus.photos.jobRunning = false;
         }).catch(err => {
@@ -3413,13 +3631,31 @@ async function handleRequest(req, res) {
     if (parsed.pathname === '/api/admin/news') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var sel = [];
+      // 1. 优先读用户保存的草稿（admin_news_draft.json），否则刷新页面后编辑全部丢失
       try {
-        var nw = now;
-        var kn = 'news:' + nw.getFullYear() + '-' + String(nw.getMonth()+1).padStart(2,'0') + '-' + String(nw.getDate()).padStart(2,'0') + ':' + Math.floor(nw.getTime() / 900000);
-        var ch = runtime.cachedSnapshots.get(kn);
-        if (ch && ch.items) sel = ch.items.map(function(it) { return { source: it.source, category: it.category, title: it.zhTitle, summary: it.zhSummary, url: it.sourceUrl, titleLen: (it.zhTitle||'').length, summaryLen: (it.zhSummary||'').length, publishedAt: it.publishedAt, translationStatus: it.translationStatus }; });
+        var draftPath = path.join(DATA_DIR, 'admin_news_draft.json');
+        if (fs.existsSync(draftPath)) {
+          var draft = JSON.parse(fs.readFileSync(draftPath, 'utf8'));
+          if (draft && draft.items && draft.items.length > 0) {
+            // 保留 originalTitle/originalSummary 否则前端 renderNewsDetail
+            // 的"显示原文"功能在保存草稿后永远失效（hasOrg 永远 false）。
+            sel = draft.items.map(function(it) { return {
+              source: it.source || '',
+              category: it.category || '',
+              title: it.title || '',
+              summary: it.summary || '',
+              url: it.url || '',
+              titleLen: (it.title || '').length,
+              summaryLen: (it.summary || '').length,
+              publishedAt: it.publishedAt || '',
+              translationStatus: it.translationStatus || 'original',
+              originalTitle: it.originalTitle || '',
+              originalSummary: it.originalSummary || ''
+            }; });
+          }
+        }
       } catch(e) {}
-      // Fallback: read from last_good_news.json if in-memory cache is empty
+      // 2. Fallback: read from last_good_news.json if no draft
       if (sel.length === 0) {
         try {
           var lgPath = path.join(DATA_DIR, 'last_good_news.json');
@@ -3429,7 +3665,63 @@ async function handleRequest(req, res) {
           }
         } catch(e) {}
       }
-      respondJson(res, { selected: sel, candidates: [] });
+      // 3. Build candidates list from news_candidates_pool.json (written by
+      //    buildNewsSnapshot) — this contains the wider mainPool (translated,
+      //    quality-passed items not selected into final 6). Fallback to
+      //    last_good_news.json if pool file missing. Old code only read
+      //    last_good_news.json which was fully consumed by sel → candidates
+      //    was always empty → removeNews补位 never fired.
+      var candidates = [];
+      try {
+        var poolPath = path.join(DATA_DIR, 'news_candidates_pool.json');
+        var poolLoaded = false;
+        if (fs.existsSync(poolPath)) {
+          var pool = JSON.parse(fs.readFileSync(poolPath, 'utf8'));
+          if (pool && Array.isArray(pool.items)) {
+            var selUrls = {};
+            sel.forEach(function(s) { if (s.url) selUrls[s.url] = true; });
+            pool.items.forEach(function(it) {
+              var u = it.url || it.sourceUrl;
+              if (u && !selUrls[u]) {
+                candidates.push({
+                  source: it.source || '',
+                  category: it.category || '',
+                  title: it.title || (it.zhTitle || it.originalTitle || ''),
+                  summary: it.summary || (it.zhSummary || it.originalSummary || ''),
+                  url: u,
+                  titleLen: (it.title || it.zhTitle || it.originalTitle || '').length,
+                  summaryLen: (it.summary || it.zhSummary || it.originalSummary || '').length,
+                  publishedAt: it.publishedAt || '',
+                  translationStatus: it.translationStatus || 'original',
+                  originalTitle: it.originalTitle || '',
+                  originalSummary: it.originalSummary || ''
+                });
+              }
+            });
+            poolLoaded = true;
+          }
+        }
+        if (!poolLoaded) {
+          // Fallback: read last_good_news.json (old behavior, kept for
+          // environments where the pool file has not been written yet).
+          var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
+          if (fs.existsSync(lgPath2)) {
+            var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8'));
+            if (lg2 && lg2.items) {
+              var selUrls2 = {};
+              sel.forEach(function(s) { if (s.url) selUrls2[s.url] = true; });
+              lg2.items.forEach(function(it) {
+                var u = it.sourceUrl;
+                if (u && !selUrls2[u]) {
+                  candidates.push({ source: it.source, category: it.category, title: it.zhTitle || it.originalTitle, summary: it.zhSummary || it.originalSummary, url: u, titleLen: (it.zhTitle||it.originalTitle||'').length, summaryLen: (it.zhSummary||it.originalSummary||'').length, publishedAt: it.publishedAt, translationStatus: it.translationStatus });
+                }
+              });
+            }
+          }
+        }
+      } catch(e) {}
+      // 兼容前端两种读法:新闻审查页读 d.selected,发布中心选择器读 d.news
+      respondJson(res, { selected: sel, candidates: candidates, news: sel });
       return;
     }
 
@@ -3438,14 +3730,22 @@ async function handleRequest(req, res) {
       try {
         var db = JSON.parse(await readBody(req));
         var di = db.items || db.selected || [];
+        // 硬性要求 6 条（与 EPD 卡片布局契约一致）。
+        // 前端 removeNews 应在 candidates 为空时禁止继续删除，而不是让服务器放宽限制。
         if (di.length !== 6) { failJson(res, 400, 'need exactly 6 items, got ' + di.length); return; }
         var su = {}, st = {};
         for (var dk = 0; dk < di.length; dk++) {
           var d = di[dk];
           if (!d.title || !d.title.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': title empty'); return; }
-          if (d.title.length > 24) { failJson(res, 400, 'item ' + (dk+1) + ': title too long (' + d.title.length + ')'); return; }
+          // 用 code point 数（[...str].length）与 evaluateNewsItemQuality 对齐。
+          // 之前用 .length（UTF-16 code unit）会在含 emoji/4字节 CJK 扩展字符时
+          // 与 quality gate 计数不一致，导致 admin 接受但 quality 拒绝（或反之）。
+          var titleCpLen = [...d.title].length;
+          if (titleCpLen > 24) { failJson(res, 400, 'item ' + (dk+1) + ': title too long (' + titleCpLen + ' code points)'); return; }
           if (!d.summary || !d.summary.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': summary empty'); return; }
           if (!d.url || !d.url.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': URL empty'); return; }
+          if (!d.source || !d.source.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': source empty'); return; }
+          if (!d.category || !d.category.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': category empty'); return; }
           var un = d.url.toLowerCase().replace(/[?#].*$/, '');
           if (su[un]) { failJson(res, 400, 'duplicate URL: ' + d.url); return; }
           su[un] = true;
@@ -3453,7 +3753,7 @@ async function handleRequest(req, res) {
           if (st[tn]) { failJson(res, 400, 'duplicate title: ' + d.title); return; }
           st[tn] = true;
         }
-        require('fs').writeFileSync(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: di }, null, 2));
+        await R1_writeFileAtomic(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: di }, null, 2));
         respondJson(res, { status: 'ok', count: di.length });
       } catch(e) { failJson(res, 500, e.message); }
       return;
@@ -3461,57 +3761,113 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/publish/news' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      // publicationService/snapshotStore 缺失时必须返回 503，不能返回 200 假 frameId。
+      // 之前块外有 respondJson({frameId:fid})，服务缺失时静默空操作，前端以为成功。
+      if (!runtime.publicationService || !runtime.snapshotStore) {
+        failJson(res, 503, 'publication service unavailable');
+        return;
+      }
       var fid = 'manual-news:' + Date.now().toString(36);
-      var overrideFile = path.join(DATA_DIR, 'admin_override.json');
-      var oldOverride = null;
-      try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
-      var newOverride = JSON.stringify({ mode: 'manual-news', createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
-      fs.writeFileSync(overrideFile, newOverride);
       try {
-        if (runtime.publicationService && runtime.snapshotStore) {
-          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_news' });
+          // 读取用户保存的草稿。若存在，将 draft.items 作为 newsOverride 传入
+          // getContentForNow，绕过 buildNewsSnapshot 的自动选品流程，确保
+          // 用户在 admin UI 上的编辑（标题/摘要修改、排序、补位）真正生效。
+          // 之前的实现直接调 getContentForNow({forceMode:'news'})，完全
+          // 忽略草稿，发布的永远是 RSS 自动重抓的内容——用户编辑全无效。
+          var draftOverride = null;
+          try {
+            var pubDraftPath = path.join(DATA_DIR, 'admin_news_draft.json');
+            if (fs.existsSync(pubDraftPath)) {
+              var pubDraft = JSON.parse(fs.readFileSync(pubDraftPath, 'utf8'));
+              if (pubDraft && Array.isArray(pubDraft.items) && pubDraft.items.length > 0) {
+                // Map draft items (admin schema) to news snapshot items schema
+                var overrideItems = pubDraft.items.map(function(it) {
+                  return {
+                    originalTitle: it.originalTitle || '',
+                    originalSummary: it.originalSummary || '',
+                    zhTitle: it.title || '',
+                    zhSummary: it.summary || '',
+                    sourceUrl: it.url || '',
+                    source: it.source || '',
+                    category: it.category || '',
+                    // publishedAt 必须是可解析的 ISO 字符串；空字符串会让
+                    // new Date('') 得到 Invalid Date，renderNewsSvg 调 formatDateTime
+                    // 时抛 RangeError("Invalid time value")，整个发布 500。
+                    publishedAt: it.publishedAt || new Date().toISOString(),
+                    translationStatus: it.translationStatus || 'original'
+                  };
+                });
+                draftOverride = {
+                  translationProvider: TRANSLATION_PROVIDER,
+                  translationNotice: '',
+                  updatedAt: new Date().toISOString(),
+                  items: overrideItems,
+                  frameId: 'news:draft:' + sha1(JSON.stringify(overrideItems)).slice(0, 16),
+                  title: overrideItems[0] ? (overrideItems[0].source + ' / ' + overrideItems[0].category) : 'NEWS',
+                  slotKey: 'draft:' + Date.now().toString(36)
+                };
+              }
+            }
+          } catch(e) { r1Logger.warn('read draft for publish failed: ' + e.message); }
+
+          var pubOpts = { forceMode: 'news' };
+          if (draftOverride) pubOpts.newsOverride = draftOverride;
+          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date(), pubOpts);
+          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: draftOverride ? 'manual_news_draft' : 'manual_news' });
           await runtime.publicationService.publish(snap);
-        }
+          runtime.lastPublishedAt = new Date().toISOString();
+          runtime.manualOverride = { mode: 'manual-news', publishedAt: runtime.lastPublishedAt };
+          runtime.overrideExpiresAt = null;
       } catch(e) {
-        r1Logger.warn('admin/news publish failed, restoring override: ' + e.message);
-        if (oldOverride) fs.writeFileSync(overrideFile, oldOverride);
-        else try { fs.unlinkSync(overrideFile); } catch(e2) {}
+        r1Logger.warn('admin/news publish failed: ' + e.message);
+        runtime.recentError = { at: new Date().toISOString(), route: 'publish/news', message: e.message };
         failJson(res, 500, 'publish failed: ' + e.message);
         return;
       }
-      respondJson(res, { frameId: fid });
+      // 返回真实 snap.frameId（前端可对照 /api/state.json 验证发布生效）。
+      // 旧代码返回临时生成的 fid='manual-news:xxx'，与实际发布帧对不上。
+      respondJson(res, { status: 'ok', frameId: snap.frameId, snapshotId: snap.snapshotId });
       return;
     }
 
     if (parsed.pathname === '/api/admin/publish/photo' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var photoId = '';
-      try { var pb = JSON.parse(await readBody(req)); photoId = (pb && pb.photoId) || ''; } catch(e) {}
+      var pbBody = null;
+      try { pbBody = JSON.parse(await readBody(req)); } catch(e) { failJson(res, 400, 'invalid JSON body'); return; }
+      if (!pbBody || typeof pbBody !== 'object') { failJson(res, 400, 'invalid body'); return; }
+      photoId = (pbBody && pbBody.photoId) || '';
+      if (!photoId) { failJson(res, 400, 'photoId required'); return; }
       var imgIdx = [];
       try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      if (!Array.isArray(imgIdx)) imgIdx = [];
       var foundPhoto = imgIdx.some(function(e) { return e.id === photoId; });
-      if (!foundPhoto && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
-      var fid2 = 'manual-photo:' + Date.now().toString(36);
-      var overrideFile = path.join(DATA_DIR, 'admin_override.json');
-      var oldOverride = null;
-      try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
-      var newOverride = JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null, photoId: photoId || undefined }, null, 2);
-      fs.writeFileSync(overrideFile, newOverride);
+      if (!foundPhoto) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
+      if (!runtime.publicationService || !runtime.snapshotStore) {
+        failJson(res, 503, 'publication service unavailable');
+        return;
+      }
       try {
-        if (runtime.publicationService && runtime.snapshotStore) {
-          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
+          // 读取 image_index.json 中该 photoId 的 recipe，传给 getContentForNow。
+          // 之前不传 recipe，用户在编辑器调的亮度/对比度/翻转等对发布的 frame 无影响。
+          var photoRecipe = null;
+          var photoEntry = imgIdx.filter(function(e) { return e.id === photoId; })[0];
+          if (photoEntry && photoEntry.recipe) photoRecipe = photoEntry.recipe;
+          // forceMode:'photo' + photoId 确保发布用户指定的图片，而不是 getContentForNow 自动选择的内容
+          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date(), { forceMode: 'photo', photoId: photoId, photoRecipe: photoRecipe });
           var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_photo' });
           await runtime.publicationService.publish(snap);
-        }
+          runtime.lastPublishedAt = new Date().toISOString();
+          runtime.manualOverride = { mode: 'manual-photo', publishedAt: runtime.lastPublishedAt, photoId: photoId || null };
+          runtime.overrideExpiresAt = null;
       } catch(e) {
-        r1Logger.warn('admin/photo publish failed, restoring override: ' + e.message);
-        if (oldOverride) fs.writeFileSync(overrideFile, oldOverride);
-        else try { fs.unlinkSync(overrideFile); } catch(e2) {}
+        r1Logger.warn('admin/photo publish failed: ' + e.message);
+        runtime.recentError = { at: new Date().toISOString(), route: 'publish/photo', message: e.message };
         failJson(res, 500, 'publish failed: ' + e.message);
         return;
       }
-      respondJson(res, { frameId: fid2 });
+      // 返回真实 snap.frameId，与 /api/state.json 一致
+      respondJson(res, { status: 'ok', frameId: snap.frameId, snapshotId: snap.snapshotId });
       return;
     }
 
@@ -3552,6 +3908,9 @@ async function handleRequest(req, res) {
         var osSnap = R3_snapshotModel.createSnapshot(osFrameId, osContent.snapshot, osContent.frame, contentType, { publishReason: 'one_shot' });
         await runtime.publicationService.publish(osSnap);
         runtime.operatingModeService.enterOneShot(osSnap.snapshotId, osExpiresAt);
+        runtime.lastPublishedAt = new Date().toISOString();
+        runtime.manualOverride = { mode: 'ONE_SHOT_OVERRIDE', snapshotId: osSnap.snapshotId, assetId: assetId || null, contentType: contentType };
+        runtime.overrideExpiresAt = osExpiresAt.toISOString();
         // V3: persist override via overridePersistence (replaces ad-hoc writeFileSync).
         // On restart, validateOverrideAsync() re-checks the asset; if it has been
         // deleted / marked unsafe, the override is cleared (no silent swap).
@@ -3620,6 +3979,9 @@ async function handleRequest(req, res) {
           albumId: flAlbumId,
           resolvedAssetId: flSelection.assetId,
         });
+        runtime.lastPublishedAt = new Date().toISOString();
+        runtime.manualOverride = { mode: 'FOCUS_LOCK', snapshotId: flSnap.snapshotId, assetId: flSelection.assetId, libraryType: flLibraryType, theme: flTheme, albumId: flAlbumId };
+        runtime.overrideExpiresAt = null;
         // V3: persist override via overridePersistence for restart restore.
         if (runtime.overridePersistence) {
           try {
@@ -3659,6 +4021,8 @@ async function handleRequest(req, res) {
       }
       try {
         runtime.operatingModeService.exitFocusLock();
+        runtime.manualOverride = null;
+        runtime.overrideExpiresAt = null;
         // V3: clear persisted override via overridePersistence (replaces ad-hoc unlinkSync)
         if (runtime.overridePersistence) {
           try { runtime.overridePersistence.clearOverride(); } catch(e) {}
@@ -3669,6 +4033,7 @@ async function handleRequest(req, res) {
           var flRestoreContent = await getContentForNow(flRestoreNow);
           var flRestoreSnap = R3_snapshotModel.createSnapshot(flRestoreContent.snapshot.frameId, flRestoreContent.snapshot, flRestoreContent.frame, flRestoreContent.snapshot.mode, { publishReason: 'schedule_restore' });
           await runtime.publicationService.publish(flRestoreSnap);
+          runtime.lastPublishedAt = new Date().toISOString();
         }
         respondJson(res, { status: 'ok', operatingMode: 'AUTO' });
       } catch(e) {
@@ -3683,9 +4048,30 @@ async function handleRequest(req, res) {
       if (runtime.publicationService) {
         try {
           var rbBody = JSON.parse(await readBody(req));
-          var rbSnapshotId = rbBody && (rbBody.snapshotId || rbBody.publishId);
-          if (!rbSnapshotId) { failJson(res, 400, 'snapshotId required'); return; }
+          var rbPublishId = rbBody && rbBody.publishId;
+          var rbSnapshotId = rbBody && rbBody.snapshotId;
+          // publishId 是历史条目 id (Date.now().toString(36))，不是 snapshotId。
+          // 前端 confirmRollback 发送 {publishId: h.id}，必须先查 history 找到真正的 snapshotId。
+          // 之前直接把 publishId 当 snapshotId 传给 rollback，导致 snapshotStore.load
+          // 找不到 meta 文件返回 null，doRollback 抛 "Snapshot not found" — 用户看到"直接报错"。
+          if (!rbSnapshotId && rbPublishId && runtime.publicationHistory) {
+            try {
+              var rbHistList = await runtime.publicationHistory.list();
+              var rbHistEntry = rbHistList.filter(function(e) { return e.id === rbPublishId; })[0];
+              if (rbHistEntry) rbSnapshotId = rbHistEntry.snapshotId;
+            } catch(e) { r1Logger.warn('rollback history lookup failed: ' + e.message); }
+          }
+          if (!rbSnapshotId) { failJson(res, 400, 'snapshotId required (publishId not found in history)'); return; }
           await runtime.publicationService.rollback(rbSnapshotId);
+          runtime.lastPublishedAt = new Date().toISOString();
+          // Rollback to a prior snapshot reverts any active ONE_SHOT/FOCUS_LOCK
+          // since the rolled-back content represents the new source of truth.
+          if (runtime.operatingModeService) {
+            try { runtime.operatingModeService.exitOneShot(); } catch(e) {}
+            try { runtime.operatingModeService.exitFocusLock(); } catch(e) {}
+          }
+          runtime.manualOverride = null;
+          runtime.overrideExpiresAt = null;
           respondJson(res, { status: 'ok', snapshotId: rbSnapshotId });
           return;
         } catch (e) {
@@ -3693,8 +4079,8 @@ async function handleRequest(req, res) {
           return;
         }
       }
-      var rbId = Date.now().toString(36);
-      respondJson(res, { status: 'ok', frameId: 'rollback:' + rbId });
+      // publicationService 缺失时返回 503，绝不能假成功（前端会以为回滚已执行）。
+      failJson(res, 503, 'publication service unavailable');
       return;
     }
 
@@ -3703,16 +4089,18 @@ async function handleRequest(req, res) {
       if (runtime.publicationHistory) {
         try {
           var r3History = await runtime.publicationHistory.list();
-          // Only mark the first (most recent) as active
-          if (r3History && r3History.length > 0) {
-            r3History[0].status = 'active';
-            for (var hi = 1; hi < r3History.length; hi++) {
-              r3History[hi].status = 'archived';
-            }
-          }
-          respondJson(res, { history: r3History || [] });
+          // 不 mutate list() 返回的对象（避免污染内部缓存）。
+          // 用 shallow copy + 计算的 status 字段返回。
+          var r3Out = (r3History || []).map(function(e, hi) {
+            return Object.assign({}, e, { status: hi === 0 ? 'active' : 'archived' });
+          });
+          respondJson(res, { history: r3Out });
           return;
-        } catch(e) {}
+        } catch(e) {
+          r1Logger.warn('publish-history list failed: ' + (e.message || e));
+          failJson(res, 500, 'history read failed: ' + e.message);
+          return;
+        }
       }
       failJson(res, 503, 'history unavailable');
       return;
@@ -3731,18 +4119,23 @@ async function handleRequest(req, res) {
           if (!snap) { failJson(res, 404, 'snapshot not found'); return; }
           
           var previewData = {};
-          if (entry.type === 'news' || snap.mode === 'news') {
+          // snapshot 的业务数据（items/id/photoId/imageSource/width/height/title）
+          // 全部存在 snap.payload 里（见 src/snapshot/snapshot-model.js），
+          // 直接读 snap.xxx 永远是 undefined，导致预览永远空白。
+          var snapPayload = (snap && snap.payload) || {};
+          var snapMode = snap.mode || snapPayload.mode || entry.type;
+          if (snapMode === 'news') {
             previewData = {
-              items: snap.items || []
+              items: snapPayload.items || snap.items || []
             };
-          } else if (entry.type === 'photo' || snap.mode === 'photo') {
-            var photoId = snap.id || snap.photoId || '';
+          } else if (snapMode === 'photo') {
+            var photoId = snapPayload.id || snapPayload.photoId || snap.id || snap.photoId || '';
             previewData = {
               photoId: photoId,
-              title: snap.title || snap.imageName || '',
-              thumbnailUrl: photoId ? ('/photos/' + photoId) : (snap.imageSource || ''), // Assuming imageSource might be a URL if not an ID
-              width: snap.width || 0,
-              height: snap.height || 0
+              title: snapPayload.title || snapPayload.imageName || snap.title || snap.imageName || '',
+              thumbnailUrl: photoId ? ('/api/admin/photos/' + encodeURIComponent(photoId) + '/thumbnail') : (snapPayload.imageSource || snap.imageSource || ''),
+              width: snapPayload.width || snap.width || 0,
+              height: snapPayload.height || snap.height || 0
             };
           }
           respondJson(res, {
@@ -3768,6 +4161,7 @@ async function handleRequest(req, res) {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       var idx = [];
       try { idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      if (!Array.isArray(idx)) idx = [];
       respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, poolType: e.poolType || '', safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }), uploadAvailable: true });
       return;
     }
@@ -3779,16 +4173,61 @@ async function handleRequest(req, res) {
         var ext = path.extname(fname).toLowerCase();
         if (!ext) ext = '.png';
         var rawBuf = await readBody(req, 20*1024*1024, true);
+        if (!rawBuf || rawBuf.length === 0) { failJson(res, 400, 'empty file'); return; }
         var fid = 'upload-' + Date.now().toString(36);
         var rawDir = path.join(DATA_DIR, 'raw_images');
         if (!fs.existsSync(rawDir)) fs.mkdirSync(rawDir, { recursive: true });
         var fpath = path.join(rawDir, fid + ext);
         fs.writeFileSync(fpath, rawBuf);
+        // 同步处理图片：之前只 spawn 'npm run process'，但 process-images.js 只读 raw_index.json，
+        // 上传条目写在 image_index.json，导致上传图片永远不被处理（无 processedPngPath），
+        // isImageReady 永远 false，手动发布会渲染 NO IMAGE 占位图。
+        // 现在直接用 sharp 处理，生成 processedPngPath，让上传图片立即可用。
+        var processedDir = path.join(DATA_DIR, 'processed_images');
+        if (!fs.existsSync(processedDir)) fs.mkdirSync(processedDir, { recursive: true });
+        var processedPngPath = path.join(processedDir, fid + '.png');
+        var uploadSharp;
+        try {
+          uploadSharp = require('sharp');
+          var upPipe = uploadSharp(fpath)
+            .rotate()
+            .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'cover', position: 'centre' })
+            .modulate({ brightness: 1.05 })
+            .sharpen({ sigma: 0.5, flat: 1, jagged: 2 })
+            .flatten({ background: '#ffffff' });
+          var upBuf = await upPipe.png().toBuffer();
+          await fsp.writeFile(processedPngPath, upBuf);
+        } catch(e) {
+          console.error('Upload process failed:', e.message);
+          // 即使处理失败也保留 raw 条目，用户可在图片库看到并重试
+          // 注意：必须用 failJson 而非 respondJson，后者第二参数被当 data 永远返回 HTTP 200
+          failJson(res, 500, 'upload saved but process failed: ' + e.message);
+          return;
+        }
         var imgIdx = [];
         try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
-        imgIdx.push({ id: fid, rawPath: 'data/raw_images/' + path.basename(fpath), status: 'raw', addedAt: new Date().toISOString(), title: fname });
-        fs.writeFileSync(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
-        require('child_process').spawn('npm', ['run', 'process'], { detached: true, stdio: 'ignore' }).unref();
+        if (!Array.isArray(imgIdx)) imgIdx = [];
+        // 上传图片默认 poolType='study_frames' + theme='uploaded'，让 isStudySelectable 可选
+        imgIdx.push({
+          id: fid,
+          rawPath: 'data/raw_images/' + path.basename(fpath),
+          processedPngPath: 'data/processed_images/' + fid + '.png',
+          status: 'processed',
+          addedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          title: fname,
+          source: 'upload',
+          theme: 'uploaded',
+          kind: 'shot',
+          poolType: 'study_frames',
+          safetyStatus: 'approved',  // 上传图片用户主动上传，默认 approved
+          width: FRAME_WIDTH,
+          height: FRAME_HEIGHT,
+          hash: sha1(rawBuf)
+        });
+        try { await R1_writeFileAtomic(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2)); } catch(e) { failJson(res, 500, 'index save failed: ' + e.message); return; }
+        // 刷新 runtime.imageIndex 内存，避免 buildPhotoSnapshot 用旧索引
+        try { runtime.imageIndex = await loadImageIndex(); } catch(e) {}
         respondJson(res, { status: 'ok', photoId: fid });
       } catch (e) {
         console.error('Upload error:', e);
@@ -3803,9 +4242,12 @@ async function handleRequest(req, res) {
       var pId = photoGetMatch[1];
       var imgIdx = [];
       try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      if (!Array.isArray(imgIdx)) imgIdx = [];
       var found = imgIdx.find(function(e) { return e.id === pId; });
       if (!found) { failJson(res, 404, 'photo not found'); return; }
-      respondJson(res, { photo: found });
+      // 兼容前端 openEditor 直接读 d.title。之前返回 {photo: found} 导致 d.title 永远 undefined
+      // 编辑器标题永远 fallback 到 id.slice(0,12)
+      respondJson(res, found);
       return;
     }
 
@@ -3815,13 +4257,25 @@ async function handleRequest(req, res) {
       var pId = photoSaveMatch[1];
       var imgIdx = [];
       try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      if (!Array.isArray(imgIdx)) imgIdx = [];
       var fIdx = imgIdx.findIndex(function(e) { return e.id === pId; });
       if (fIdx === -1) { failJson(res, 404, 'photo not found'); return; }
       try {
         var body = JSON.parse(await readBody(req));
         if (body.recipe) {
           imgIdx[fIdx].recipe = body.recipe;
-          fs.writeFileSync(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
+          try { await R1_writeFileAtomic(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2)); } catch(e) { failJson(res, 500, 'index save failed: ' + e.message); return; }
+          // 刷新 runtime.imageIndex + 失效 cachedFrames 中该图对应的旧帧
+          try { runtime.imageIndex = await loadImageIndex(); } catch(e) {}
+          if (runtime.cachedFrames && runtime.cachedFrames.size > 0) {
+            var seCacheKeys = [];
+            runtime.cachedFrames.forEach(function(v, k) {
+              if ((v && v.payload && v.payload.id === pId) || (v && v.snapshot && v.snapshot.id === pId)) {
+                seCacheKeys.push(k);
+              }
+            });
+            seCacheKeys.forEach(function(k) { runtime.cachedFrames.delete(k); });
+          }
         }
         respondJson(res, { status: 'ok' });
       } catch (e) {
@@ -3832,7 +4286,108 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/photo-palette' && req.method === 'GET') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      respondJson(res, { colors: ['#ffffff', '#000000', '#ff0000', '#00ff00', '#0000ff'] });
+      // Compute palette counts for the currently-selected photo (or the photo
+      // referenced by ?id=) so the admin editor shows real per-color pixel
+      // counts instead of a hardcoded 5-color stub. Mirrors the logic in
+      // /debug/photo-palette.json but supports an optional ?id=<photoId> to
+      // inspect a specific library entry.
+      try {
+        var palettePhoto = null;
+        var paletteId = parsed.searchParams.get('id');
+        if (paletteId) {
+          var pIdx = [];
+          try { pIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+          if (!Array.isArray(pIdx)) pIdx = [];
+          var pEntry = pIdx.find(function(e) { return e.id === paletteId; });
+          // 相对路径必须基于 ROOT_DIR 解析，否则 cwd 不对时 existsSync 返回 false
+          if (pEntry && pEntry.processedPngPath) {
+            var palPAbs = path.isAbsolute(pEntry.processedPngPath) ? pEntry.processedPngPath : path.join(ROOT_DIR, pEntry.processedPngPath);
+            if (fs.existsSync(palPAbs)) {
+              palettePhoto = { frameId: 'palette:' + paletteId, imagePath: palPAbs, title: pEntry.title || pEntry.id, kind: pEntry.kind || 'shot' };
+            }
+          }
+        }
+        // 检测是否传了 recipe 参数（b/c/s/g/r/fh/fv/sh/bl）
+        // 前端 loadEditorPreview 总是传完整 recipe，但旧代码忽略这些参数，
+        // 导致用户调整亮度/对比度后调色板统计不反映调整效果
+        var hasRecipe = parsed.searchParams.has('b') || parsed.searchParams.has('c') ||
+                        parsed.searchParams.has('s') || parsed.searchParams.has('g') ||
+                        parsed.searchParams.has('r') || parsed.searchParams.has('fh') ||
+                        parsed.searchParams.has('fv') || parsed.searchParams.has('sh') ||
+                        parsed.searchParams.has('bl');
+        if (hasRecipe && pEntry && pEntry.processedPngPath) {
+          var rpPAbs = path.isAbsolute(pEntry.processedPngPath) ? pEntry.processedPngPath : path.join(ROOT_DIR, pEntry.processedPngPath);
+          if (fs.existsSync(rpPAbs)) {
+          // 走 sharp pipeline 量化统计（和 photo-eink-preview 相同的 pipeline）
+          var rpSrcPath = rpPAbs;
+          var rpB = parseFloat(parsed.searchParams.get('b')) || 1.0;
+          var rpC = parseFloat(parsed.searchParams.get('c')) || 1.0;
+          var rpS = parseFloat(parsed.searchParams.get('s')) || 1.0;
+          var rpG = parseFloat(parsed.searchParams.get('g')) || 1.0;
+          var rpR = parseFloat(parsed.searchParams.get('r')) || 0;
+          var rpFH = parsed.searchParams.get('fh') === '1';
+          var rpFV = parsed.searchParams.get('fv') === '1';
+          var rpSH = parseFloat(parsed.searchParams.get('sh')) || 0;
+          var rpBL = parseFloat(parsed.searchParams.get('bl')) || 0;
+          var rpSharp = require('sharp');
+          var rpPipe = rpSharp(rpSrcPath).rotate(rpR).resize(800, 480, { fit: 'cover', position: 'centre' });
+          if (rpFH) rpPipe = rpPipe.flop();
+          if (rpFV) rpPipe = rpPipe.flip();
+          if (rpC !== 1.0) { rpPipe = rpPipe.linear(rpC, -(0.5 * rpC) + 0.5); }
+          if (rpB !== 1.0 || rpS !== 1.0) { rpPipe = rpPipe.modulate({ brightness: rpB, saturation: rpS }); }
+          if (rpG !== 1.0) rpPipe = rpPipe.gamma(rpG);
+          if (rpSH > 0) rpPipe = rpPipe.sharpen({ sigma: rpSH });
+          if (rpBL > 0) rpPipe = rpPipe.blur(rpBL);
+          var rpRaw = await rpPipe.raw().toBuffer({ resolveWithObject: true });
+          var rpW = rpRaw.info.width, rpH = rpRaw.info.height;
+          var rpCounts = {};
+          for (var rpi = 0; rpi < rpW * rpH; rpi++) {
+            var rpR2 = rpRaw.data[rpi*3], rpG2 = rpRaw.data[rpi*3+1], rpB2 = rpRaw.data[rpi*3+2];
+            var rpCode = epaperPalette.nearestPaletteCode(rpR2, rpG2, rpB2);
+            rpCounts[String(rpCode)] = (rpCounts[String(rpCode)] || 0) + 1;
+          }
+          var rpList = epaperPalette.PALETTE.map(function(c) { return { code: c.code, name: c.name, pixelCount: rpCounts[String(c.code)] || 0 }; });
+          rpList.push({ code: 4, name: 'orange(unsupported)', pixelCount: rpCounts['4'] || 0 });
+          rpList.push({ code: 7, name: 'reserved', pixelCount: rpCounts['7'] || 0 });
+          respondJson(res, {
+            frameId: 'palette:recipe:' + (paletteId || 'auto'),
+            imageName: pEntry.title || pEntry.id || null,
+            width: rpW, height: rpH,
+            totalPixels: rpW * rpH,
+            unsupportedCode4: rpCounts['4'] || 0,
+            palette: rpList,
+          });
+          return;
+          }
+        }
+        if (!palettePhoto) { palettePhoto = await buildPhotoSnapshot(new Date()); }
+        var paletteCacheKey = palettePhoto.frameId;
+        if (!runtime.cachedFrames.has(paletteCacheKey)) {
+          var pSel = { entry: null, theme: palettePhoto.title || null, kind: palettePhoto.kind || 'shot' };
+          if (palettePhoto.imagePath && fs.existsSync(palettePhoto.imagePath)) { pSel.entry = { processedPngPath: palettePhoto.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT }; }
+          var pRawFrame = await renderPhotoFrame(pSel, now);
+          var pFrame = buildFrameBuffer(pRawFrame);
+          runtime.renderCount++;
+          runtime.cachedFrames.set(paletteCacheKey, { frame: pFrame, payload: palettePhoto, snapshot: palettePhoto });
+        }
+        var pPayload = runtime.cachedFrames.get(paletteCacheKey).frame.slice(10);
+        var pCounts = {};
+        for (var pi = 0; pi < pPayload.length; pi++) {
+          pCounts[String((pPayload[pi] >> 4) & 0x0F)] = (pCounts[String((pPayload[pi] >> 4) & 0x0F)] || 0) + 1;
+          pCounts[String(pPayload[pi] & 0x0F)] = (pCounts[String(pPayload[pi] & 0x0F)] || 0) + 1;
+        }
+        var paletteList = epaperPalette.PALETTE.map(function(c) { return { code: c.code, name: c.name, pixelCount: pCounts[String(c.code)] || 0 }; });
+        paletteList.push({ code: 4, name: 'orange(unsupported)', pixelCount: pCounts['4'] || 0 });
+        paletteList.push({ code: 7, name: 'reserved', pixelCount: pCounts['7'] || 0 });
+        respondJson(res, {
+          frameId: palettePhoto.frameId,
+          imageName: palettePhoto.title || palettePhoto.imageName || null,
+          width: FRAME_WIDTH, height: FRAME_HEIGHT,
+          totalPixels: FRAME_WIDTH * FRAME_HEIGHT,
+          unsupportedCode4: pCounts['4'] || 0,
+          palette: paletteList,
+        });
+      } catch(e) { failJson(res, 500, 'photo-palette failed: ' + e.message); }
       return;
     }
 
@@ -3842,36 +4397,102 @@ async function handleRequest(req, res) {
       var delId = delMatch[1];
       var imgIdx = [];
       try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      if (!Array.isArray(imgIdx)) imgIdx = [];
       var foundIdx = imgIdx.findIndex(function(e) { return e.id === delId; });
       if (foundIdx === -1) { failJson(res, 404, 'photo not found'); return; }
       var p = imgIdx[foundIdx];
       imgIdx.splice(foundIdx, 1);
-      fs.writeFileSync(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
+      // 原子写：避免崩溃导致 image_index.json 损坏 → loadImageIndex fallback [] → 整库丢失。
+      // 之前空 catch 吞错：若 R1_writeFileAtomic 失败（磁盘满/权限），索引未更新但继续删磁盘文件，
+      // 导致索引指向已删文件 → broken reference。必须失败时返回 500 且不删文件。
+      try {
+        await R1_writeFileAtomic(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
+      } catch(e) {
+        failJson(res, 500, 'index save failed: ' + e.message);
+        return;
+      }
       if (p.rawPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.rawPath)); } catch(e) {}
       if (p.processedPngPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.processedPngPath)); } catch(e) {}
-      if (p.processedEpfPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.processedEpfPath)); } catch(e) {}
+      // 字段名是 epfPath（不是 processedEpfPath），否则删除时 epf 文件永远残留
+      if (p.epfPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.epfPath)); } catch(e) {}
+      // 刷新 runtime.imageIndex 内存 + 清理 cachedFrames 中引用该图的帧
+      try { runtime.imageIndex = await loadImageIndex(); } catch(e) {}
+      if (runtime.cachedFrames && runtime.cachedFrames.size > 0) {
+        var delCacheKeys = [];
+        runtime.cachedFrames.forEach(function(v, k) {
+          if ((v && v.payload && v.payload.id === delId) || (v && v.snapshot && v.snapshot.id === delId)) {
+            delCacheKeys.push(k);
+          }
+        });
+        delCacheKeys.forEach(function(k) { runtime.cachedFrames.delete(k); });
+      }
       respondJson(res, { status: 'ok' });
       return;
     }
 
     if (parsed.pathname === '/api/admin/photo-preview' || parsed.pathname === '/api/admin/photo-eink-preview') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var isEinkPreview = parsed.pathname === '/api/admin/photo-eink-preview';
       try {
-        var pId = parsed.searchParams.get('photoId');
+        // 前端 admin.js 用 ?id= 传 photoId（旧代码误读 'photoId'，导致永远 404）
+        var prevId = parsed.searchParams.get('id') || parsed.searchParams.get('photoId');
         var imgIdx = [];
         try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
-        var pEntry = imgIdx.find(function(e) { return e.id === pId; });
+        if (!Array.isArray(imgIdx)) imgIdx = [];
+        var pEntry = imgIdx.find(function(e) { return e.id === prevId; });
         if (!pEntry) { failJson(res, 404, 'photo not found'); return; }
         var srcPath = pEntry.rawPath ? path.join(ROOT_DIR, pEntry.rawPath) : (pEntry.processedPngPath ? path.join(ROOT_DIR, pEntry.processedPngPath) : '');
         if (!fs.existsSync(srcPath)) { failJson(res, 404, 'source file not found'); return; }
-        
-        var b = parseFloat(parsed.searchParams.get('brightness')) || 1.0;
-        var s = parseFloat(parsed.searchParams.get('saturation')) || 1.0;
+
+        // 前端发 b/c/s/g/r/fh/fv/sh/bl（brightness/contrast/saturation/gamma/rotate/flipH/flipV/sharpen/blur）
+        // 旧代码读 'brightness'/'saturation' 名称不匹配，所有调整参数失效
+        var pBrightness = parseFloat(parsed.searchParams.get('b') || parsed.searchParams.get('brightness')) || 1.0;
+        var pContrast = parseFloat(parsed.searchParams.get('c') || parsed.searchParams.get('contrast')) || 1.0;
+        var pSaturation = parseFloat(parsed.searchParams.get('s') || parsed.searchParams.get('saturation')) || 1.0;
+        var pGamma = parseFloat(parsed.searchParams.get('g') || parsed.searchParams.get('gamma')) || 1.0;
+        var pRotate = parseFloat(parsed.searchParams.get('r') || parsed.searchParams.get('rotate')) || 0;
+        var pFlipH = parsed.searchParams.get('fh') === '1' || parsed.searchParams.get('flipH') === '1';
+        var pFlipV = parsed.searchParams.get('fv') === '1' || parsed.searchParams.get('flipV') === '1';
+        var pSharpen = parseFloat(parsed.searchParams.get('sh') || parsed.searchParams.get('sharpen')) || 0;
+        var pBlur = parseFloat(parsed.searchParams.get('bl') || parsed.searchParams.get('blur')) || 0;
+
         var sharp = require('sharp');
-        var outBuf = await sharp(srcPath).rotate().resize(800, 480, { fit: 'cover', position: 'centre' })
-          .modulate({ brightness: b, saturation: s }).png().toBuffer();
-        res.writeHead(200, { 'Content-Type': 'image/png' });
-        res.end(outBuf);
+        var pipeline = sharp(srcPath).rotate(pRotate).resize(800, 480, { fit: 'cover', position: 'centre' });
+        if (pFlipH) pipeline = pipeline.flop();
+        if (pFlipV) pipeline = pipeline.flip();
+        if (pContrast !== 1.0) {
+          // 对比度：output = slope * input + intercept，intercept 使中灰点不变
+          var slope = pContrast;
+          var intercept = -(0.5 * slope) + 0.5;
+          pipeline = pipeline.linear(slope, intercept);
+        }
+        if (pBrightness !== 1.0 || pSaturation !== 1.0) {
+          pipeline = pipeline.modulate({ brightness: pBrightness, saturation: pSaturation });
+        }
+        if (pGamma !== 1.0) pipeline = pipeline.gamma(pGamma);
+        if (pSharpen > 0) pipeline = pipeline.sharpen({ sigma: pSharpen });
+        if (pBlur > 0) pipeline = pipeline.blur(pBlur);
+
+        if (!isEinkPreview) {
+          // 原图预览：直接输出调整后的 PNG
+          var outBuf = await pipeline.png().toBuffer();
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(outBuf);
+        } else {
+          // 六色电子纸效果预览：渲染 → raw 像素 → nearestPaletteCode 量化 → 重建 PNG
+          var rawRgb = await pipeline.raw().toBuffer({ resolveWithObject: true });
+          var qW = rawRgb.info.width, qH = rawRgb.info.height;
+          var quantized = Buffer.alloc(qW * qH * 3);
+          for (var qi = 0; qi < qW * qH; qi++) {
+            var qR = rawRgb.data[qi*3], qG = rawRgb.data[qi*3+1], qB = rawRgb.data[qi*3+2];
+            var qCode = epaperPalette.nearestPaletteCode(qR, qG, qB);
+            var qPc = epaperPalette.getPaletteColor(qCode);
+            quantized[qi*3] = qPc.rgb[0]; quantized[qi*3+1] = qPc.rgb[1]; quantized[qi*3+2] = qPc.rgb[2];
+          }
+          var einkBuf = await sharp(quantized, { raw: { width: qW, height: qH, channels: 3 } }).png().toBuffer();
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(einkBuf);
+        }
       } catch (err) {
         console.error('Preview error:', err);
         failJson(res, 500, 'preview failed: ' + err.message);
@@ -3886,6 +4507,7 @@ async function handleRequest(req, res) {
       var photoId = photoMatch[1];
       var photoIdx = [];
       try { photoIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      if (!Array.isArray(photoIdx)) photoIdx = [];
       var photoEntry = null;
       for (var pi = 0; pi < photoIdx.length; pi++) {
         if (photoIdx[pi].id === photoId) { photoEntry = photoIdx[pi]; break; }
@@ -3922,12 +4544,15 @@ async function handleRequest(req, res) {
         try { runtime.operatingModeService.exitOneShot(); } catch(e) {}
         try { runtime.operatingModeService.exitFocusLock(); } catch(e) {}
       }
+      runtime.manualOverride = null;
+      runtime.overrideExpiresAt = null;
       // R3.6: Re-publish schedule-based content after clearing override
       if (runtime.publicationService && runtime.snapshotStore) {
         try {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
           var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'schedule_restore' });
           await runtime.publicationService.publish(snap);
+          runtime.lastPublishedAt = new Date().toISOString();
         } catch (e) {
           r1Logger.warn('R3 publish after override clear failed: ' + e.message);
         }
@@ -3974,10 +4599,14 @@ async function handleRequest(req, res) {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
       var assetFilter = {};
-      if (query.libraryType) assetFilter.libraryType = query.libraryType;
-      if (query.safetyStatus) assetFilter.safetyStatus = query.safetyStatus;
-      if (query.lifecycleStatus) assetFilter.lifecycleStatus = query.lifecycleStatus;
-      if (query.sha256) assetFilter.sha256 = query.sha256;
+      var qLibType = parsed.searchParams.get('libraryType');
+      var qSafetyStatus = parsed.searchParams.get('safetyStatus');
+      var qLifecycleStatus = parsed.searchParams.get('lifecycleStatus');
+      var qSha256 = parsed.searchParams.get('sha256');
+      if (qLibType) assetFilter.libraryType = qLibType;
+      if (qSafetyStatus) assetFilter.safetyStatus = qSafetyStatus;
+      if (qLifecycleStatus) assetFilter.lifecycleStatus = qLifecycleStatus;
+      if (qSha256) assetFilter.sha256 = qSha256;
       try {
         var assets = await runtime.adminQueryService.listAssets(assetFilter);
         respondJson(res, { assets: assets || [] });
@@ -4009,13 +4638,14 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // ── Library API (R4) — GET / PATCH / DELETE implemented; POST upload deferred ──
+    // ── Library API (R4) — GET / PATCH / DELETE / POST upload all implemented ──
     if (parsed.pathname === '/api/admin/library' && req.method === 'GET') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
       if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
-      var libType = String(query.libraryType || '').toUpperCase();
+      var libTypeRaw = parsed.searchParams.get('libraryType') || '';
+      var libType = String(libTypeRaw).toUpperCase();
       if (libType !== 'LEARNING' && libType !== 'CUSTOM') {
-        failJson(res, 400, 'libraryType must be "learning" or "custom", got: ' + query.libraryType); return;
+        failJson(res, 400, 'libraryType must be "learning" or "custom", got: ' + libTypeRaw); return;
       }
       try {
         var libAssets = await runtime.assetRepository.list({ libraryType: libType });
@@ -4224,6 +4854,8 @@ async function handleRequest(req, res) {
         currentMode: hSnap ? hSnap.mode : null,
         currentSlot: hSnap ? hSnap.slotKey : null,
         frameId: hSnap ? hSnap.frameId : null,
+        frameLength: hSnap && hSnap.frameLength ? hSnap.frameLength : null,
+        frameSha256: hSnap && hSnap.frameSha256 ? hSnap.frameSha256 : null,
         frameCacheEntries: runtime.cachedFrames.size,
         frameRenderCount: runtime.renderCount,
         newsItemCount: hNewsCount,

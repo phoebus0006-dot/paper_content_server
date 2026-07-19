@@ -75,7 +75,11 @@ function AssetReferenceIndex(dataDir, snapshotStore, publicationHistory, cacheIn
     if (!publicationHistory) return { assetId: assetId, references: refs, errors: errors, complete: true };
     return publicationHistory.list().then(function(entries) {
       var promises = entries.map(function(entry) {
-        if (entry.assetId === assetId || entry.snapshotId === assetId) {
+        // entry.assetId 是历史记录里记录的资产 ID（与 assetId 同域）。
+        // 之前还比较 entry.snapshotId === assetId：snapshotId 是快照 ID（不同域），
+        // 哈希前缀碰撞时会误报引用存在，阻止合法删除。删除跨域比较，仅保留同域比较；
+        // 若需检查快照是否引用该资产，下面的 snapshotStore.load + matchesAsset 逻辑会正确处理。
+        if (entry.assetId === assetId) {
           refs.push({ type: 'publication_history', snapshotId: entry.snapshotId, historyEntryId: entry.id, assetId: assetId, location: entry.snapshotId, active: false, removable: false });
           return Promise.resolve();
         }

@@ -122,6 +122,9 @@ function SnapshotStore(snapshotsDir, publicationDir, logger) {
       loaded = snap;
       var active = {
         activeSnapshotId: snapshotId,
+        // 之前未写入 frameId，导致 compose-services 的 activeFrameIdProvider
+        // 永远读到 null（active.activeFrameId 不存在），feature flag 真相错误。
+        activeFrameId: snap.frameId,
         frameSha256: snap.frameSha256,
         frameLength: snap.frameLength,
         updatedAt: new Date().toISOString(),
@@ -145,6 +148,19 @@ function SnapshotStore(snapshotsDir, publicationDir, logger) {
       if (err.code === 'ENOENT') return null;
       throw err;
     });
+  }
+
+  // Synchronous read of the active snapshot pointer. Used by feature-flag-view
+  // and admin queries that cannot await. Returns null when no active snapshot
+  // has been set or the file is corrupt/unreadable.
+  function readActiveSync() {
+    var activeFile = path.join(publicationDir, 'active-snapshot.json');
+    try {
+      var text = fs.readFileSync(activeFile, 'utf8');
+      return JSON.parse(text);
+    } catch (err) {
+      return null;
+    }
   }
 
   function listSnapshots() {
@@ -179,6 +195,7 @@ function SnapshotStore(snapshotsDir, publicationDir, logger) {
     load: load,
     activate: activate,
     readActive: readActive,
+    readActiveSync: readActiveSync,
     listSnapshots: listSnapshots,
     deleteAll: deleteAll,
     ensureDirs: ensureDirs,

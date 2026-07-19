@@ -4,9 +4,18 @@
 // to a filled placeholder region so callers always get a deterministic frame.
 
 var fs = require('fs');
-var sharp = require('sharp');
 var quantizer = require('../epaper/quantizer');
 var palette = require('../epaper/palette');
+
+// Lazy-load sharp so the render module can be required in environments
+// (tests, slim deployments) where sharp is not installed. Mirrors the
+// pattern used by text-rasterizer.js getSharp().
+var _sharp = null;
+function getSharp() {
+  if (_sharp !== null) return _sharp;
+  try { _sharp = require('sharp'); } catch (e) { _sharp = false; }
+  return _sharp;
+}
 
 function clampDimensions(destWidth, destHeight) {
   var w = Math.max(1, Math.floor(destWidth));
@@ -51,6 +60,12 @@ function rasterizeImage(imagePath, destX, destY, destWidth, destHeight, codes, c
       return Promise.resolve(null);
     }
   } catch (e) {
+    fallbackFill(codes, destX, destY, dim.width, dim.height, canvasWidth, canvasHeight, fallbackCode);
+    return Promise.resolve(null);
+  }
+
+  var sharp = getSharp();
+  if (!sharp) {
     fallbackFill(codes, destX, destY, dim.width, dim.height, canvasWidth, canvasHeight, fallbackCode);
     return Promise.resolve(null);
   }

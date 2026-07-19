@@ -149,7 +149,10 @@ async function main() {
     'status=' + newsAfter.status);
 
   // --- R0_21: 重启后 override 状态恢复 ---
-  var statusAfter = await getJson(inst2.base, '/api/admin/system-status');
+  // NOTE: server.js registers this route as `/api/admin/system/status` (slash),
+  // not `/api/admin/system-status` (hyphen). The hyphen form 404s and would
+  // falsely report override restoration as broken.
+  var statusAfter = await getJson(inst2.base, '/api/admin/system/status');
   t('R0_21_OVERRIDE_AFTER_RESTART',
     statusAfter.status === 200,
     'status=' + statusAfter.status);

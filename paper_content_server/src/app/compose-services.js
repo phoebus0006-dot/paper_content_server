@@ -296,14 +296,24 @@ function composeServices(deps) {
         },
       };
 
-      // referenceCleaner adapter: cleanCache(assetId) — exception propagation.
-      // The service awaits this; raw cleanCache + cleanLegacyIndexes are
-      // synchronous and any throw surfaces as CLEANUP_FAILED upstream.
+      // referenceCleaner adapter: cleanCache(assetId) — fail-closed propagation.
+      // The raw cleanCache + cleanLegacyIndexes are synchronous and NEVER throw
+      // (they catch internally and return { complete, errors } result objects).
+      // The asset-delete-service awaits this and expects a rejection to surface
+      // as CLEANUP_FAILED (src/assets/asset-delete-service.js step 7). Without
+      // this check the adapter would always resolve, the service's catch would
+      // never fire, and the delete pipeline would proceed to audit + tombstone
+      // even when cache/index cleanup failed — leaving dangling references and
+      // violating the file's fail-closed contract.
       var referenceCleanerRaw = ReferenceCleaner(snapshotStore, snapshotCache, publicationHistory, config.paths.dataDir, logger);
       var referenceCleanerAdapter = {
         cleanCache: function (assetId) {
-          referenceCleanerRaw.cleanCache(assetId);
-          referenceCleanerRaw.cleanLegacyIndexes(assetId, null);
+          var cc = referenceCleanerRaw.cleanCache(assetId);
+          var ic = referenceCleanerRaw.cleanLegacyIndexes(assetId, null);
+          var errs = (cc && cc.errors || []).concat(ic && ic.errors || []);
+          if (errs.length > 0) {
+            return Promise.reject(new Error('CLEANUP_FAILED: ' + errs.join('; ')));
+          }
           return Promise.resolve();
         },
       };

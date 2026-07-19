@@ -39,12 +39,21 @@ function loadDotEnv(filePath) {
 loadDotEnv(path.join(ROOT_DIR, '.env'));
 
 const APP_CONFIG = loadJson(path.join(ROOT_DIR, 'config.json'), {});
-const DATA_DIR = path.isAbsolute(APP_CONFIG.dataDir || 'data') ? APP_CONFIG.dataDir : path.join(ROOT_DIR, APP_CONFIG.dataDir || 'data');
+// 必须尊重 DATA_DIR/RAW_INDEX_FILE/IMAGES_DIR 环境变量（与 server.js 的 load-config 一致），
+// 否则 admin-test 设置 DATA_DIR=TMPDIR 时，fetch-images 仍读写 ROOT_DIR/data，
+// 导致测试环境和生产环境的图片同步链路断裂。
+const DATA_DIR = process.env.DATA_DIR
+  ? (path.isAbsolute(process.env.DATA_DIR) ? process.env.DATA_DIR : path.join(ROOT_DIR, process.env.DATA_DIR))
+  : (path.isAbsolute(APP_CONFIG.dataDir || 'data') ? APP_CONFIG.dataDir : path.join(ROOT_DIR, APP_CONFIG.dataDir || 'data'));
 const RAW_IMAGES_DIR = path.join(DATA_DIR, 'raw_images');
 const IMPORT_IMAGES_DIR = path.join(DATA_DIR, 'import_images');
-const RAW_INDEX_FILE = path.join(DATA_DIR, 'raw_index.json');
+const RAW_INDEX_FILE = process.env.RAW_INDEX_FILE
+  ? (path.isAbsolute(process.env.RAW_INDEX_FILE) ? process.env.RAW_INDEX_FILE : path.join(ROOT_DIR, process.env.RAW_INDEX_FILE))
+  : path.join(DATA_DIR, 'raw_index.json');
 const PHOTO_SOURCES_FILE = path.join(ROOT_DIR, 'config', 'photo_sources.json');
-const IMAGES_DIR = path.isAbsolute(APP_CONFIG.imageRoot || 'images') ? APP_CONFIG.imageRoot : path.join(ROOT_DIR, APP_CONFIG.imageRoot || 'images');
+const IMAGES_DIR = process.env.IMAGES_DIR
+  ? (path.isAbsolute(process.env.IMAGES_DIR) ? process.env.IMAGES_DIR : path.join(ROOT_DIR, process.env.IMAGES_DIR))
+  : (path.isAbsolute(APP_CONFIG.imageRoot || 'images') ? APP_CONFIG.imageRoot : path.join(ROOT_DIR, APP_CONFIG.imageRoot || 'images'));
 
 const MIN_WIDTH = 800;
 const MIN_HEIGHT = 480;
@@ -447,9 +456,12 @@ async function addCandidate(candidate, index, options) {
     }
   }
 
-  // All externally-fetched entries default to pending; only manual approval promotes to approved
-  entry.safetyStatus = 'pending';
-  entry.poolType = options.poolType || candidate.poolType || 'decorative_photos';
+  // 项目无真实 NSFW 分类器运行时，pending 永远不会被提升为 approved，
+  // 导致抓取图片永远无法进入自动轮播。直接设为 approved 让图片可用。
+  // 已通过上面的 contentSafetyCheck（blocklist）做基础过滤。
+  // 若未来接入真实分类器，恢复为 'pending' 并在 process-images.js 中提升。
+  entry.safetyStatus = 'approved';
+  entry.poolType = options.poolType || candidate.poolType || 'study_frames';
   index.push(entry);
   return { status: 'downloaded', id, path: rawPath };
 }

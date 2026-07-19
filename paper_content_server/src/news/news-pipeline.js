@@ -57,12 +57,18 @@ function createNewsPipeline(config, logger) {
       try { await lastGood.save({ items: final, version: 1, updatedAt: new Date().toISOString(), translationProvider: translator.provider }); } catch(e) { logger.warn('last-good save failed: ' + e.message); }
     } else if (final.length === 0) {
       result.lastGoodAction = 'fallback';
-      var lg = await lastGood.load();
-      if (lg && lg.items && lg.items.length >= 6) { result.items = lg.items; result.count = lg.items.length; result.layout = computeCardLayout(lg.items.length); }
+      // lastGood.load() 包裹 try/catch：readOrNull 只吞 NOT_FOUND，JSON 损坏会 reject
+      // INVALID_JSON，让整条 pipeline reject 连原始 final 结果都丢弃（与 save 的容错不一致）。
+      try {
+        var lg = await lastGood.load();
+        if (lg && lg.items && lg.items.length >= 6) { result.items = lg.items; result.count = lg.items.length; result.layout = computeCardLayout(lg.items.length); }
+      } catch(e) { logger.warn('last-good load failed (fallback): ' + e.message); }
     } else {
       result.lastGoodAction = 'insufficient_no_overwrite';
-      var lg2 = await lastGood.load();
-      if (lg2 && lg2.items && lg2.items.length >= 6) { result.items = lg2.items; result.count = lg2.items.length; result.layout = computeCardLayout(lg2.items.length); }
+      try {
+        var lg2 = await lastGood.load();
+        if (lg2 && lg2.items && lg2.items.length >= 6) { result.items = lg2.items; result.count = lg2.items.length; result.layout = computeCardLayout(lg2.items.length); }
+      } catch(e) { logger.warn('last-good load failed (insufficient): ' + e.message); }
     }
     return result;
   }

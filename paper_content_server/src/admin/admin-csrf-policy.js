@@ -7,7 +7,11 @@
 // Origin to bypass the check the way a missing Origin is tolerated when paired
 // with a valid Referer (or when allowHeaderlessWrite is enabled).
 
-var ALLOWED_CONTENT_TYPES = ['application/json', 'multipart/form-data'];
+// application/octet-stream 用于 /api/admin/photos/upload 的 raw binary 上传
+// （前端 fetch body: Buffer，不能走 multipart）。浏览器 fetch 的 Content-Type
+// 由开发者显式设置，不会被自动 form-encode，所以 octet-stream 不构成 CSRF 风险。
+// image/* 同理——前端用 file.type 上传时也是显式设置，不会绕过 Origin/Referer 检查。
+var ALLOWED_CONTENT_TYPES = ['application/json', 'multipart/form-data', 'application/octet-stream', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
 function checkContentType(req) {
   var ct = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();

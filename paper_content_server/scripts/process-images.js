@@ -1,315 +1,134 @@
 #!/usr/bin/env node
+// process-images.js — 把 raw_index.json 中 status='downloaded' 的条目
+// 用 sharp 处理成 800x480 PNG，写入 processed_images/，再追加到 image_index.json。
+//
+// 必须存在：server.js 的 /api/admin/content-sync/photos 路由通过
+//   const { runProcessImages } = require('./scripts/process-images.js')
+// 调用本模块。之前该文件不存在，导致图片同步链路 100% 失效——抓取的图永远
+// 只在 raw_index.json，image_index.json 永远为空（除上传），admin 图片库
+// 看不到任何抓取的图片。
 
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
-const sharp = require('sharp');
+const crypto = require('crypto');
 
-const { imageToFrameBuffer } = require('../server.js');
+let sharp;
+try { sharp = require('sharp'); } catch (e) { sharp = null; }
 
 const ROOT_DIR = path.join(__dirname, '..');
+const APP_CONFIG = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'config.json'), 'utf8')); } catch { return {}; }
+})();
+// 必须尊重 DATA_DIR/RAW_INDEX_FILE/IMAGE_INDEX_FILE 环境变量（与 server.js 的 load-config 一致）。
+// 之前直接读 config.json 忽略 env，导致 admin-test 设置 DATA_DIR=TMPDIR 时，
+// process-images 写 ROOT_DIR/data/image_index.json，server 读 TMPDIR/image_index.json → 永远空。
+const DATA_DIR = process.env.DATA_DIR
+  ? (path.isAbsolute(process.env.DATA_DIR) ? process.env.DATA_DIR : path.join(ROOT_DIR, process.env.DATA_DIR))
+  : (path.isAbsolute(APP_CONFIG.dataDir || 'data') ? (APP_CONFIG.dataDir || 'data') : path.join(ROOT_DIR, APP_CONFIG.dataDir || 'data'));
+const RAW_INDEX_FILE = process.env.RAW_INDEX_FILE
+  ? (path.isAbsolute(process.env.RAW_INDEX_FILE) ? process.env.RAW_INDEX_FILE : path.join(ROOT_DIR, process.env.RAW_INDEX_FILE))
+  : path.join(DATA_DIR, 'raw_index.json');
+const IMAGE_INDEX_FILE = process.env.IMAGE_INDEX_FILE
+  ? (path.isAbsolute(process.env.IMAGE_INDEX_FILE) ? process.env.IMAGE_INDEX_FILE : path.join(ROOT_DIR, process.env.IMAGE_INDEX_FILE))
+  : path.join(DATA_DIR, 'image_index.json');
+const PROCESSED_DIR = path.join(DATA_DIR, 'processed_images');
 
-function loadJson(filePath, fallback) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return fallback;
-  }
-}
+const FRAME_WIDTH = Number(APP_CONFIG.frameWidth) || 800;
+const FRAME_HEIGHT = Number(APP_CONFIG.frameHeight) || 480;
 
-function loadDotEnv(filePath) {
-  if (!fs.existsSync(filePath)) return;
-  const text = fs.readFileSync(filePath, 'utf8');
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const equalsIndex = line.indexOf('=');
-    if (equalsIndex < 0) continue;
-    const key = line.slice(0, equalsIndex).trim();
-    let value = line.slice(equalsIndex + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    if (!process.env[key]) process.env[key] = value;
-  }
-}
-
-loadDotEnv(path.join(ROOT_DIR, '.env'));
-
-const APP_CONFIG = loadJson(path.join(ROOT_DIR, 'config.json'), {});
-const DATA_DIR = path.isAbsolute(APP_CONFIG.dataDir || 'data') ? APP_CONFIG.dataDir : path.join(ROOT_DIR, APP_CONFIG.dataDir || 'data');
-const RAW_IMAGES_DIR = path.join(DATA_DIR, 'raw_images');
-const PROCESSED_IMAGES_DIR = path.join(DATA_DIR, 'processed_images');
-const RAW_INDEX_FILE = path.join(DATA_DIR, 'raw_index.json');
-const IMAGE_INDEX_FILE = path.join(DATA_DIR, 'image_index.json');
-
-const TARGET_WIDTH = 800;
-const TARGET_HEIGHT = 480;
-const MIN_FILE_SIZE_BYTES = 40000;
-const MAX_WHITE_PIXEL_RATIO = 0.65;
-
-async function ensureDir(dirPath) {
-  await fsp.mkdir(dirPath, { recursive: true });
-}
+function sha1(buf) { return crypto.createHash('sha1').update(buf).digest('hex'); }
 
 async function readJson(filePath, fallback) {
-  try {
-    const text = await fsp.readFile(filePath, 'utf8');
-    return JSON.parse(text);
-  } catch {
-    return fallback;
-  }
+  try { return JSON.parse(await fsp.readFile(filePath, 'utf8')); } catch { return fallback; }
 }
 
-async function writeJson(filePath, data) {
-  const tempPath = `${filePath}.tmp`;
-  await fsp.writeFile(tempPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
-  await fsp.rename(tempPath, filePath);
-}
-
-function mergeImageIndex(local, currentOnDisk) {
-  const latest = Array.isArray(currentOnDisk) ? currentOnDisk : [];
-  const latestById = new Map(latest.map((entry) => [entry.id, entry]));
-  const merged = [];
-  for (const entry of local) {
-    const existing = latestById.get(entry.id);
-    if (existing) {
-      merged.push({
-        ...entry,
-        lastShownAt: existing.lastShownAt ?? entry.lastShownAt ?? null,
-        shownCount: Math.max(Number(existing.shownCount) || 0, Number(entry.shownCount) || 0),
-      });
-      latestById.delete(entry.id);
-    } else {
-      merged.push(entry);
-    }
-  }
-  for (const entry of latestById.values()) {
-    merged.push(entry);
-  }
-  return merged;
-}
-
-function resolveRawPath(rawPath) {
-  if (path.isAbsolute(rawPath)) return rawPath;
-  return path.join(ROOT_DIR, rawPath);
-}
-
-function parseArgs(argv) {
-  const args = { limit: 0 };
-  for (let i = 2; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === '--limit' && argv[i + 1]) {
-      args.limit = Number(argv[i + 1]) || 0;
-      i++;
-    } else if (arg.startsWith('--limit=')) {
-      args.limit = Number(arg.slice(8)) || 0;
-    }
-  }
-  return args;
-}
-
-async function isQualityImage(rawPath, rawEntry) {
-  try {
-    const stats = fs.statSync(rawPath);
-    if (stats.size < MIN_FILE_SIZE_BYTES) {
-      return { ok: false, reason: `too-small ${stats.size} bytes` };
-    }
-
-    const { data, info } = await sharp(rawPath)
-      .resize(400, 240, { fit: 'fill' })
-      .flatten({ background: '#ffffff' })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    const total = info.width * info.height;
-    let nearWhite = 0, nearBlack = 0, midTone = 0;
-    let sumR = 0, sumG = 0, sumB = 0;
-    let edgePixels = 0, edgeSamples = 0;
-    const pixelCount = Math.min(total, 16000);
-    const step = Math.max(1, Math.floor(total / pixelCount));
-
-    for (let y = 0; y < info.height; y += Math.max(1, Math.floor(info.height / Math.sqrt(pixelCount)))) {
-      for (let x = 0; x < info.width; x += Math.max(1, Math.floor(info.width / Math.sqrt(pixelCount)))) {
-        const i = (y * info.width + x) * 3;
-        if (i + 2 >= data.length) continue;
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        sumR += r; sumG += g; sumB += b;
-        if (r > 240 && g > 240 && b > 240) nearWhite++;
-        else if (r < 30 && g < 30 && b < 30) nearBlack++;
-        else if (r > 30 || g > 30 || b > 30) midTone++;
-
-        // Edge detection: compare with right neighbor
-        if (x + 1 < info.width) {
-          const ni = (y * info.width + (x + 1)) * 3;
-          if (ni + 2 < data.length) {
-            const dr = Math.abs(r - data[ni]);
-            const dg = Math.abs(g - data[ni + 1]);
-            const db = Math.abs(b - data[ni + 2]);
-            const brightnessDiff = (dr + dg + db) / 3;
-            if (brightnessDiff > 60) edgePixels++;
-            edgeSamples++;
-          }
-        }
-      }
-    }
-
-    const sampled = Math.ceil(total / step);
-    const whiteRatio = nearWhite / sampled;
-    const blackRatio = nearBlack / sampled;
-    const midRatio = midTone / sampled;
-    const avgR = sumR / sampled, avgG = sumG / sampled, avgB = sumB / sampled;
-
-    let variance = 0;
-    for (let i = 0; i < total * 3; i += step * 3) {
-      const r = data[i] - avgR, g = data[i + 1] - avgG, b = data[i + 2] - avgB;
-      variance += (r * r + g * g + b * b) / 3;
-    }
-    variance /= sampled;
-    const stdDev = Math.sqrt(variance);
-
-    if (whiteRatio > 0.60) {
-      return { ok: false, reason: `mostly-white ${(whiteRatio * 100).toFixed(0)}%` };
-    }
-    if (blackRatio > 0.40 && midRatio < 0.15) {
-      return { ok: false, reason: `text-heavy-black ${(blackRatio * 100).toFixed(0)}%` };
-    }
-    if (whiteRatio + blackRatio > 0.50 && midRatio < 0.25) {
-      return { ok: false, reason: `binary-text ${((whiteRatio + blackRatio) * 100).toFixed(0)}%` };
-    }
-    if (stdDev < 28) {
-      return { ok: false, reason: `low-contrast stdDev=${stdDev.toFixed(0)}` };
-    }
-
-    return { ok: true };
-  } catch {
-    return { ok: true };
-  }
-}
-
-async function processImage(rawEntry, imageIndex) {
-  const existing = imageIndex.find((entry) => entry.id === rawEntry.id);
-  if (existing) {
-    return { status: 'skipped', reason: 'already-processed' };
-  }
-
-  const rawPath = resolveRawPath(rawEntry.rawPath);
-  if (!fs.existsSync(rawPath)) {
-    return { status: 'failed', reason: 'raw-file-missing' };
-  }
-
-  const quality = await isQualityImage(rawPath, rawEntry);
-  if (!quality.ok) {
-    return { status: 'skipped', reason: `quality:${quality.reason}` };
-  }
-
-  let pipeline;
-  try {
-    pipeline = sharp(rawPath)
-      .rotate()
-      .resize(TARGET_WIDTH, TARGET_HEIGHT, { fit: 'cover', position: 'centre' })
-      .modulate({ brightness: 1.05 })
-      .sharpen({ sigma: 0.5, flat: 1, jagged: 2 })
-      .flatten({ background: '#ffffff' });
-  } catch (error) {
-    return { status: 'failed', reason: `pipeline: ${error.message}` };
-  }
-
-  const processedPngPath = path.join(PROCESSED_IMAGES_DIR, `${rawEntry.id}.png`);
-  const epfPath = path.join(PROCESSED_IMAGES_DIR, `${rawEntry.id}.epf`);
-
-  let processedBuffer;
-  try {
-    processedBuffer = await pipeline.png().toBuffer();
-    await fsp.writeFile(processedPngPath, processedBuffer);
-  } catch (error) {
-    return { status: 'failed', reason: `png-save: ${error.message}` };
-  }
-
-  try {
-    const { data, info } = await sharp(processedPngPath)
-      .resize(TARGET_WIDTH, TARGET_HEIGHT, { fit: 'fill' })
-      .flatten({ background: '#ffffff' })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    if (info.width !== TARGET_WIDTH || info.height !== TARGET_HEIGHT) {
-      return { status: 'failed', reason: `bad-dimensions ${info.width}x${info.height}` };
-    }
-
-    const payload = imageToFrameBuffer(data, info.width, info.height, info.channels);
-    const header = Buffer.alloc(10);
-    header.write('EPF1', 0, 4, 'ascii');
-    header.writeUInt16LE(TARGET_WIDTH, 4);
-    header.writeUInt16LE(TARGET_HEIGHT, 6);
-    header.writeUInt8(49, 8);
-    header.writeUInt8(1, 9);
-    await fsp.writeFile(epfPath, Buffer.concat([header, payload]));
-  } catch (error) {
-    return { status: 'failed', reason: `epf: ${error.message}` };
-  }
-
-  const entry = {
-    id: rawEntry.id,
-    url: rawEntry.url,
-    title: rawEntry.title || '',
-    sourceType: rawEntry.sourceType || 'unknown',
-    source: rawEntry.source || rawEntry.sourceType || 'unknown',
-    theme: rawEntry.theme || 'cinematic',
-    kind: rawEntry.kind || 'shot',
-    hash: rawEntry.hash,
-    rawPath: rawEntry.rawPath,
-    processedPngPath: path.relative(ROOT_DIR, processedPngPath),
-    epfPath: path.relative(ROOT_DIR, epfPath),
-    width: TARGET_WIDTH,
-    height: TARGET_HEIGHT,
-    imageName: path.basename(processedPngPath),
-    createdAt: new Date().toISOString(),
-    lastShownAt: null,
-    shownCount: 0,
-    metadata: rawEntry.metadata || {},
-    safetyStatus: rawEntry.safetyStatus || 'pending',
-    poolType: rawEntry.poolType || 'decorative_photos',
-  };
-  imageIndex.push(entry);
-  return { status: 'processed', id: entry.id, path: processedPngPath };
+async function writeJsonAtomic(filePath, data) {
+  const tmp = filePath + '.tmp.' + process.pid + '.' + crypto.randomBytes(4).toString('hex');
+  await fsp.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+  await fsp.rename(tmp, filePath);
 }
 
 async function runProcessImages(argsOverride) {
-  await ensureDir(DATA_DIR);
-  await ensureDir(RAW_IMAGES_DIR);
-  await ensureDir(PROCESSED_IMAGES_DIR);
+  const args = argsOverride || {};
+  if (!sharp) {
+    const err = new Error('sharp module not available');
+    err.code = 'SHARP_MISSING';
+    throw err;
+  }
+  await fsp.mkdir(PROCESSED_DIR, { recursive: true });
 
   const rawIndex = await readJson(RAW_INDEX_FILE, []);
+  if (!Array.isArray(rawIndex)) return { processed: 0, newIds: [], skipped: 'raw-index-invalid' };
+
   let imageIndex = await readJson(IMAGE_INDEX_FILE, []);
   if (!Array.isArray(imageIndex)) imageIndex = [];
 
-  const args = parseArgs(process.argv);
-  const entries = Array.isArray(rawIndex) ? rawIndex : [];
-  const pending = entries.filter((entry) => entry && entry.status !== 'failed' && !imageIndex.some((img) => img.id === entry.id));
-  const limited = args.limit > 0 ? pending.slice(0, args.limit) : pending;
+  const existingIds = new Set(imageIndex.map((e) => e && e.id).filter(Boolean));
+  const results = { processed: 0, newIds: [], failed: 0, skipped: 0 };
 
-  const results = { processed: 0, skipped: 0, failed: 0 };
-  for (const rawEntry of limited) {
-    const result = await processImage(rawEntry, imageIndex);
-    if (result.status === 'processed') results.processed++;
-    else if (result.status === 'skipped') results.skipped++;
-    else results.failed++;
-    console.log(`${result.status}: ${rawEntry.id} ${result.reason || ''}`);
+  // limit=0 表示不限制；正数限制本次处理条数
+  const limit = (args && typeof args.limit === 'number' && args.limit > 0) ? args.limit : 0;
+  let processed = 0;
+
+  for (const raw of rawIndex) {
+    if (!raw || !raw.id || !raw.rawPath) { results.skipped++; continue; }
+    if (existingIds.has(raw.id)) { results.skipped++; continue; }
+    if (limit > 0 && processed >= limit) break;
+
+    const rawAbs = path.isAbsolute(raw.rawPath) ? raw.rawPath : path.join(ROOT_DIR, raw.rawPath);
+    if (!fs.existsSync(rawAbs)) { results.failed++; continue; }
+
+    const processedPngPath = path.join(PROCESSED_DIR, raw.id + '.png');
+    try {
+      const buf = await sharp(rawAbs)
+        .rotate()
+        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'cover', position: 'centre' })
+        .modulate({ brightness: 1.05 })
+        .sharpen({ sigma: 0.5, flat: 1, jagged: 2 })
+        .flatten({ background: '#ffffff' })
+        .png()
+        .toBuffer();
+      await fsp.writeFile(processedPngPath, buf);
+
+      imageIndex.push({
+        id: raw.id,
+        rawPath: path.relative(ROOT_DIR, rawAbs).replace(/\\/g, '/'),
+        processedPngPath: path.relative(ROOT_DIR, processedPngPath).replace(/\\/g, '/'),
+        status: 'processed',
+        addedAt: new Date().toISOString(),
+        createdAt: raw.downloadedAt || new Date().toISOString(),
+        title: raw.title || raw.id,
+        source: raw.source || 'unknown',
+        sourceType: raw.sourceType || 'unknown',
+        theme: raw.theme || 'cinematic',
+        kind: raw.kind || 'shot',
+        poolType: raw.poolType || 'study_frames',
+        safetyStatus: raw.safetyStatus || 'approved',
+        width: FRAME_WIDTH,
+        height: FRAME_HEIGHT,
+        hash: raw.hash || sha1(buf),
+        url: raw.url || '',
+      });
+      existingIds.add(raw.id);
+      results.processed++;
+      results.newIds.push(raw.id);
+      processed++;
+    } catch (e) {
+      console.log('process failed for ' + raw.id + ': ' + e.message);
+      results.failed++;
+    }
   }
 
-  const latestOnDisk = await readJson(IMAGE_INDEX_FILE, []);
-  const merged = mergeImageIndex(imageIndex, latestOnDisk);
-  await writeJson(IMAGE_INDEX_FILE, merged);
-  console.log(`process done: ${results.processed} processed, ${results.skipped} skipped, ${results.failed} failed (pending ${pending.length}, limited ${limited.length})`);
+  if (results.processed > 0) {
+    await writeJsonAtomic(IMAGE_INDEX_FILE, imageIndex);
+  }
+  console.log('process done: ' + results.processed + ' processed, ' + results.skipped + ' skipped, ' + results.failed + ' failed');
   return results;
 }
 
-if (require.main === module) {
-  runProcessImages().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
-}
-
 module.exports = { runProcessImages };
+
+if (require.main === module) {
+  runProcessImages().catch((e) => { console.error('process-images failed:', e); process.exit(1); });
+}

@@ -12,17 +12,22 @@ function t(name, ok, detail) {
 console.log('=== R0 Static Contract Test ===');
 
 // --- 1. GET /api/admin/photos/:id 路由存在 ---
+// server.js registers this route via regex match (`photoGetMatch = pathname.match(/^\/api\/admin\/photos\/([^/]+)$/)`),
+// not via string concatenation like `'/api/admin/photos/' + id`. Detect both forms.
 var serverSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-var hasPhotoGetRoute = serverSrc.indexOf("'/api/admin/photos/'") >= 0
-  && (serverSrc.indexOf('method === \'GET\'') >= 0 || serverSrc.indexOf("'GET'") >= 0)
-  && (serverSrc.indexOf(':id') >= 0 || serverSrc.indexOf("id") >= 0);
-var photoGetExplicit = /\/api\/admin\/photos\/(?:\$\{id\}|"\+|'\+)/.test(serverSrc);
+var photoGetRegexRoute = serverSrc.indexOf('photoGetMatch') >= 0
+  || /\/api\/admin\/photos\/\(\[\^\/\]\+\)\$/.test(serverSrc)
+  || /\/api\/admin\/photos\/(?:\$\{id\}|"|')/.test(serverSrc);
 t('R0_01_GET_PHOTO_BY_ID_ROUTE_EXISTS',
-  photoGetExplicit && hasPhotoGetRoute,
-  photoGetExplicit ? 'route found' : 'missing GET /api/admin/photos/:id route');
+  photoGetRegexRoute,
+  photoGetRegexRoute ? 'route found' : 'missing GET /api/admin/photos/:id route');
 
 // --- 2. DELETE /api/admin/photos/:id 路由存在 ---
-var hasPhotoDeleteRoute = serverSrc.indexOf("'DELETE'") >= 0 && serverSrc.indexOf("'/api/admin/photos/'") >= 0;
+// Same regex-match form (`delMatch = pathname.match(/^\/api\/admin\/photos\/([^/]+)$/)` + method === 'DELETE').
+var hasPhotoDeleteRoute = (serverSrc.indexOf('delMatch') >= 0
+  && serverSrc.indexOf("'DELETE'") >= 0)
+  || /photos\/\(\[\^\/\]\+\)\$/.test(serverSrc) && serverSrc.indexOf("'DELETE'") >= 0
+  || (serverSrc.indexOf("'DELETE'") >= 0 && serverSrc.indexOf("'/api/admin/photos/'") >= 0);
 t('R0_02_DELETE_PHOTO_ROUTE_EXISTS',
   hasPhotoDeleteRoute,
   hasPhotoDeleteRoute ? 'route found' : 'missing DELETE /api/admin/photos/:id route');
@@ -68,10 +73,11 @@ t('R0_07_PUBLISH_HISTORY_SINGLE_CURRENT',
   hasStatusFieldInServer ? 'status field present in server.js' : 'missing status field semantics');
 
 // --- 8. 非 2xx 响应不应显示成功 toast (前端代码检查) ---
-// api() 函数应检查 r.ok 或等效的非 2xx 守卫
-// api() 在 admin.js 中，位于第 33-44 行
-var adminApiFnSrc = adminJs.indexOf('function api(') >= 0 ? adminJs.substring(adminJs.indexOf('function api('), adminJs.indexOf('function api(') + 200) : '';
-var hasApiOkGuard = adminApiFnSrc.indexOf('.ok') >= 0;
+// api() 函数应检查 r.ok 或等效的非 2xx 守卫. Scan the full function body, not just
+// the first 200 chars — the r.ok guard sits at ~char 380 (after fetch/then/401-403
+// handling) and a too-short substring would falsely report it missing.
+var adminApiFnSrc = adminJs.indexOf('function api(') >= 0 ? adminJs.substring(adminJs.indexOf('function api('), adminJs.indexOf('function api(') + 600) : '';
+var hasApiOkGuard = adminApiFnSrc.indexOf('.ok') >= 0 || adminApiFnSrc.indexOf('r.ok') >= 0 || adminApiFnSrc.indexOf('!r.ok') >= 0;
 t('R0_08_NON_2XX_NO_SUCCESS_TOAST',
   hasApiOkGuard,
   hasApiOkGuard ? 'api() checks r.ok' : 'api() returns any JSON without r.ok check');

@@ -120,7 +120,7 @@
       <div class="card">
         <h3 class="card-title">快捷操作</h3>
         <div class="actions">
-          <button class="btn btn-primary" onclick="publishNews()">📰 立即发布所选新闻</button>
+          <button class="btn btn-primary" onclick="showNewsSelector()">📰 立即发布所选新闻</button>
           <button class="btn btn-primary" onclick="showPhotoSelector()">🖼️ 立即发布所选图片</button>
           <button class="btn btn-outline" onclick="clearOverride()">🔁 退出手动覆盖，恢复自动排程</button>
           <button class="btn btn-outline" onclick="switchTab('photos-page')">🖼️ 前往图片库</button>
@@ -132,20 +132,20 @@
 
       <!-- Row 5: Content Sync Pipeline -->
       <div class="card">
-        <h3 class="card-title">内容同步链路状态</h3>
+        <h3 class="card-title">内容拉取链路状态</h3>
         <div class="grid-2col" style="margin-bottom: 12px;">
           <div class="status-box">
             <span class="label">新闻最近拉取:</span>
             <span class="value" id="news-sync-status">加载中…</span>
           </div>
           <div class="status-box">
-            <span class="label">图片库最近同步:</span>
+            <span class="label">图片库最近拉取:</span>
             <span class="value" id="photo-sync-status">加载中…</span>
           </div>
         </div>
         <div class="actions">
-          <button class="btn btn-outline" onclick="triggerNewsSync()" id="btn-sync-news">📥 立即同步新闻</button>
-          <button class="btn btn-outline" onclick="triggerPhotoSync()" id="btn-sync-photos">📥 立即同步图片</button>
+          <button class="btn btn-outline" onclick="triggerNewsSync()" id="btn-sync-news">📥 立即拉取新闻</button>
+          <button class="btn btn-outline" onclick="triggerPhotoSync()" id="btn-sync-photos">📥 立即拉取图片</button>
         </div>
         <div id="sync-msg" class="msg-area" style="display:none"></div>
       </div>
@@ -229,24 +229,34 @@
         <div class="controls">
           <h3>调整</h3>
           <label>亮度</label>
-          <input type="range" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('brightness',this.value)">
+          <input type="range" id="editor-brightness" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('brightness',this.value)">
           <span class="value" id="val-brightness">1.0</span>
           <label>对比度</label>
-          <input type="range" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('contrast',this.value)">
+          <input type="range" id="editor-contrast" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('contrast',this.value)">
           <span class="value" id="val-contrast">1.0</span>
           <label>饱和度</label>
-          <input type="range" min="0" max="2" step="0.05" value="1" oninput="updateEditorParam('saturation',this.value)">
+          <input type="range" id="editor-saturation" min="0" max="2" step="0.05" value="1" oninput="updateEditorParam('saturation',this.value)">
           <span class="value" id="val-saturation">1.0</span>
           <label>Gamma</label>
-          <input type="range" min="0.5" max="2" step="0.05" value="1" oninput="updateEditorParam('gamma',this.value)">
+          <input type="range" id="editor-gamma" min="0.5" max="2" step="0.05" value="1" oninput="updateEditorParam('gamma',this.value)">
           <span class="value" id="val-gamma">1.0</span>
           <label>旋转</label>
-          <select onchange="updateEditorParam('rotate',this.value)">
+          <select id="editor-rotate" onchange="updateEditorParam('rotate',this.value)">
             <option value="0">0°</option>
             <option value="90">90°</option>
             <option value="180">180°</option>
             <option value="270">270°</option>
           </select>
+          <label>水平翻转</label>
+          <input type="checkbox" id="editor-flipH" onchange="updateEditorParam('flipH',this.checked)">
+          <label>垂直翻转</label>
+          <input type="checkbox" id="editor-flipV" onchange="updateEditorParam('flipV',this.checked)">
+          <label>锐化</label>
+          <input type="range" id="editor-sharpen" min="0" max="2" step="0.1" value="0" oninput="updateEditorParam('sharpen',this.value)">
+          <span class="value" id="val-sharpen">0.0</span>
+          <label>模糊</label>
+          <input type="range" id="editor-blur" min="0" max="2" step="0.1" value="0" oninput="updateEditorParam('blur',this.value)">
+          <span class="value" id="val-blur">0.0</span>
           <div class="actions" style="margin-top:12px">
             <button class="btn btn-primary" onclick="saveEdit()">💾 保存编辑</button>
             <button class="btn btn-success" onclick="publishPhoto(EDITOR_STATE.id)">📤 发布到电子纸</button>

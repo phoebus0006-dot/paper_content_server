@@ -2,7 +2,7 @@
 function createValidator() {
   function validate(candidate) {
     var errors = [], codes = [];
-    if (!candidate) return false;
+    if (!candidate) return { ok: false, errors: ['Missing candidate'], reasonCodes: ['NO_CANDIDATE'] };
     if (!candidate.sourceUrl && !candidate.localPath) { errors.push('Missing source'); codes.push('NO_SOURCE'); }
     if (candidate.rightsStatus === 'RESTRICTED') { errors.push('Rights restricted'); codes.push('RIGHTS_REJECTED'); }
     if (candidate.safetyStatus === 'UNSAFE') { errors.push('Safety UNSAFE'); codes.push('SAFETY_REJECTED'); }

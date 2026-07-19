@@ -11,13 +11,13 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
 
   function publish(snapshot) {
     return lock.acquire(LOCK_KEY_PUBLISH).then(function(release) {
-      return doPublish(snapshot).then(function(result) {
-        release();
-        return result;
-      }, function(err) {
-        release();
-        return Promise.reject(err);
-      });
+      // Wrap doPublish in Promise.resolve().then so a synchronous throw
+      // inside doPublish (e.g. snapshotStore.save rejecting synchronously
+      // before returning the promise) still reaches the release() handlers
+      // — otherwise the lock would be held forever (deadlock).
+      return Promise.resolve().then(function() { return doPublish(snapshot); })
+        .then(function(result) { release(); return result; },
+              function(err) { release(); return Promise.reject(err); });
     });
   }
 
@@ -41,6 +41,10 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
         histStatus = 'FAILED';
       });
     }).then(function() {
+      // 与 doRollback 对齐：notificationPort 可能为 null/undefined（如 MQTT 禁用时），
+      // 此时 .notify() 同步抛 TypeError，.catch 永远不会被附加，导致 doPublish reject，
+      // 但 snapshot 已 save+activate+cache —— 调用方看到 reject 却不知已激活（部分失败）。
+      if (!notificationPort || typeof notificationPort.notify !== 'function') return;
       return notificationPort.notify({snapshotId:snapshot.snapshotId,frameId:snapshot.frameId,frameSha256:snapshot.frameSha256,publishedAt:new Date().toISOString(),reason:snapshot.publishReason}).catch(function(err) {
         logger.warn('notification failed for ' + snapshot.snapshotId + ': ' + err.message);
         notifStatus = 'FAILED';
@@ -62,21 +66,22 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
 
   function rollback(snapshotId) {
     return lock.acquire(LOCK_KEY_PUBLISH).then(function(release) {
-      return doRollback(snapshotId).then(function(result) {
-        release();
-        return result;
-      }, function(err) {
-        release();
-        return Promise.reject(err);
-      });
+      return Promise.resolve().then(function() { return doRollback(snapshotId); })
+        .then(function(result) { release(); return result; },
+              function(err) { release(); return Promise.reject(err); });
     });
   }
 
   function doRollback(snapshotId) {
-    var loaded, histStatus = 'OK';
+    var loaded, histStatus = 'OK', notifStatus = 'OK';
     return history.list().then(function(entries) {
       var entry = entries.filter(function(e) { return e.snapshotId === snapshotId; })[0];
-      if (entry && entry.restorable === false) {
+      // 之前 entry 为 undefined 时短路跳过校验，可能激活未发布过的快照。
+      // 必须显式拒绝不在历史中的 snapshotId。
+      if (!entry) {
+        throw new Error('SNAPSHOT_NOT_IN_HISTORY: ' + snapshotId);
+      }
+      if (entry.restorable === false) {
         throw new Error('Snapshot is not restorable: ' + snapshotId + ' reason=' + (entry.invalidReason || 'unknown'));
       }
     }).then(function() {
@@ -100,8 +105,24 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
         histStatus = 'FAILED';
       });
     }).then(function() {
-      logger.info('Rollback to: ' + snapshotId + ' (frameSha=' + loaded.frameSha256.slice(0, 8) + ', hist=' + histStatus + ')');
-      return { snapshotId: snapshotId, committed: true, historyStatus: histStatus };
+      // 之前 doRollback 不调用 notificationPort.notify，导致回滚后活动快照已变，
+      // 但 MQTT 订阅者/ESP32 设备永远收不到通知，显示内容与服务端不一致。
+      // 回滚本质也是活动快照变更，必须 notify。
+      if (notificationPort && typeof notificationPort.notify === 'function') {
+        return notificationPort.notify({
+          snapshotId: snapshotId,
+          frameId: loaded.frameId,
+          frameSha256: loaded.frameSha256,
+          publishedAt: new Date().toISOString(),
+          reason: 'rollback'
+        }).catch(function(err) {
+          logger.warn('notification failed for rollback ' + snapshotId + ': ' + err.message);
+          notifStatus = 'FAILED';
+        });
+      }
+    }).then(function() {
+      logger.info('Rollback to: ' + snapshotId + ' (frameSha=' + (loaded.frameSha256 || '').slice(0, 8) + ', hist=' + histStatus + ', notif=' + notifStatus + ')');
+      return { snapshotId: snapshotId, committed: true, historyStatus: histStatus, notificationStatus: notifStatus };
     });
   }
 

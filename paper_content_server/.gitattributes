@@ -1,0 +1,11 @@
+# 强制 LF 行尾：Windows checkout 默认 CRLF 会导致容器内 .sh 脚本 shebang 失败
+# (#!/bin/bash\r -> command not found)、变量比较失败、set -euo pipefail\r 污染。
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.js text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.env text eol=lf

@@ -4,6 +4,11 @@ var TOKEN = null;
 var LOGIN_CALLBACK = null;
 var SELECTED_NEWS_IDX = -1;
 var NEWS_BASELINE = null;
+var _editorPreviewTimer = null;
+// 每个 imgId 独立的序号计数器。之前用单一全局 _editorPreviewSeq，
+// loadEditorPreview 连续调两次 loadPreviewImage（editor-preview + editor-eink-preview），
+// 第二次 ++seq 会让第一次的 mySeq 永远过时，editor-preview 永不更新。
+var _editorPreviewSeqs = {};
 
 function $(id){return document.getElementById(id)}
 function show(el){if(!el)return;if(el.id==='app'){el.style.display='grid'}else{el.style.display='block'}}
@@ -35,15 +40,22 @@ function api(path,opts){
   var h={'Content-Type':'application/json'};
   if(TOKEN) h['Authorization']='Bearer '+TOKEN;
   return fetch(path,Object.assign({headers:h},opts)).then(function(r){
+    var ok = r.ok;
     if(r.status===401||r.status===403){
-      if(ACCESS_MODE==='token'&&!TOKEN){showLogin();throw new Error('unauthorized')}
+      // TOKEN 模式下任何 401/403 都应清除 token 并提示重新登录（之前只清除 !TOKEN 的情况，
+      // 即从未设置过 token，导致 token 过期/失效时后续所有请求都失败但用户不被引导重新登录）
+      if(ACCESS_MODE==='token'){
+        TOKEN=null;
+        showLogin();
+        throw new Error('unauthorized')
+      }
     }
     if(r.status===204)return null;
     return r.json().then(function(data){
-      if(!r.ok) throw new Error(data.error || data.message || ('HTTP ' + r.status));
+      if(!ok) throw new Error(data.error || data.message || ('HTTP ' + r.status));
       return data;
     }).catch(function(e){
-      if(!r.ok) throw e;
+      if(!ok) throw e && e.message ? e : new Error('HTTP ' + r.status);
       return null;
     });
   });
@@ -124,6 +136,13 @@ function setText(id,text,emptyText){
 }
 
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+// URL 安全校验：esc 只转义 HTML 实体，不拦 javascript:/data: 等 scheme。
+// 新闻 url 来自 RSS，若源被污染可注入 javascript:alert(...) 存储型 XSS。
+function safeUrl(u){
+  u=String(u==null?'':u).trim();
+  if(/^https?:\/\//i.test(u) || /^mailto:/i.test(u)) return u;
+  return '#';
+}
 
 function renderQualityRules(item){
   var html='';
@@ -253,11 +272,40 @@ function loadContentSyncStatus() {
   });
 }
 
+// 通用轮询：每 2 秒拉一次 content-sync/status，直到 jobRunning=false 或超时 60 秒。
+// 之前固定 3 秒后恢复按钮：同步作业可能要 10+ 秒，用户在作业结束前再点会触发 409，
+// 且看不到"抓到几条新内容"——这正是用户报告"显示后台拉取但实际没新内容"的原因。
+function pollSyncStatus(kind, btn, onDone) {
+  var start = Date.now();
+  function tick() {
+    api('/api/admin/content-sync/status').then(function(d) {
+      var s = d && d[kind];
+      if (s && s.jobRunning && Date.now()-start < 60000) {
+        setTimeout(tick, 2000);
+      } else {
+        if (btn) btn.disabled = false;
+        loadContentSyncStatus();
+        if (onDone) onDone(s);
+      }
+    }).catch(function() {
+      if (btn) btn.disabled = false;
+    });
+  }
+  setTimeout(tick, 1500);
+}
+
 function triggerNewsSync() {
   $('btn-sync-news').disabled = true;
   api('/api/admin/content-sync/news', { method: 'POST' }).then(function(res) {
-    toast('新闻同步已触发后台运行 (Job ID: ' + res.jobId + ')', 'success');
-    setTimeout(function() { $('btn-sync-news').disabled = false; loadContentSyncStatus(); }, 3000);
+    toast('新闻同步已触发后台运行 (Job ID: ' + res.jobId + ')，正在拉取…', 'info');
+    pollSyncStatus('news', $('btn-sync-news'), function(s){
+      if (s && s.lastError) {
+        toast('新闻同步失败: ' + s.lastError, 'error');
+      } else if (s) {
+        toast('新闻同步完成：抓取 ' + (s.itemsFetched||0) + ' 条，新增 ' + (s.itemsAdded||0) + ' 条', 'success');
+        loadNewsReview(); // 拉到新内容后刷新审查页
+      }
+    });
   }).catch(function(e) {
     $('btn-sync-news').disabled = false;
     toast('新闻同步触发失败: ' + (e&&e.message||e), 'error');
@@ -267,8 +315,15 @@ function triggerNewsSync() {
 function triggerPhotoSync() {
   $('btn-sync-photos').disabled = true;
   api('/api/admin/content-sync/photos', { method: 'POST' }).then(function(res) {
-    toast('图片同步已触发后台运行 (Job ID: ' + res.jobId + ')', 'success');
-    setTimeout(function() { $('btn-sync-photos').disabled = false; loadContentSyncStatus(); }, 3000);
+    toast('图片同步已触发后台运行 (Job ID: ' + res.jobId + ')，正在拉取…', 'info');
+    pollSyncStatus('photos', $('btn-sync-photos'), function(s){
+      if (s && s.lastError) {
+        toast('图片同步失败: ' + s.lastError, 'error');
+      } else if (s) {
+        toast('图片同步完成：处理 ' + (s.itemsProcessed||0) + ' 张，新增 ' + ((s.newIds&&s.newIds.length)||0) + ' 张', 'success');
+        loadPhotos(); // 拉到新图片后刷新图片库
+      }
+    });
   }).catch(function(e) {
     $('btn-sync-photos').disabled = false;
     toast('图片同步触发失败: ' + (e&&e.message||e), 'error');
@@ -323,7 +378,7 @@ function renderNewsList(items) {
       '<button'+upDisabled+' onclick="event.stopPropagation();moveNews('+i+',-1)">⬆ 上移</button>'+
       '<button'+downDisabled+' onclick="event.stopPropagation();moveNews('+i+',1)">⬇ 下移</button>'+
       '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')">移除</button>'+
-      '<a href="'+(item.url||'#')+'" target="_blank" class="btn btn-sm btn-outline" onclick="event.stopPropagation()">原文</a>'+
+      '<a href="'+esc(safeUrl(item.url))+'" target="_blank" class="btn btn-sm btn-outline" onclick="event.stopPropagation()">原文</a>'+
       '</div>';
     card.onclick=function(){selectNews(i);};
     el.appendChild(card);
@@ -337,8 +392,16 @@ function renderNewsList(items) {
 }
 
 function selectNews(idx){
-  SELECTED_NEWS_IDX=idx;
   var items=(STATE.news&&STATE.news.selected)||[];
+  // 切换前先把当前 input 的编辑值回写到 items[SELECTED_NEWS_IDX]，
+  // 否则 innerHTML 替换后 input DOM 被销毁，未保存的编辑静默丢失。
+  if(SELECTED_NEWS_IDX>=0 && SELECTED_NEWS_IDX<items.length){
+    var curTitleInp=qs('.news-title');
+    var curSumInp=qs('.news-summary');
+    if(curTitleInp && items[SELECTED_NEWS_IDX]) items[SELECTED_NEWS_IDX].title=curTitleInp.value;
+    if(curSumInp && items[SELECTED_NEWS_IDX]) items[SELECTED_NEWS_IDX].summary=curSumInp.value;
+  }
+  SELECTED_NEWS_IDX=idx;
   document.querySelectorAll('#news-list .news-card').forEach(function(c,i){
     if(i===idx)c.classList.add('selected');
     else c.classList.remove('selected');
@@ -371,7 +434,7 @@ function renderNewsDetail(item){
     originalSection+
     '<div class="detail-field"><div class="detail-label">来源</div><div class="detail-value">'+esc(item.source||'未知')+'</div></div>'+
     '<div class="detail-field"><div class="detail-label">发布时间</div><div class="detail-value">'+esc(item.publishedAt||'未知')+'</div></div>'+
-    '<div class="detail-field"><div class="detail-label">原文链接</div><div class="detail-value"><a href="'+esc(item.url||'#')+'" target="_blank">'+esc(item.url||'无链接')+'</a></div></div>'+
+    '<div class="detail-field"><div class="detail-label">原文链接</div><div class="detail-value"><a href="'+esc(safeUrl(item.url))+'" target="_blank">'+esc(item.url||'无链接')+'</a></div></div>'+
     '<div class="detail-field"><div class="detail-label">字数</div><div class="detail-value">标题 '+(item.titleLen||0)+' 字 / 摘要 '+(item.summaryLen||0)+' 字</div></div>';
 }
 
@@ -390,18 +453,31 @@ function toggleOriginal(){
 
 async function saveNewsDraft(){
   var items=(STATE.news&&STATE.news.selected)||[];
-  var titles=document.querySelectorAll('.news-title');
-  var summaries=document.querySelectorAll('.news-summary');
-  titles.forEach(function(inp,i){if(items[i])items[i].title=inp.value});
-  summaries.forEach(function(inp,i){if(items[i])items[i].summary=inp.value});
+  // 页面只有一个 .news-title / .news-summary input（在详情面板，对应 SELECTED_NEWS_IDX）。
+  // 旧代码用 querySelectorAll 按索引回写，长度永远是 1，所有编辑都被写入 items[0]，
+  // 破坏第 0 条数据且编辑内容丢失。
+  var titleInput=qs('.news-title');
+  var summaryInput=qs('.news-summary');
+  if(titleInput && SELECTED_NEWS_IDX>=0 && items[SELECTED_NEWS_IDX]){
+    items[SELECTED_NEWS_IDX].title=titleInput.value;
+  }
+  if(summaryInput && SELECTED_NEWS_IDX>=0 && items[SELECTED_NEWS_IDX]){
+    items[SELECTED_NEWS_IDX].summary=summaryInput.value;
+  }
   var changed=false;
   if(NEWS_BASELINE){
-    for(var i=0;i<items.length;i++){
-      var base=NEWS_BASELINE[i];
-      var cur=items[i];
-      if(base&&cur&&(base.title!==cur.title||base.summary!==cur.summary)){
-        changed=true;
-        break;
+    // 变更检测：长度不等即变更；循环上界用 max(items, baseline) 长度，
+    // 避免删除最后一条时循环只到 items.length 漏检末尾删除。
+    if(items.length!==NEWS_BASELINE.length){
+      changed=true;
+    }else{
+      for(var i=0;i<items.length;i++){
+        var base=NEWS_BASELINE[i];
+        var cur=items[i];
+        if(base&&cur&&(base.title!==cur.title||base.summary!==cur.summary||base.url!==cur.url)){
+          changed=true;
+          break;
+        }
       }
     }
   }else{
@@ -409,7 +485,7 @@ async function saveNewsDraft(){
   }
   if(!changed){
     toast('无变更，无需保存','info');
-    return;
+    return null;
   }
   var btn=qs('#news-page .panel-actions .btn-primary');
   if(btn){btn.disabled=true;btn.textContent='保存中...';}
@@ -420,7 +496,7 @@ async function saveNewsDraft(){
     NEWS_BASELINE=JSON.parse(JSON.stringify(items));
     return r;
   } catch(e) {
-    toast('保存失败: '+e.message,'error');
+    // 不在这里 toast，由调用方（publishNews）统一反馈，避免双 toast
     throw e;
   } finally {
     if(btn){btn.disabled=false;btn.textContent='💾 保存草稿';}
@@ -428,26 +504,35 @@ async function saveNewsDraft(){
 }
 
 async function publishNews(){
+  var msg=$('publish-msg');
   try {
-    var msg=$('publish-msg');
-    if(msg){msg.textContent='正在保存草稿...';msg.style.display='block';}
+    if(msg){msg.textContent='正在保存草稿...';msg.style.display='block';msg.style.background='';msg.style.borderColor='';}
     await saveNewsDraft();
     var items=(STATE.news&&STATE.news.selected)||[];
     showConfirm('发布新闻','确认发布当前 '+items.length+' 条新闻到电子纸？',async function(){
       if(msg){msg.textContent='正在发布新闻页...';msg.style.display='block';}
       try {
         var r = await api('/api/admin/publish/news',{method:'POST'});
-        if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard();if(msg){msg.textContent='发布成功: '+r.frameId.slice(0,40);}}
+        if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard();loadPublishHistory();if(msg){msg.textContent='发布成功: '+r.frameId.slice(0,40);msg.style.background='';msg.style.borderColor='';}}
         else{toast('发布失败','error');if(msg){msg.textContent='发布失败';msg.style.background='#f8e0e0';msg.style.borderColor='#f5b3b3';}}
-      } catch(e) { toast('发布失败: '+e.message,'error'); if(msg){msg.textContent='发布失败';msg.style.background='#f8e0e0';msg.style.borderColor='#f5b3b3';} }
+      } catch(e) { toast('发布失败: '+e.message,'error'); if(msg){msg.textContent='发布失败: '+e.message;msg.style.background='#f8e0e0';msg.style.borderColor='#f5b3b3';} }
     });
   } catch(e) {
-    if(msg){msg.textContent='';msg.style.display='none';}
+    // saveNewsDraft 失败（如 400 校验错误）时给用户明确反馈，不再静默吞错
+    toast('发布取消：草稿保存失败 - '+(e&&e.message||e),'error');
+    if(msg){msg.textContent='发布失败：'+(e&&e.message||e);msg.style.background='#f8e0e0';msg.style.borderColor='#f5b3b3';msg.style.display='block';}
   }
 }
 
 function moveNews(idx,dir){
   var items=(STATE.news&&STATE.news.selected)||[];
+  // 切换/移动前必须回写当前编辑的标题/摘要到 items，否则 renderNewsList 重渲染
+  // 会销毁 input DOM，用户在详情面板改的内容静默丢失。
+  if(SELECTED_NEWS_IDX>=0 && SELECTED_NEWS_IDX<items.length){
+    var tIn=qs('.news-title'), sIn=qs('.news-summary');
+    if(tIn && items[SELECTED_NEWS_IDX]) items[SELECTED_NEWS_IDX].title=tIn.value;
+    if(sIn && items[SELECTED_NEWS_IDX]) items[SELECTED_NEWS_IDX].summary=sIn.value;
+  }
   var target=idx+dir;
   if(target<0||target>=items.length)return;
   var tmp=items[idx];items[idx]=items[target];items[target]=tmp;
@@ -458,20 +543,48 @@ function moveNews(idx,dir){
 
 function removeNews(idx){
   var items=(STATE.news&&STATE.news.selected)||[];
+  // 同 moveNews：showConfirm 是异步的，confirm 回调执行前 input 可能已被重渲染，
+  // 必须在弹确认框前先把当前编辑回写。
+  if(SELECTED_NEWS_IDX>=0 && SELECTED_NEWS_IDX<items.length){
+    var tIn=qs('.news-title'), sIn=qs('.news-summary');
+    if(tIn && items[SELECTED_NEWS_IDX]) items[SELECTED_NEWS_IDX].title=tIn.value;
+    if(sIn && items[SELECTED_NEWS_IDX]) items[SELECTED_NEWS_IDX].summary=sIn.value;
+  }
   var item=items[idx];
   if(!item)return;
+  // 服务器要求草稿必须正好 6 条。如果当前已是最小可用数（candidates 不足补位），
+  // 禁止继续删除，否则保存草稿会被 400 拒绝，发布链路断裂。
+  var candidatesAvail=0;
+  if(STATE.news&&STATE.news.candidates){
+    var used={};items.forEach(function(it){if(it.url)used[it.url]=true});
+    STATE.news.candidates.forEach(function(c){if(c.url&&!used[c.url])candidatesAvail++});
+  }
+  if(items.length-1<6 && candidatesAvail===0){
+    toast('已达最小条数（6 条），无候选可补位，无法继续删除','error');
+    return;
+  }
   showConfirm('确认移除','确认删除新闻: "'+item.title+'"?',function(){
     items.splice(idx,1);
     if(SELECTED_NEWS_IDX===idx)SELECTED_NEWS_IDX=-1;
     else if(SELECTED_NEWS_IDX>idx)SELECTED_NEWS_IDX--;
     if(items.length<6&&STATE.news.candidates){
-      var used={};items.forEach(function(it){if(it.url)used[it.url]=true});
+      var used2={};items.forEach(function(it){if(it.url)used2[it.url]=true});
       for(var i=0;i<STATE.news.candidates.length;i++){
         var c=STATE.news.candidates[i];
-        if(!used[c.url]){items.push(c);break;}
+        if(!used2[c.url]){items.push(c);break;}
       }
     }
     renderNewsList(items);
+    // 立即落盘，否则删除只存在于浏览器内存：用户切到发布中心点"发布新闻"，
+    // /api/admin/news 优先读 admin_news_draft.json（旧草稿，被删的那条还在），
+    // 用户看到"删了的新闻还能发布"——这正是用户报告的现象。
+    // 强制把 NEWS_BASELINE 设为 null 让 saveNewsDraft 的变更检测判定 changed=true，
+    // 因为 splice 后若 candidates 补位，items.length 可能仍为 6，与 baseline 相同，
+    // 但 url 已变化，必须落盘。
+    NEWS_BASELINE = null;
+    saveNewsDraft().catch(function(e){
+      toast('删除已应用但草稿保存失败: '+(e&&e.message||e)+'。请手动点"💾 保存草稿"重试。','error');
+    });
   });
 }
 
@@ -481,6 +594,11 @@ function loadPhotos(){
     if(!d||!d.photos)return;
     var el=$('photo-grid');
     if(!el)return;
+    // 释放旧缩略图的 Blob URL，避免每次刷新都泄漏 N 个 Blob（之前 innerHTML='' 直接销毁 img 节点，
+    // 但 blob: URL 没被 revokeObjectURL，全部留在浏览器 Blob URL store 直到页面关闭）。
+    el.querySelectorAll('img').forEach(function(img){
+      if(img.src && img.src.indexOf('blob:')===0) URL.revokeObjectURL(img.src);
+    });
     el.innerHTML='';
     var photos=d.photos||[];
     var countEl=$('photo-count');
@@ -507,8 +625,10 @@ function loadPhotos(){
     photos.forEach(function(p){
       var item=document.createElement('div');item.className='photo-item';
       var safetyBadge='<span class="badge '+(p.safetyStatus==='approved'?'badge-safety-approved':p.safetyStatus==='pending'?'badge-safety-pending':p.safetyStatus==='rejected'?'badge-safety-rejected':'badge-safety-pending')+'">'+(p.safetyStatus||'unknown')+'</span>';
-      var thumbUrl='/api/admin/photos/'+p.id+'/thumbnail?'+Date.now();
-      item.innerHTML='<div class="thumb"><img src="'+thumbUrl+'" alt="'+esc(p.title||'')+'" loading="lazy" onerror="this.parentElement.classList.add(\'broken\');this.style.display=\'none\'"></div>'+
+      // TOKEN 模式下 <img src> 无法带 Authorization 头，缩略图会 403。
+      // 改为 fetch + createObjectURL 渲染。
+      var thumbUrl='/api/admin/photos/'+encodeURIComponent(p.id)+'/thumbnail?'+Date.now();
+      item.innerHTML='<div class="thumb"><img alt="'+esc(p.title||'')+'" loading="lazy" onerror="this.parentElement.classList.add(\'broken\');this.style.display=\'none\'"></div>'+
         '<div class="info">'+
         '<div class="name">'+esc(p.title||p.id.slice(0,12))+'</div>'+
         '<div class="meta-row"><span>'+esc(p.source||'未知')+' · '+(p.width||0)+'x'+(p.height||0)+'</span>'+safetyBadge+'</div>'+
@@ -518,6 +638,21 @@ function loadPhotos(){
         '<button class="btn btn-sm btn-danger" onclick="deletePhoto(\''+p.id+'\')">删除</button>'+
         '</div></div>';
       el.appendChild(item);
+      // 异步加载缩略图（带 Authorization 头）
+      (function(imgEl,url){
+        var h={};
+        if(TOKEN)h['Authorization']='Bearer '+TOKEN;
+        fetch(url,{headers:h}).then(function(r){
+          if(!r.ok)return;
+          return r.blob();
+        }).then(function(b){
+          if(b && imgEl){
+            // 释放上一次的 Blob URL，避免每次刷新都泄漏所有缩略图的 Blob
+            if(imgEl.src && imgEl.src.indexOf('blob:')===0){URL.revokeObjectURL(imgEl.src)}
+            imgEl.src=URL.createObjectURL(b);
+          }
+        }).catch(function(){});
+      })(item.querySelector('img'),thumbUrl);
     });
   }).catch(function(e){
     var el=$('photo-grid');
@@ -525,24 +660,11 @@ function loadPhotos(){
   });
 }
 
-function checkUploadEnabled(){
-  fetch('/api/admin/photos/upload',{method:'POST'}).then(function(r){
-    if(r.status===503){
-      var btn=qs('#photo-upload-form button[type="submit"]');
-      if(btn){btn.disabled=true;btn.classList.add('btn-disabled');}
-      var form=$('photo-upload-form');
-      if(form){
-        var existing=form.parentNode.querySelector('.disabled-upload');
-        if(!existing){
-          var msg=document.createElement('div');
-          msg.className='disabled-upload';
-          msg.innerHTML='<div class="disabled-upload-title">上传暂不可用</div><div>安全分类器未就绪，暂不可上传</div>';
-          form.parentNode.insertBefore(msg,form.nextSibling);
-        }
-      }
-    }
-  }).catch(function(){});
-}
+// checkUploadEnabled 已删除：旧实现用 POST /api/admin/photos/upload 探测，
+// 既不带 Authorization 头（TOKEN 模式 403），又会把空 body 当上传尝试
+// （污染 image_index.json）。uploadAvailable 字段已由 GET /api/admin/photos
+// 响应体返回（server.js 中硬编码为 true），loadPhotos 会处理 false 分支。
+function checkUploadEnabled(){}
 
 var photoForm=$('photo-upload-form');
 if(photoForm){
@@ -578,7 +700,7 @@ function deletePhoto(id){
 
 function publishPhoto(id){
   api('/api/admin/publish/photo',{method:'POST',body:JSON.stringify({photoId:id})}).then(function(r){
-    if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard()}
+    if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard();loadPublishHistory()}
     else toast('发布失败','error');
   }).catch(function(e){toast('发布失败: '+(e.message||e),'error')});
 }
@@ -589,10 +711,19 @@ var EDITOR_STATE={};
 function openEditor(id){
   switchTab('photo-editor-page');
   EDITOR_STATE.id=id;
+  // 默认 recipe;如果图片有已保存的 recipe,后续异步覆盖
   EDITOR_STATE.recipe={brightness:1,contrast:1,saturation:1,gamma:1,rotate:0,flipH:false,flipV:false,sharpen:0,blur:0};
+  resetEditorControls();
   loadEditorPreview();
   api('/api/admin/photos/'+id).then(function(d){
-    if(d){$('editor-title').textContent=d.title||id.slice(0,12)}
+    if(!d)return;
+    $('editor-title').textContent=d.title||id.slice(0,12);
+    // 加载已保存的 recipe(来自 saveEdit),否则用户每次打开编辑器都丢失之前的调整
+    if(d.recipe){
+      EDITOR_STATE.recipe=Object.assign({},EDITOR_STATE.recipe,d.recipe);
+      resetEditorControls();
+      loadEditorPreview();
+    }
   });
   var editorHeader=$('photo-editor-page').querySelector('h2');
   if(editorHeader){
@@ -605,6 +736,29 @@ function openEditor(id){
       editorHeader.parentNode.insertBefore(closeBtn,editorHeader.nextSibling);
     }
   }
+}
+
+// 把 UI 控件(滑块/复选框/下拉)同步到 EDITOR_STATE.recipe,避免打开新图片时控件位置和 recipe 不同步
+function resetEditorControls(){
+  var r=EDITOR_STATE.recipe;
+  var setRange=function(key,id){
+    var el=$(id);
+    if(el){el.value=r[key]}
+    var val=$('val-'+key);
+    if(val){val.textContent=Number(r[key]).toFixed(1)}
+  };
+  setRange('brightness','editor-brightness');
+  setRange('contrast','editor-contrast');
+  setRange('saturation','editor-saturation');
+  setRange('gamma','editor-gamma');
+  setRange('sharpen','editor-sharpen');
+  setRange('blur','editor-blur');
+  var rotEl=$('editor-rotate');
+  if(rotEl){rotEl.value=String(r.rotate)}
+  var fhEl=$('editor-flipH');
+  if(fhEl){fhEl.checked=!!r.flipH}
+  var fvEl=$('editor-flipV');
+  if(fvEl){fvEl.checked=!!r.flipV}
 }
 
 function loadEditorPreview(){
@@ -632,14 +786,25 @@ function loadEditorPreview(){
       el.appendChild(err);
     }
   });
-  var einkWrapper=$('editor-preview-eink');
-  if(einkWrapper)einkWrapper.style.display='block';
+  var einkWrapper=$('editor-eink-preview');
+  if(einkWrapper && einkWrapper.parentNode)einkWrapper.parentNode.style.display='block';
 }
 
 function loadPreviewImage(url,imgId,fallbackId){
   var img=$(imgId);
   if(!img)return;
-  fetch(url).then(function(r){
+  // 竞态防护：每个 imgId 独立序号，回调中校验是否仍是最新请求，
+  // 否则旧响应可能覆盖新请求结果（用户看到的预览与滑块位置不一致）。
+  // 注意：editor-preview 和 editor-eink-preview 是两个独立 img，必须用各自序号，
+  // 否则第二次调用会让第一次的回调永远过时，editor-preview 永不更新。
+  _editorPreviewSeqs[imgId]=(_editorPreviewSeqs[imgId]||0)+1;
+  var mySeq=_editorPreviewSeqs[imgId];
+  // TOKEN 模式下图片端点要求 Authorization 头，裸 fetch 会 403。
+  // 用带 Authorization 头的 fetch + createObjectURL 渲染。
+  var headers={};
+  if(TOKEN)headers['Authorization']='Bearer '+TOKEN;
+  fetch(url,{headers:headers}).then(function(r){
+    if(mySeq!==_editorPreviewSeqs[imgId])return; // 已被新请求取代
     if(!r.ok){
       img.style.display='none';
       var fb=$(fallbackId);
@@ -647,7 +812,7 @@ function loadPreviewImage(url,imgId,fallbackId){
         fb=document.createElement('div');
         fb.id=fallbackId;
         fb.className='empty-state';
-        fb.textContent='图片预览服务未就绪';
+        fb.textContent='图片预览服务未就绪 (HTTP '+r.status+')';
         img.parentNode.insertBefore(fb,img.nextSibling);
       }else{
         fb.style.display='block';
@@ -656,9 +821,15 @@ function loadPreviewImage(url,imgId,fallbackId){
       var fb=$(fallbackId);
       if(fb)fb.style.display='none';
       img.style.display='';
-      r.blob().then(function(b){img.src=URL.createObjectURL(b)});
+      r.blob().then(function(b){
+        if(mySeq!==_editorPreviewSeqs[imgId])return;
+        // 释放上一次的 Blob URL，避免内存泄漏（每次预览都创建新 Blob）
+        if(img.src && img.src.indexOf('blob:')===0){URL.revokeObjectURL(img.src)}
+        img.src=URL.createObjectURL(b);
+      });
     }
   }).catch(function(){
+    if(mySeq!==_editorPreviewSeqs[imgId])return;
     img.style.display='none';
     var fb=$(fallbackId);
     if(!fb){
@@ -673,9 +844,20 @@ function loadPreviewImage(url,imgId,fallbackId){
   });
 }
 
+// 编辑器预览防抖：滑块拖动时每像素触发 oninput，无防抖会堆积请求 + 服务端 sharp 高 CPU。
+// _editorPreviewTimer / _editorPreviewSeq 在文件顶部声明以避免 hoisting 引用问题。
 function updateEditorParam(key,val){
-  EDITOR_STATE.recipe[key]=parseFloat(val);
-  loadEditorPreview();
+  // flipH/flipV 是 boolean,其他是 number
+  if(key==='flipH'||key==='flipV'){
+    EDITOR_STATE.recipe[key]=!!val;
+  } else {
+    EDITOR_STATE.recipe[key]=parseFloat(val);
+    // 更新数值显示
+    var valEl=$('val-'+key);
+    if(valEl){valEl.textContent=parseFloat(val).toFixed(1)}
+  }
+  if(_editorPreviewTimer)clearTimeout(_editorPreviewTimer);
+  _editorPreviewTimer=setTimeout(loadEditorPreview,250);
 }
 
 function saveEdit(){
@@ -702,14 +884,15 @@ function loadPublishHistory(){
       var isActive=(h.status==='active')||(i===0&&!h.status);
       row.className='publish-row'+(isActive?' active':'');
       var frameIdShort=h.frameId?(h.frameId.slice(0,30)+'...'):'--';
-      var snapshotId=h.id||h.snapshotId||'--';
+      // 之前用 h.id（历史条目 ID，非 snapshotId），列名是 snapshotId 但显示别的。
+      var snapshotId=h.snapshotId||h.id||'--';
       row.innerHTML=
         '<div class="col-time">'+esc((h.publishedAt||'').slice(0,19))+'</div>'+
         '<div class="col-type">'+esc(h.type||'--')+'</div>'+
         '<div class="col-snap">'+esc(snapshotId)+'</div>'+
         '<div class="col-frame">'+esc(frameIdShort)+'</div>'+
         '<div class="col-status">'+(isActive?'<span class="badge badge-active">active</span>':'<span class="badge badge-archived">'+esc(h.status||'archived')+'</span>')+'</div>'+
-        '<div class="col-actions"><button class="btn btn-sm btn-outline" onclick="rollback(\''+esc(h.id||'')+'\')">恢复此版本</button></div>';
+        '<div class="col-actions"><button class="btn btn-sm btn-outline" onclick="rollback(\''+esc(h.snapshotId||h.id||'')+'\')">恢复此版本</button></div>';
       el.appendChild(row);
     });
   }).catch(function(e){
@@ -719,24 +902,30 @@ function loadPublishHistory(){
 }
 
 var ROLLBACK_TARGET_ID = null;
+// 记录预览返回的 canRollback，confirmRollback 发请求前检查。
+// 之前即便预览已显示"此版本已被标记为不可恢复"，确认按钮仍可点击，
+// 发请求后 server 抛 "Snapshot is not restorable" → 400 → 用户看到"直接报错"。
+var ROLLBACK_TARGET_CAN_ROLLBACK = true;
 
 function rollback(id){
   ROLLBACK_TARGET_ID = id;
+  ROLLBACK_TARGET_CAN_ROLLBACK = true;
   var el=$('rollback-preview-content');
   if(el){
     el.innerHTML='<div class="empty-state">正在加载预览...</div>';
   }
   show($('rollback-preview'));
-  
+
   api('/api/admin/publish-history/' + encodeURIComponent(id) + '/preview').then(function(d){
     if(!d || !el) return;
-    
+    ROLLBACK_TARGET_CAN_ROLLBACK = (d.canRollback !== false);
+
     var html = '<div style="line-height:1.6;font-size:14px;margin-bottom:12px;">' +
       '<div><strong>发布类型:</strong> ' + esc(d.type||'--') + '</div>' +
       '<div><strong>发布时间:</strong> ' + esc(((d.publishedAt||'').slice(0,19)||'--')) + '</div>' +
       '<div><strong>Frame ID:</strong> ' + esc(d.frameId||'--') + '</div>' +
       '</div>';
-      
+
     if(d.type === 'news' && d.preview && d.preview.items) {
       html += '<div style="margin-top:12px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:8px;">';
       html += '<div style="font-weight:bold;margin-bottom:8px;">包含的新闻 (' + d.preview.items.length + '条):</div>';
@@ -748,16 +937,31 @@ function rollback(id){
       html += '<div style="margin-top:12px;border:1px solid var(--border);border-radius:4px;padding:8px;text-align:center;">';
       html += '<div style="font-weight:bold;margin-bottom:8px;text-align:left;">图片: ' + esc(d.preview.title||'未知') + '</div>';
       if (d.preview.thumbnailUrl) {
-        html += '<img src="' + esc(d.preview.thumbnailUrl) + '" style="max-width:100%;max-height:200px;object-fit:contain;">';
+        // TOKEN 模式下裸 <img src> 会 403，先放空 img 容器再异步 fetch+blob
+        html += '<img id="rollback-preview-thumb" style="max-width:100%;max-height:200px;object-fit:contain;" alt="预览">';
       }
       html += '</div>';
     }
-    
-    if(!d.canRollback) {
-      html += '<div class="error" style="margin-top:10px;">此版本已被标记为不可恢复，可能文件已损坏或丢失。</div>';
+
+    if(d.canRollback === false) {
+      html += '<div class="error" style="margin-top:10px;">此版本已被标记为不可恢复，可能文件已损坏或丢失。无法恢复。</div>';
     }
-    
+
     el.innerHTML = html;
+    // 异步加载缩略图（带 Authorization 头）
+    if (d.type === 'photo' && d.preview && d.preview.thumbnailUrl) {
+      var rbThumb = $('rollback-preview-thumb');
+      if (rbThumb) {
+        var h = {};
+        if (TOKEN) h['Authorization'] = 'Bearer ' + TOKEN;
+        fetch(d.preview.thumbnailUrl, { headers: h }).then(function(r) {
+          if (!r.ok) return;
+          return r.blob();
+        }).then(function(b) {
+          if (b && rbThumb) rbThumb.src = URL.createObjectURL(b);
+        }).catch(function() {});
+      }
+    }
   }).catch(function(e){
     if(el) el.innerHTML = '<div class="error">无法加载预览: ' + esc(e.message||e) + '</div>';
   });
@@ -765,11 +969,23 @@ function rollback(id){
 
 function confirmRollback(){
   if(!ROLLBACK_TARGET_ID) return;
-  api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:ROLLBACK_TARGET_ID})}).then(function(r){
+  // 预览已判定不可恢复时直接拦截，不发请求——避免 server 抛 "Snapshot is not restorable"
+  // 导致 400 错误，用户看到"恢复直接报错"。
+  if(ROLLBACK_TARGET_CAN_ROLLBACK === false){
+    toast('此版本已被标记为不可恢复，无法回滚','error');
+    return;
+  }
+  // 直接发送 snapshotId（与 server 契约对齐）。之前发 publishId 依赖 server 端
+  // publicationHistory.list()+filter 查找 snapshotId——若 history.json 损坏或
+  // publicationHistory 未初始化，server 返回 400 "snapshotId required" → "直接报错"。
+  // 按钮已改为传 h.snapshotId（见 loadPublishHistory），此处直接转发。
+  // server 端 publishId lookup 仍保留作 fallback 兼容旧前端缓存。
+  api('/api/admin/rollback',{method:'POST',body:JSON.stringify({snapshotId:ROLLBACK_TARGET_ID})}).then(function(r){
     if(r&&r.status==='ok'||(r&&r.frameId)){
       toast('已回滚','success');
       hide($('rollback-preview'));
       ROLLBACK_TARGET_ID = null;
+      ROLLBACK_TARGET_CAN_ROLLBACK = true;
       loadAll();
     } else {
       toast('回滚失败','error');
@@ -811,16 +1027,8 @@ function loadStatus(){
     setText('status-mode',d.currentMode,'未设置');
     setText('status-slot',d.currentSlot,'未生成');
     setText('status-frameid',d.frameId?(d.frameId.slice(0,40)+'...'):'未生成','未生成');
-    var flEl=setText('status-framelen',d.frameLength!==undefined?String(d.frameLength):'暂无','暂无');
-    if(flEl&&(d.frameLength===undefined||d.frameLength===null)){
-      flEl.dataset.emptyReason='接口未返回该字段';
-      addStatusDetail(flEl,'接口未返回该字段','info');
-    }
+    var flEl=setText('status-framelen',d.frameLength!==undefined&&d.frameLength!==null?String(d.frameLength):'暂无','暂无');
     var shaEl=setText('status-sha',d.frameSha256?(d.frameSha256.slice(0,24)+'...'):'暂无','暂无');
-    if(shaEl&&(d.frameSha256===undefined||d.frameSha256===null)){
-      shaEl.dataset.emptyReason='尚未生成 frame';
-      addStatusDetail(shaEl,'尚未生成 frame','info');
-    }
     setText('status-news',d.newsItemCount!==undefined?String(d.newsItemCount):'暂无','暂无');
     setText('status-photos',d.photoCount!==undefined?String(d.photoCount):'暂无','暂无');
     setText('status-cache',d.frameCacheEntries!==undefined?String(d.frameCacheEntries):'0','0');
@@ -839,10 +1047,24 @@ function loadStatus(){
       transEl.dataset.emptyReason='未配置翻译服务，当前使用缓存译文或原文';
       addStatusDetail(transEl,'未配置翻译服务，当前使用缓存译文或原文','info');
     }
-    setText('status-recent-error',d.recentError||'无错误','无错误');
-    setText('status-last-refresh',d.lastNewsRefreshAt||'暂无','暂无');
-    var shaEl=$('sidebar-sha');
-    if(shaEl&&d.buildSha){shaEl.textContent='SHA: '+d.buildSha.slice(0,12);}
+    // recentError 是 {at,route,message} 对象或 null，直接 textContent 会显示 [object Object]
+    var errText='无错误';
+    if(d.recentError&&typeof d.recentError==='object'){
+      errText=(d.recentError.route||'unknown')+': '+(d.recentError.message||'');
+    }
+    setText('status-recent-error',errText,'无错误');
+    // lastNewsRefreshAt 是 Date.now() 数值（ms 时间戳），需格式化
+    var refreshText='暂无';
+    if(d.lastNewsRefreshAt){
+      if(typeof d.lastNewsRefreshAt==='number'){
+        refreshText=new Date(d.lastNewsRefreshAt).toLocaleString('zh-CN');
+      }else{
+        refreshText=String(d.lastNewsRefreshAt);
+      }
+    }
+    setText('status-last-refresh',refreshText,'暂无');
+    var sidebarShaEl=$('sidebar-sha');
+    if(sidebarShaEl&&d.buildSha){sidebarShaEl.textContent='SHA: '+d.buildSha.slice(0,12);}
   }).catch(function(e){
     ['status-uptime','status-mode','status-slot','status-frameid','status-news','status-cache'].forEach(function(id){
       setText(id,'加载失败','加载失败');
@@ -863,6 +1085,10 @@ function showPhotoSelector() {
 
   api('/api/admin/photos').then(function(d) {
     if (!d || !d.photos) return;
+    // 同 loadPhotos：撤销旧 Blob URL 避免泄漏
+    if (el) el.querySelectorAll('img').forEach(function(img){
+      if(img.src && img.src.indexOf('blob:')===0) URL.revokeObjectURL(img.src);
+    });
     if (el) el.innerHTML = '';
     var photos = d.photos || [];
     if (photos.length === 0) {
@@ -883,12 +1109,24 @@ function showPhotoSelector() {
         selectedPhotoIdForPublish = p.id;
         if (btn) btn.disabled = false;
       };
-      var thumbUrl = '/api/admin/photos/' + p.id + '/thumbnail?' + Date.now();
-      item.innerHTML = '<div class="thumb"><img src="' + thumbUrl + '" alt="' + esc(p.title || '') + '" loading="lazy" onerror="this.parentElement.classList.add(\'broken\');this.style.display=\'none\'"></div>' +
+      // encodeURIComponent 防止 ID 中特殊字符破坏 URL；
+      // TOKEN 模式下裸 <img src> 会 403，必须用 fetch+createObjectURL
+      var thumbUrl = '/api/admin/photos/' + encodeURIComponent(p.id) + '/thumbnail?' + Date.now();
+      item.innerHTML = '<div class="thumb"><img alt="' + esc(p.title || '') + '" loading="lazy" onerror="this.parentElement.classList.add(\'broken\');this.style.display=\'none\'"></div>' +
         '<div class="info">' +
         '<div class="name">' + esc(p.title || p.id.slice(0,12)) + '</div>' +
         '<div class="meta-row"><span>' + esc(p.source || '未知') + ' · ' + (p.width || 0) + 'x' + (p.height || 0) + '</span></div></div>';
       if (el) el.appendChild(item);
+      (function(imgEl,url){
+        var h={};
+        if(TOKEN)h['Authorization']='Bearer '+TOKEN;
+        fetch(url,{headers:h}).then(function(r){
+          if(!r.ok)return;
+          return r.blob();
+        }).then(function(b){
+          if(b && imgEl)imgEl.src=URL.createObjectURL(b);
+        }).catch(function(){});
+      })(item.querySelector('img'),thumbUrl);
     });
   }).catch(function(e) {
     if (el) el.innerHTML = '<div class="empty-state">图片加载失败: ' + esc(e.message || e) + '</div>';
@@ -912,20 +1150,24 @@ function showNewsSelector() {
   if (btn) btn.disabled = true;
   show($('news-selector-modal'));
 
-  api('/api/admin/news').then(function(d) {
-    if (!d || !d.news || d.news.length === 0) {
-      if (el) el.innerHTML = '<div class="empty-state">当前草稿箱没有新闻。请先在“新闻审查”中获取或编写新闻。</div>';
-      return;
-    }
-    var html = '<ul style="padding-left: 20px;">';
-    d.news.forEach(function(n) {
-      html += '<li style="margin-bottom:8px"><strong>' + esc(n.title) + '</strong><br><span class="muted small">' + esc(n.summary || '').substring(0,60) + '...</span></li>';
+  // 先把当前内存里的编辑落盘，避免"审查页删了/改了、发布中心还显示旧草稿"。
+  // 之前直接读 admin_news_draft.json，若用户在审查页改了没点保存，发布中心看到的是旧内容。
+  saveNewsDraft().catch(function(){}).then(function(){
+    api('/api/admin/news').then(function(d) {
+      if (!d || !d.news || d.news.length === 0) {
+        if (el) el.innerHTML = '<div class="empty-state">当前草稿箱没有新闻。请先在“新闻审查”中获取或编写新闻。</div>';
+        return;
+      }
+      var html = '<ul style="padding-left: 20px;">';
+      d.news.forEach(function(n) {
+        html += '<li style="margin-bottom:8px"><strong>' + esc(n.title) + '</strong><br><span class="muted small">' + esc(n.summary || '').substring(0,60) + '...</span></li>';
+      });
+      html += '</ul>';
+      if (el) el.innerHTML = html;
+      if (btn) btn.disabled = false;
+    }).catch(function(e) {
+      if (el) el.innerHTML = '<div class="empty-state">新闻加载失败: ' + esc(e.message || e) + '</div>';
     });
-    html += '</ul>';
-    if (el) el.innerHTML = html;
-    if (btn) btn.disabled = false;
-  }).catch(function(e) {
-    if (el) el.innerHTML = '<div class="empty-state">新闻加载失败: ' + esc(e.message || e) + '</div>';
   });
 }
 

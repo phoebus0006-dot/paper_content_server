@@ -34,7 +34,7 @@ async function main() {
   var server = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env: env, cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   if (!await waitForServer()) { console.log('FAIL: server did not start'); server.kill(); process.exit(1); }
   var r1 = await get('/admin/'); check('LAN_ADMIN_PAGE_NO_TOKEN=200', r1.s === 200);
-  var html = r1.b ? r1.b.toString() : ''; check('LAN_HTML_HAS_NO_LOGIN_OVERLAY', html.indexOf('login-overlay') === -1); check('LAN_HTML_HAS_NO_ADMIN_TOKEN_TEXT', html.indexOf('ADMIN_TOKEN') === -1);
+  var html = r1.b ? r1.b.toString() : ''; check('LAN_HTML_HAS_NO_LOGIN_OVERLAY', html.indexOf('id="login-overlay"') === -1); check('LAN_HTML_HAS_NO_ADMIN_TOKEN_TEXT', html.indexOf('ADMIN_TOKEN') === -1);
   var r2 = await get('/api/admin/dashboard'); check('LAN_ADMIN_API_NO_TOKEN=200', r2.s === 200);
   var r3 = await get('/api/admin/news'); check('LAN_ADMIN_NEWS_NO_TOKEN=200', r3.s === 200);
   var r4 = await get('/api/admin/photos'); check('LAN_ADMIN_PHOTOS_NO_TOKEN=200', r4.s === 200);

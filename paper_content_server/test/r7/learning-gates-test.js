@@ -5,7 +5,7 @@ var V=require(path.join(ROOT,'src','learning','learning-validator'));
 var P=require(path.join(ROOT,'src','learning','learning-policy'));
 var val=V.createValidator();t('VALIDATOR_EXISTS',typeof val.validate==='function','');
 t('VALID_VALID',val.validate({sourceUrl:'http://img.jpg'}),'');
-t('INVALID_VALID',!val.validate(null),'');
+t('INVALID_VALID',val.validate(null).ok===false,'');
 var pol=P.createPolicy({allowedLicenses:['CC0']});t('ALLOWED_LICENSE',pol.isAllowed({license:'CC0'}),'');
 t('BLOCKED_LICENSE',!pol.isAllowed({license:'PROPRIETARY'}),'');
 t('RESTRICTED_RIGHTS',!pol.isAllowed({rightsStatus:'RESTRICTED'}),'');

@@ -85,6 +85,9 @@ async function main() {
   });
 
   var server = spawn(process.execPath, [SRV], { env: env, cwd: CWD, stdio: ['ignore', 'pipe', 'pipe'] });
+  // 转发 server stdout/stderr 到测试输出，否则 publish/news 500 等错误被静默吞掉，无法定位根因。
+  server.stdout.on('data', function(d) { process.stdout.write('[server] ' + d); });
+  server.stderr.on('data', function(d) { process.stderr.write('[server] ' + d); });
   var ready = false;
   for (var i = 0; i < 60; i++) {
     try { var r = await get('/api/state.json'); if (r.s === 200) { ready = true; break; } } catch(e) {}
@@ -107,7 +110,9 @@ async function main() {
     check('publish 200', pubN.s === 200);
     var pubNd = JSON.parse(pubN.b.toString());
     check('has frameId', pubNd.frameId && pubNd.frameId.length > 5);
-    check('frameId is manual-news', pubNd.frameId.indexOf('manual-news:') === 0);
+    // frameId 现在是真实 snap.frameId（与 /api/state.json 一致），
+    // 不再是临时生成的 'manual-news:xxx' 前缀。
+    check('has snapshotId', pubNd.snapshotId && pubNd.snapshotId.length > 5);
 
     var fb = await get(BASE + '/api/frame.bin');
     check('frame 200', fb.s === 200);

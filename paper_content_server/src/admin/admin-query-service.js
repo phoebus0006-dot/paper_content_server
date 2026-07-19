@@ -6,7 +6,9 @@ function createAdminQueryService(snapshotStore, publicationHistory, assetReposit
     var status = { timestamp: new Date().toISOString() };
     return snapshotStore.readActive().then(function(active) {
       if (active) { status.activeSnapshotId = active.activeSnapshotId; }
-      return snapshotStore.load(active ? active.activeSnapshotId : null);
+      // 之前 active 为 null 时调 load(null) → 读 snapshots/null.json（无意义且浪费 IO，
+      // 若有人意外放了 null.json 会被当快照解析）。改为条件加载。
+      return active ? snapshotStore.load(active.activeSnapshotId) : null;
     }).then(function(snap) {
       if (snap) { status.activeFrameId = snap.frameId; }
       return snapshotStore.listSnapshots();
@@ -15,8 +17,14 @@ function createAdminQueryService(snapshotStore, publicationHistory, assetReposit
       if (publicationHistory) return publicationHistory.latest();
     }).then(function(latest) {
       if (latest) status.lastPublicationAt = latest.publishedAt;
-      // Feature flags (safe, no secrets)
-      if (featureFlags) { Object.keys(featureFlags).forEach(function(k) { status[k] = featureFlags[k]; }); }
+      // Feature flags (safe, no secrets). featureFlags is the feature-flag-view
+      // module shape { getFeatureFlags: () => flagsDict }; call it and spread the
+      // resulting plain dict. Spreading the view object itself would copy the
+      // getFeatureFlags function key onto status.
+      if (featureFlags && typeof featureFlags.getFeatureFlags === 'function') {
+        var flags = featureFlags.getFeatureFlags();
+        if (flags) { Object.keys(flags).forEach(function(k) { status[k] = flags[k]; }); }
+      }
       return status;
     }).catch(function(e) {
       status.error = e.message; return status;
@@ -38,6 +46,8 @@ function createAdminQueryService(snapshotStore, publicationHistory, assetReposit
 
   function listAssets(filter) {
     if (!assetRepository) return Promise.resolve([]);
+    // filter 可能为 null/undefined（外部输入），直接 filter.libraryType 抛 TypeError 导致服务崩溃。
+    filter = filter || {};
     var f = {};
     if (filter.libraryType) f.libraryType = filter.libraryType;
     if (filter.safetyStatus) f.safetyStatus = filter.safetyStatus;
@@ -52,16 +62,13 @@ function createAdminQueryService(snapshotStore, publicationHistory, assetReposit
   }
 
   function getFeatureFlags() {
-    return Object.freeze({
-      newsPipeline: { configured: true, enabled: true, connected: true, ready: true },
-      mqtt: { configured: false, enabled: false, connected: false, ready: false },
-      learning: { configured: false, enabled: false, connected: false, ready: false },
-      customLibrary: { configured: false, enabled: false, connected: false, ready: false },
-      advancedRender: { configured: false, enabled: false, connected: false, ready: false },
-      deletePipeline: { configured: false, enabled: false, connected: false, ready: false },
-      adminReadOnly: { configured: true, enabled: true, connected: true, ready: true },
-      activeFrameId: null,
-    });
+    // Delegate to the injected feature-flag-view so the truth model reflects
+    // actual runtime dependency state (mqtt connectedness, classifier readiness,
+    // active frame id, etc.). Hardcoded values would lie to the admin UI.
+    if (featureFlags && typeof featureFlags.getFeatureFlags === 'function') {
+      return featureFlags.getFeatureFlags();
+    }
+    return Object.freeze({});
   }
 
   return { getSystemStatus: getSystemStatus, listPublications: listPublications, getPublication: getPublication, listAssets: listAssets, getAsset: getAsset, getFeatureFlags: getFeatureFlags };

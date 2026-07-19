@@ -1,1 +1,14 @@
 paper-content-*.tar.gz
+# Secrets and local config — never commit
+.env
+config.h
+*.tflite
+*.onnx
+*.bin.model
+# Runtime temporary files
+*.log
+*.tmp
+serial_*.txt
+.DS_Store
+# Test data residue
+test_data_*/

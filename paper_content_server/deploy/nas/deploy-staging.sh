@@ -43,9 +43,15 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-# Reject if .env contains production secrets
-if grep -qE 'OPENAI_API_KEY|GEMINI_API|TRANSLATION_PROVIDER' "$ENV_FILE"; then
+# Reject if .env contains production secrets. TRANSLATION_PROVIDER=none is
+# explicitly allowed (it disables translation, no API key needed). Only
+# providers that require keys (openai/deepl/gemini) are rejected.
+if grep -qE 'OPENAI_API_KEY|GEMINI_API|DEEPL_API_KEY' "$ENV_FILE"; then
   echo "FAIL: .env contains production API keys — staging must use minimal config"
+  exit 1
+fi
+if grep -qE 'TRANSLATION_PROVIDER=(openai|deepl|gemini)' "$ENV_FILE"; then
+  echo "FAIL: .env enables a production translation provider — staging must use none"
   exit 1
 fi
 
@@ -67,10 +73,18 @@ docker stop paper-content-staging 2>/dev/null || true
 docker rm paper-content-staging 2>/dev/null || true
 
 # Deploy staging only — never touch the production container on port 8787
+# 必须用 --network host：NAS 主机的 iptables/旁路由对 bridge 网络出站 443 流量
+# 做透明代理劫持，TLS 握手返回 fn.phoebusstudio.com 证书，导致 Node fetch 全部
+# ERR_TLS_CERT_ALTNAME_INVALID，新闻 RSS 和图片抓取 100% 失败。
+# --network host 让容器直接用主机网络栈，绕过 bridge NAT，旁路由的 iptables
+# 透明代理规则对主机流量正常工作（中国 IP 走 aliyun_ss 代理，国外 IP 直连）。
+# host 模式下 -p 端口映射被忽略，必须用 -e PORT=$STAGING_PORT 让 server 直接
+# 监听 18080，避免与生产容器 8787 冲突。
 docker run -d \
   --name paper-content-staging \
   --restart unless-stopped \
-  -p "$STAGING_PORT:8787" \
+  --network host \
+  -e PORT="$STAGING_PORT" \
   -v "$DATA_DIR:/app/data" \
   -v "$IMAGE_DIR:/app/images" \
   --env-file "$ENV_FILE" \

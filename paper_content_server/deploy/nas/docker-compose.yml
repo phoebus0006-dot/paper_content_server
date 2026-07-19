@@ -7,6 +7,14 @@ services:
     container_name: paper-content-staging
     ports:
       - "18080:8787"
+    # 旁路由 192.168.1.127 对所有域名返回飞牛 NAS 自己的 IP，TLS 握手返回
+    # fn.phoebusstudio.com 证书，导致 Node fetch 全部 ERR_TLS_CERT_ALTNAME_INVALID。
+    # 容器走 bridge 网络时默认从主机 /etc/resolv.conf 继承 DNS（即旁路由），
+    # 必须显式指定公共 DNS 绕过劫持。旁路由的 iptables 透明代理仍能根据目标
+    # IP 分流（中国 IP 走 aliyun_ss 代理，国外 IP 直连），DNS 不影响分流逻辑。
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     env_file:
       - .env
     environment:
@@ -21,4 +29,5 @@ services:
       - R9_RENDER_SHADOW_ENABLED=false
     volumes:
       - ./data:/app/data
+      - ./images:/app/images
     restart: unless-stopped

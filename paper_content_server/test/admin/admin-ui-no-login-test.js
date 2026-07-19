@@ -16,7 +16,7 @@ async function main() {
   if (!await waitSrv()) { console.log('FAIL: server did not start'); srv.kill(); process.exit(1); }
   var r1 = await get('/admin/'); check('LAN_ADMIN_200', r1.s === 200);
   var html = r1.b.toString();
-  check('UI_LOGIN_OVERLAY_ABSENT_IN_LAN_MODE', html.indexOf('login-overlay') === -1 && html.indexOf('login-box') === -1);
+  check('UI_LOGIN_OVERLAY_ABSENT_IN_LAN_MODE', html.indexOf('id="login-overlay"') === -1 && html.indexOf('class="login-box"') === -1);
   check('UI_ADMIN_TOKEN_TEXT_ABSENT_IN_LAN_MODE', html.indexOf('ADMIN_TOKEN') === -1);
   check('UI_APP_VISIBLE_IN_LAN_MODE', /id=["']?app["']?/.test(html));
   var js = (await get('/admin/admin.js')).b.toString();

@@ -75,12 +75,19 @@ function createIngestionService(sourceRegistry, validator, deduplicator, policy,
     if (!raw) return { status: 'REJECTED', reason: 'NULL_INPUT' };
     var candidate;
     try { candidate = createCandidate(raw); } catch(e) { return { status: 'REJECTED', reason: 'INVALID_CANDIDATE', reasonCode: 'CANDIDATE_CREATE_FAILED' }; }
-    // Full gates
-    var gateResult = validator.validate(candidate);
-    if (!gateResult.ok) return { status: 'REJECTED', reason: gateResult.errors.join('; '), reasonCodes: gateResult.reasonCodes, candidateId: candidate.candidateId };
-    if (!policy.isAllowed(candidate)) return { status: 'REJECTED', reason: 'POLICY_BLOCKED', reasonCode: 'POLICY', candidateId: candidate.candidateId };
-    // Pre-download dedup check (sourceUrl) — read-only, no side effect
-    if (deduplicator.isDuplicate(candidate)) return { status: 'DUPLICATE', candidateId: candidate.candidateId, reasonCode: 'DUPLICATE' };
+    // Full gates — 必须包裹 try/catch：validator/policy/deduplicator 内部抛错（如候选字段缺失
+    // 导致 TypeError）会让 ingestOne reject → Promise.all reject → 整批失败。
+    // ingestOne 契约是返回 {status:'REJECTED'} 而非抛错。
+    var gateResult;
+    try {
+      gateResult = validator.validate(candidate);
+      if (!gateResult.ok) return { status: 'REJECTED', reason: gateResult.errors.join('; '), reasonCodes: gateResult.reasonCodes, candidateId: candidate.candidateId };
+      if (!policy.isAllowed(candidate)) return { status: 'REJECTED', reason: 'POLICY_BLOCKED', reasonCode: 'POLICY', candidateId: candidate.candidateId };
+      // Pre-download dedup check (sourceUrl) — read-only, no side effect
+      if (deduplicator.isDuplicate(candidate)) return { status: 'DUPLICATE', candidateId: candidate.candidateId, reasonCode: 'DUPLICATE' };
+    } catch(e) {
+      return { status: 'REJECTED', reason: 'GATE_ERROR', reasonCode: 'GATE', error: e.message, candidateId: candidate.candidateId };
+    }
     if (!assetRepository) return { status: 'REJECTED', reason: 'DEPENDENCY_UNAVAILABLE', reasonCode: 'NO_REPOSITORY', candidateId: candidate.candidateId };
 
     // Production flow: download → decode → safety → move → persist
@@ -130,8 +137,14 @@ function createIngestionService(sourceRegistry, validator, deduplicator, policy,
       } catch(e) { downloader.cleanup(finalPath); return { status: 'REJECTED', reason: 'ASSET_CREATE_FAILED', reasonCode: 'ASSET_CREATE', candidateId: candidate.candidateId }; }
       try {
         var assetId = await assetRepository.create(asset);
-        // Commit dedup only after successful repository write
-        deduplicator.commit({ sha256: decoded.sha256, sourceUrl: candidate.sourceUrl });
+        // Commit dedup only after successful repository write。
+        // 独立 try/catch：commit 同步抛错时仓库记录已存在，不能删 finalPath（会成孤儿记录），
+        // 也不能误报 REPOSITORY_WRITE_FAILED（仓库写成功了）。仅 warn 并返回 ACCEPTED。
+        try {
+          deduplicator.commit({ sha256: decoded.sha256, sourceUrl: candidate.sourceUrl });
+        } catch(commitErr) {
+          (logger.warn || function(){})('dedup commit failed for ' + candidate.candidateId + ' (asset already created): ' + commitErr.message);
+        }
         // ACCEPTED 摘要不包含内部路径(localPath/finalPath)
         return { status: 'ACCEPTED', assetId: assetId, candidateId: candidate.candidateId, sha256: decoded.sha256 };
       } catch(e) {
@@ -153,8 +166,9 @@ function createIngestionService(sourceRegistry, validator, deduplicator, policy,
       });
     } catch(e) { return { status: 'REJECTED', reason: 'ASSET_CREATE_FAILED', reasonCode: 'ASSET_CREATE', candidateId: candidate.candidateId }; }
     return assetRepository.create(legacyAsset).then(function(assetId) {
-      // Commit dedup only after successful repository write
-      deduplicator.commit(candidate);
+      // Commit dedup only after successful repository write（同生产流，独立 catch）
+      try { deduplicator.commit(candidate); }
+      catch(commitErr) { (logger.warn || function(){})('dedup commit failed (legacy) for ' + candidate.candidateId + ': ' + commitErr.message); }
       return { status: 'ACCEPTED', assetId: assetId, candidateId: candidate.candidateId };
     }).catch(function(e) {
       return { status: 'REJECTED', reason: 'REPOSITORY_WRITE_FAILED', reasonCode: 'REPO_WRITE', error: e.message, candidateId: candidate.candidateId };
