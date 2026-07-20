@@ -4,6 +4,8 @@
 var path = require('path');
 var fs = require('fs');
 var ROOT = path.join(__dirname, '..');
+var TMPDIR = path.join(ROOT, 'data', 'test_tmp_' + Date.now());
+try { fs.mkdirSync(TMPDIR, {recursive: true}); fs.writeFileSync(path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==', 'base64')); } catch(e) {}
 
 var {
   selectStudyPhoto,
@@ -41,7 +43,7 @@ function makeEntry(id, overrides) {
     kind: 'shot',
     hash: 'abc123',
     rawPath: 'data/raw_images/' + (id || 'stest') + '.jpg',
-    processedPngPath: ROOT + '/data/processed_images/test.png',
+    processedPngPath: TMPDIR + '/test.png',
     epfPath: 'data/processed_images/' + (id || 'stest') + '.epf',
     width: 800,
     height: 480,
@@ -174,7 +176,7 @@ test('theme coverage: backlight/suspense/motion have 0 candidates (no reliable c
 
 // ===== 4. Selectability =====
 test('approved study frame is selectable', function() {
-  var e = makeEntry('approved-study', { processedPngPath: ROOT + '/data/processed_images/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
+  var e = makeEntry('approved-study', { processedPngPath: TMPDIR + '/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
   return ok(isStudySelectable(e));
 });
 

@@ -1,11 +1,45 @@
+const pureLogic = require('./src/app/pure-logic.js');
+const { setRuntime, getWallTime, dateFromWallTime, getTimeZoneOffsetMinutes, computeNextSwitchAt, computeNextHalfHourBoundary, resolveAllowedImagePath, isImageReady, isImageApproved, isStudySelectable, getImageKind, groupImagesByKindAndTheme, groupImagesByTheme, updateLibraryStateForPhoto, selectStudyPhoto, selectPhotoSnapshot, selectNewsItems, sha1, formatDateKey, formatDateParts, themePoolFromIndex, themePoolFromKind, filterRecentImages, sortByLastShown, filterByRotation, isRecentlyShown, normalizeText, categoryForRotation, categoryPriority, canonicalUrl, titleHash } = pureLogic;
 const fs = require('fs');
 const fsp = fs.promises;
+function readJsonBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    let body = [];
+    let len = 0;
+    req.on('data', chunk => {
+      body.push(chunk);
+      len += chunk.length;
+      if (len > maxBytes) {
+        req.destroy();
+        reject({
+          code: 413,
+          message: 'Payload Too Large'
+        });
+      }
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(body).toString()));
+      } catch (e) {
+        reject({
+          code: 400,
+          message: 'Invalid JSON'
+        });
+      }
+    });
+    req.on('error', e => reject({
+      code: 500,
+      message: e.message
+    }));
+  });
+}
 const http = require('http');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { URL } = require('url');
-
+const {
+  URL
+} = require('url');
 const sharp = require('sharp');
 
 // R1 bridge — legacy adapter wiring
@@ -17,7 +51,6 @@ var R1_bootstrap = require('./src/app/bootstrap').bootstrap;
 var R1_createApp = require('./src/app/create-app').createApp;
 var R1_writeFileAtomic = require('./src/infra/atomic-file').writeFileAtomic;
 var R1_createHttpClient = require('./src/infra/http-client').createHttpClient;
-
 var r1Clock = R1_SystemClock();
 var r1Logger = R1_ConsoleLogger();
 var r1HttpClient = R1_createHttpClient(20000);
@@ -38,7 +71,9 @@ var R3_NoopNotificationPort = require('./src/publication/notification-port').Noo
 var R3_OperatingModeService = require('./src/publication/operating-mode-service').OperatingModeService;
 var R3_PublicationHistory = require('./src/publication/publication-history').PublicationHistory;
 var R3_PublicationService = require('./src/publication/publication-service').PublicationService;
-
+var AdminPublishService = require('./src/admin/publish-service').AdminPublishService;
+var TitleSummarizer = require('./src/news/title-summarizer');
+var ImageRecipeService = require('./src/admin/image-recipe-service').ImageRecipeService;
 const ROOT_DIR = __dirname;
 const DEFAULT_PORT = 8787;
 var BUILD_GIT_SHA = null;
@@ -49,8 +84,12 @@ try {
 const DEFAULT_PANEL = 49;
 const FRAME_WIDTH = 800;
 const FRAME_HEIGHT = 480;
-const { resolveDisplayMode } = require('./lib/schedule');
-const { sortSequenceFrames } = require('./lib/sequence');
+const {
+  resolveDisplayMode
+} = require('./lib/schedule');
+const {
+  sortSequenceFrames
+} = require('./lib/sequence');
 const PHOTO_FOOTER_HEIGHT = 56;
 const NEWS_HEADER_HEIGHT = 38;
 const NEWS_FOOTER_HEIGHT = 18;
@@ -68,18 +107,7 @@ const NEWS_SHOWN_RETENTION_DAYS = 7;
 const DEFAULT_PROVIDER = 'none';
 const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 const SHOT_STORYBOARD_PATTERN = ['shot', 'shot', 'storyboard', 'shot', 'shot', 'storyboard'];
-
-const PHOTO_THEME_POOL = [
-  'cinematic',
-  'storyboard',
-  'wide_shot',
-  'portrait',
-  'night',
-  'backlight',
-  'color',
-  'motion',
-];
-
+const PHOTO_THEME_POOL = ['cinematic', 'storyboard', 'wide_shot', 'portrait', 'night', 'backlight', 'color', 'motion'];
 const CATEGORY_PRIORITY = {
   politics: 60,
   international: 58,
@@ -91,23 +119,54 @@ const CATEGORY_PRIORITY = {
   entertainment: 48,
   movies: 47,
   world: 46,
-  general: 30,
+  general: 30
 };
-
 const CATEGORY_COLORS = {
-  politics: { bg: '#cc0000', text: '#ffffff' },
-  international: { bg: '#0066cc', text: '#ffffff' },
-  economy: { bg: '#009900', text: '#ffffff' },
-  business: { bg: '#009900', text: '#ffffff' },
-  technology: { bg: '#000000', text: '#ffffff' },
-  tech: { bg: '#000000', text: '#ffffff' },
-  culture: { bg: '#ffcc00', text: '#000000' },
-  entertainment: { bg: '#ffcc00', text: '#000000' },
-  movies: { bg: '#ffcc00', text: '#000000' },
-  world: { bg: '#0066cc', text: '#ffffff' },
-  general: { bg: '#000000', text: '#ffffff' },
+  politics: {
+    bg: '#cc0000',
+    text: '#ffffff'
+  },
+  international: {
+    bg: '#0066cc',
+    text: '#ffffff'
+  },
+  economy: {
+    bg: '#009900',
+    text: '#ffffff'
+  },
+  business: {
+    bg: '#009900',
+    text: '#ffffff'
+  },
+  technology: {
+    bg: '#000000',
+    text: '#ffffff'
+  },
+  tech: {
+    bg: '#000000',
+    text: '#ffffff'
+  },
+  culture: {
+    bg: '#ffcc00',
+    text: '#000000'
+  },
+  entertainment: {
+    bg: '#ffcc00',
+    text: '#000000'
+  },
+  movies: {
+    bg: '#ffcc00',
+    text: '#000000'
+  },
+  world: {
+    bg: '#0066cc',
+    text: '#ffffff'
+  },
+  general: {
+    bg: '#000000',
+    text: '#ffffff'
+  }
 };
-
 const CATEGORY_LABELS = {
   politics: '政治',
   international: '国际',
@@ -119,17 +178,24 @@ const CATEGORY_LABELS = {
   entertainment: '文化娱乐',
   movies: '文化娱乐',
   world: '国际',
-  general: '综合',
+  general: '综合'
 };
-
-const CATEGORY_KEYWORDS = [
-  { category: 'politics', words: ['politic', 'election', 'vote', 'government', 'parliament', 'trump', 'biden', 'macron', '白宫', '国会', '内阁'] },
-  { category: 'economy', words: ['econom', 'business', 'market', 'stock', 'finance', 'trade', 'inflation', 'recession', 'gdp', '商业', '经济', '通胀'] },
-  { category: 'technology', words: ['tech', 'ai', 'software', 'chip', 'internet', 'security', 'data', 'app', '科技', '人工智能', '芯片', '应用', '鸿蒙', '安卓', 'iOS'] },
-  { category: 'culture', words: ['culture', 'art', 'museum', 'book', 'festival', 'music', '电影', '文化', '艺术'] },
-  { category: 'entertainment', words: ['movie', 'movies', 'film', 'tv', 'show', 'celebrity', 'entertainment', '娱乐', '影'] },
-];
-
+const CATEGORY_KEYWORDS = [{
+  category: 'politics',
+  words: ['politic', 'election', 'vote', 'government', 'parliament', 'trump', 'biden', 'macron', '白宫', '国会', '内阁']
+}, {
+  category: 'economy',
+  words: ['econom', 'business', 'market', 'stock', 'finance', 'trade', 'inflation', 'recession', 'gdp', '商业', '经济', '通胀']
+}, {
+  category: 'technology',
+  words: ['tech', 'ai', 'software', 'chip', 'internet', 'security', 'data', 'app', '科技', '人工智能', '芯片', '应用', '鸿蒙', '安卓', 'iOS']
+}, {
+  category: 'culture',
+  words: ['culture', 'art', 'museum', 'book', 'festival', 'music', '电影', '文化', '艺术']
+}, {
+  category: 'entertainment',
+  words: ['movie', 'movies', 'film', 'tv', 'show', 'celebrity', 'entertainment', '娱乐', '影']
+}];
 const FONT_STACK = '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif';
 
 // ── process.env policy ──────────────────────────────────────────────────────
@@ -156,7 +222,7 @@ function loadDotEnv(filePath) {
     if (equalsIndex < 0) continue;
     const key = line.slice(0, equalsIndex).trim();
     let value = line.slice(equalsIndex + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    if (value.startsWith('"') && value.endsWith('"') || value.startsWith("'") && value.endsWith("'")) {
       value = value.slice(1, -1);
     }
     // Populate process.env from .env so libraries that read process.env
@@ -166,17 +232,25 @@ function loadDotEnv(filePath) {
     if (!process.env[key]) process.env[key] = value;
   }
 }
-
 loadDotEnv(path.join(ROOT_DIR, '.env'));
-
 const APP_CONFIG = loadAppConfig();
-
 const PANEL_SIZES = {
-  25: { width: 600, height: 448, name: '5.65 inch F' },
-  49: { width: FRAME_WIDTH, height: FRAME_HEIGHT, name: '7.3 inch E6' },
-  50: { width: 1200, height: 1600, name: '13.3 inch E6' },
+  25: {
+    width: 600,
+    height: 448,
+    name: '5.65 inch F'
+  },
+  49: {
+    width: FRAME_WIDTH,
+    height: FRAME_HEIGHT,
+    name: '7.3 inch E6'
+  },
+  50: {
+    width: 1200,
+    height: 1600,
+    name: '13.3 inch E6'
+  }
 };
-
 const options = parseArgs(process.argv, APP_CONFIG);
 const TRANSLATION_PROVIDER = String(APP_CONFIG.translation.provider || DEFAULT_PROVIDER).toLowerCase();
 const OPENAI_API_KEY = APP_CONFIG.translation.openaiApiKey || '';
@@ -203,7 +277,6 @@ const TRUST_PROXY = APP_CONFIG.admin.trustProxy;
 const ADM_TRUSTED_PROXY_CIDRS = APP_CONFIG.admin.trustedProxyCidrs.parsed;
 const ADMIN_ALLOW_HEADERLESS_WRITE = APP_CONFIG.admin.allowHeaderlessWrite;
 const MQTT_ENABLED = !!(APP_CONFIG.mqtt && APP_CONFIG.mqtt.enabled);
-
 const DATA_DIR = resolveConfiguredPath(APP_CONFIG.dataDir || 'data');
 const IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.imageRoot || 'images');
 const FEEDS_FILE = resolveConfiguredPath(APP_CONFIG.feedsFile || 'feeds.json');
@@ -216,12 +289,19 @@ const PROCESSED_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.processedImagesDir
 const IMPORT_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.importImagesDir || path.join(DATA_DIR, 'import_images'));
 const LAST_GOOD_NEWS_FILE = resolveConfiguredPath(APP_CONFIG.lastGoodNewsFile || path.join(DATA_DIR, 'last_good_news.json'));
 const FALLBACK_STUDY_DIR = resolveConfiguredPath(APP_CONFIG.fallbackStudyDir || path.join(DATA_DIR, 'fallback_study'));
-
 const runtime = {
   feeds: null,
   feedsLoadedAt: 0,
-  newsCache: { version: 1, updatedAt: null, translations: {} },
-  newsRotation: { version: 1, updatedAt: null, shown: [] },
+  newsCache: {
+    version: 1,
+    updatedAt: null,
+    translations: {}
+  },
+  newsRotation: {
+    version: 1,
+    updatedAt: null,
+    shown: []
+  },
   lastGoodNews: null,
   fallbackStudyEntries: null,
   fallbackStudyReady: false,
@@ -233,7 +313,7 @@ const runtime = {
     lastSlotKey: null,
     lastSwitchDate: null,
     patternIndex: 0,
-    currentKind: null,
+    currentKind: null
   },
   imageIndex: [],
   imageIndexLoadedAt: 0,
@@ -241,10 +321,31 @@ const runtime = {
   cachedSnapshots: new Map(),
   refreshPromise: null,
   lastNewsRefreshAt: 0,
-  syncLocks: { news: false, photos: false },
+  syncLocks: {
+    news: false,
+    photos: false
+  },
   syncStatus: {
-    news: { jobRunning: false, lastAttemptAt: 0, lastSuccessAt: 0, lastFailureAt: 0, lastError: null, itemsFetched: 0, itemsAdded: 0, itemsProcessed: 0 },
-    photos: { jobRunning: false, lastAttemptAt: 0, lastSuccessAt: 0, lastFailureAt: 0, lastError: null, itemsProcessed: 0, itemsFetched: 0, newIds: [] }
+    news: {
+      jobRunning: false,
+      lastAttemptAt: 0,
+      lastSuccessAt: 0,
+      lastFailureAt: 0,
+      lastError: null,
+      itemsFetched: 0,
+      itemsAdded: 0,
+      itemsProcessed: 0
+    },
+    photos: {
+      jobRunning: false,
+      lastAttemptAt: 0,
+      lastSuccessAt: 0,
+      lastFailureAt: 0,
+      lastError: null,
+      itemsProcessed: 0,
+      itemsFetched: 0,
+      newIds: []
+    }
   },
   serverStartTime: Date.now(),
   renderCount: 0,
@@ -266,16 +367,24 @@ const runtime = {
   overridePersistence: null,
   safetyClassifierPort: null,
   // Dashboard / health fields — populated by admin/schedule routes.
-  manualOverride: null,           // { mode, snapshotId?, assetId?, ... } when ONE_SHOT/FOCUS_LOCK/legacy manual
-  overrideExpiresAt: null,        // ISO string when ONE_SHOT will auto-restore
-  lastPublishedAt: null,          // ISO string of last successful publicationService.publish
-  stateRequestCount: 0,           // GET /api/state.json counter
-  frameRequestCount: 0,           // GET /api/frame.bin counter
-  newsRefreshCount: 0,            // successful buildNewsSnapshot invocations
-  newsRefreshFailureCount: 0,     // failed buildNewsSnapshot invocations
-  recentError: null,              // { at, route, message } of last handled error
+  manualOverride: null,
+  // { mode, snapshotId?, assetId?, ... } when ONE_SHOT/FOCUS_LOCK/legacy manual
+  overrideExpiresAt: null,
+  // ISO string when ONE_SHOT will auto-restore
+  lastPublishedAt: null,
+  // ISO string of last successful publicationService.publish
+  stateRequestCount: 0,
+  // GET /api/state.json counter
+  frameRequestCount: 0,
+  // GET /api/frame.bin counter
+  newsRefreshCount: 0,
+  // successful buildNewsSnapshot invocations
+  newsRefreshFailureCount: 0,
+  // failed buildNewsSnapshot invocations
+  recentError: null // { at, route, message } of last handled error
 };
-
+setRuntime(runtime);
+runtime.config = APP_CONFIG;
 async function main() {
   r1Logger.info('Starting NewsPhoto content server via R1 bootstrap');
 
@@ -287,18 +396,21 @@ async function main() {
   if (MQTT_ENABLED) {
     try {
       var mqttConfig = APP_CONFIG.mqtt;
-      var { createMqttClientPort } = require('./src/mqtt/mqtt-client-port');
+      var {
+        createMqttClientPort
+      } = require('./src/mqtt/mqtt-client-port');
       mqttClient = createMqttClientPort(mqttConfig, r1Logger);
-      mqttClient.connect().catch(function(e) {
+      mqttClient.connect().catch(function (e) {
         r1Logger.warn('MQTT connect failed: ' + e.message + ' — HTTP continues');
       });
-      var { createMqttNotificationAdapter } = require('./src/mqtt/mqtt-notification-adapter');
+      var {
+        createMqttNotificationAdapter
+      } = require('./src/mqtt/mqtt-notification-adapter');
       notificationPort = createMqttNotificationAdapter(mqttConfig, mqttClient, r1Logger);
-    } catch(e) {
+    } catch (e) {
       r1Logger.warn('MQTT initialization failed: ' + e.message + ' — falling back to noop');
     }
   }
-
   var boot = R1_bootstrap({
     handler: handleRequest,
     env: process.env,
@@ -306,7 +418,7 @@ async function main() {
     listen: true,
     port: PORT,
     notificationPort: notificationPort || undefined,
-    mqttClient: mqttClient || undefined,
+    mqttClient: mqttClient || undefined
   });
 
   // Ensure data directories exist
@@ -315,8 +427,16 @@ async function main() {
 
   // Load persisted runtime state
   runtime.feeds = await readJson(FEEDS_FILE, []);
-  runtime.newsCache = await readJson(NEWS_CACHE_FILE, { version: 1, updatedAt: null, translations: {} });
-  runtime.newsRotation = await readJson(NEWS_ROTATION_FILE, { version: 1, updatedAt: null, shown: [] });
+  runtime.newsCache = await readJson(NEWS_CACHE_FILE, {
+    version: 1,
+    updatedAt: null,
+    translations: {}
+  });
+  runtime.newsRotation = await readJson(NEWS_ROTATION_FILE, {
+    version: 1,
+    updatedAt: null,
+    shown: []
+  });
   runtime.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
   runtime.imageIndex = await loadImageIndex();
   runtime.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
@@ -330,6 +450,9 @@ async function main() {
   runtime.publicationHistory = boot.deps.publicationHistory;
   runtime.notificationPort = boot.deps.notificationPort;
   runtime.publicationService = boot.services.publicationService;
+  runtime.adminPublishService = new AdminPublishService(runtime, r1Logger);
+  runtime.titleSummarizer = TitleSummarizer;
+  runtime.imageRecipeService = new ImageRecipeService(runtime);
   runtime.adminQueryService = boot.services.adminQueryService || null;
   runtime.featureFlagView = boot.services.featureFlagView || null;
   runtime.assetRepository = boot.services.assetRepository || null;
@@ -355,8 +478,7 @@ async function main() {
       await runtime.safetyClassifierPort.initialize();
     }
   } catch (e) {
-    r1Logger.warn('safetyClassifierPort initialize failed: ' + (e && e.message) +
-      ' — Custom/Learning stay fail-closed');
+    r1Logger.warn('safetyClassifierPort initialize failed: ' + (e && e.message) + ' — Custom/Learning stay fail-closed');
   }
 
   // R3.8: Preload active snapshot into cache on restart
@@ -369,7 +491,7 @@ async function main() {
         r1Logger.info('Restored active snapshot from disk: ' + activeSnap.snapshotId);
       }
     }
-  } catch(e) {
+  } catch (e) {
     r1Logger.warn('Could not preload active snapshot: ' + e.message);
   }
 
@@ -381,32 +503,23 @@ async function main() {
   if (runtime.overridePersistence && runtime.assetRepository && runtime.operatingModeService) {
     try {
       var persistedOverride = runtime.overridePersistence.loadOverride();
-      if (persistedOverride &&
-          (persistedOverride.mode === 'ONE_SHOT_OVERRIDE' ||
-           persistedOverride.mode === 'FOCUS_LOCK') &&
-          persistedOverride.assetId && persistedOverride.snapshotId) {
-        var v3Validation = await runtime.overridePersistence.validateOverrideAsync(
-          persistedOverride, runtime.assetRepository
-        );
+      if (persistedOverride && (persistedOverride.mode === 'ONE_SHOT_OVERRIDE' || persistedOverride.mode === 'FOCUS_LOCK') && persistedOverride.snapshotId) {
+        var v3Validation = await runtime.overridePersistence.validateOverrideAsync(persistedOverride, runtime.assetRepository);
         if (v3Validation.valid) {
           // Restore operating mode; snapshot was already preloaded above.
           if (persistedOverride.mode === 'ONE_SHOT_OVERRIDE') {
-            runtime.operatingModeService.enterOneShot(
-              persistedOverride.snapshotId,
-              persistedOverride.expiresAt || persistedOverride.savedAt
-            );
+            runtime.operatingModeService.enterOneShot(persistedOverride.snapshotId, persistedOverride.expiresAt || persistedOverride.savedAt);
             r1Logger.info('Restored ONE_SHOT override: asset=' + persistedOverride.assetId);
           } else {
             runtime.operatingModeService.enterFocusLock(persistedOverride.snapshotId, {
               libraryType: persistedOverride.libraryType || null,
               theme: persistedOverride.theme || null,
-              albumId: persistedOverride.albumId || null,
+              albumId: persistedOverride.albumId || null
             });
             r1Logger.info('Restored FOCUS_LOCK override: asset=' + persistedOverride.assetId);
           }
         } else {
-          r1Logger.warn('Persisted override invalid on restart (' + v3Validation.reason +
-            ') — clearing override, falling through to AUTO schedule');
+          r1Logger.warn('Persisted override invalid on restart (' + v3Validation.reason + ') — clearing override, falling through to AUTO schedule');
           runtime.overridePersistence.clearOverride();
         }
       }
@@ -414,16 +527,13 @@ async function main() {
       r1Logger.warn('Override restore failed: ' + e.message);
     }
   }
-
   var server = boot.server;
-
   var effectiveTimeZone = r1Clock.timezone();
   if (effectiveTimeZone !== TIMEZONE) {
     r1Logger.warn('configured timezone is ' + TIMEZONE + ' but effective is ' + effectiveTimeZone);
   } else {
     r1Logger.info('Timezone: ' + TIMEZONE);
   }
-
   var state = computeSnapshot(new Date());
   r1Logger.info('Panel ' + state.panelIndex + ': ' + state.panelName + ', ' + state.width + 'x' + state.height);
   r1Logger.info('Default frameId=' + state.frameId);
@@ -438,11 +548,10 @@ async function main() {
 
   // Start internal content schedulers
   warmRefreshLoop();
-
   function gracefulShutdown(signal) {
     r1Logger.info('Received ' + signal + ', shutting down...');
-    var forceExitMs = (APP_CONFIG.process && APP_CONFIG.process.forceExitTimeoutMs) || (boot.config.lifecycle && boot.config.lifecycle.forceExitTimeoutMs) || 12000;
-    var forceExit = setTimeout(function() {
+    var forceExitMs = APP_CONFIG.process && APP_CONFIG.process.forceExitTimeoutMs || boot.config.lifecycle && boot.config.lifecycle.forceExitTimeoutMs || 12000;
+    var forceExit = setTimeout(function () {
       r1Logger.error('Force exit after ' + forceExitMs + 'ms');
       process.exitCode = 1;
       process.exit(1);
@@ -452,39 +561,42 @@ async function main() {
       if (boot.services && boot.services.learningScheduler) {
         boot.services.learningScheduler.stop();
       }
-    } catch(e) { r1Logger.warn('learningScheduler stop failed: ' + e.message); }
+    } catch (e) {
+      r1Logger.warn('learningScheduler stop failed: ' + e.message);
+    }
     // V6: shutdown the safety classifier async lifecycle (release model handle).
     // Idempotent and non-blocking — failure here is logged but does not prevent
     // the rest of shutdown from proceeding.
     var classifierShutdown = Promise.resolve();
     if (runtime.safetyClassifierPort && typeof runtime.safetyClassifierPort.shutdown === 'function') {
-      classifierShutdown = runtime.safetyClassifierPort.shutdown().catch(function(e) {
+      classifierShutdown = runtime.safetyClassifierPort.shutdown().catch(function (e) {
         r1Logger.warn('safetyClassifierPort shutdown failed: ' + (e && e.message));
       });
     }
-    classifierShutdown.then(function() {
+    classifierShutdown.then(function () {
       return boot.shutdown();
-    }).then(function() {
+    }).then(function () {
       clearTimeout(forceExit);
       process.exit(0);
-    }).catch(function(e) {
+    }).catch(function (e) {
       r1Logger.error('Shutdown failed: ' + e.message);
       clearTimeout(forceExit);
       process.exitCode = 1;
       process.exit(1);
     });
   }
-
-  process.on('SIGINT', function() { gracefulShutdown('SIGINT'); });
-  process.on('SIGTERM', function() { gracefulShutdown('SIGTERM'); });
+  process.on('SIGINT', function () {
+    gracefulShutdown('SIGINT');
+  });
+  process.on('SIGTERM', function () {
+    gracefulShutdown('SIGTERM');
+  });
 }
-
 function parseArgs(argv, config) {
   const parsed = {
     port: Number(config && config.port) || DEFAULT_PORT,
-    panel: Number(config && (config.panelIndex != null ? config.panelIndex : (config.panel && config.panel.index))) || DEFAULT_PANEL,
+    panel: Number(config && (config.panelIndex != null ? config.panelIndex : config.panel && config.panel.index)) || DEFAULT_PANEL
   };
-
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
     const next = argv[i + 1];
@@ -500,14 +612,14 @@ function parseArgs(argv, config) {
       parsed.panel = Number(arg.slice(8));
     }
   }
-
   if (!Number.isFinite(parsed.port) || parsed.port <= 0) parsed.port = DEFAULT_PORT;
   if (!PANEL_SIZES[parsed.panel]) parsed.panel = DEFAULT_PANEL;
   return parsed;
 }
-
 function loadAppConfig() {
-  var result = R1_loadConfig({ cwd: ROOT_DIR });
+  var result = R1_loadConfig({
+    cwd: ROOT_DIR
+  });
   if (!result.isValid) {
     r1Logger.error('Config validation failed: ' + result.errors.join('; '));
     // Only hard-exit when run as the entry point. When required by tests for
@@ -548,15 +660,13 @@ function loadAppConfig() {
     upload: result.upload,
     admin: result.admin,
     testInstanceId: result.server.testInstanceId,
-    configFile: result.configFile,
+    configFile: result.configFile
   };
 }
-
 function resolveConfiguredPath(configuredPath) {
   if (!configuredPath) return ROOT_DIR;
   return path.isAbsolute(configuredPath) ? configuredPath : path.join(ROOT_DIR, configuredPath);
 }
-
 function getLocalIPs() {
   const results = [];
   for (const entries of Object.values(os.networkInterfaces())) {
@@ -566,11 +676,11 @@ function getLocalIPs() {
   }
   return results;
 }
-
 async function ensureDir(dirPath) {
-  await fsp.mkdir(dirPath, { recursive: true });
+  await fsp.mkdir(dirPath, {
+    recursive: true
+  });
 }
-
 async function readJson(filePath, fallback) {
   try {
     var store = R1_JsonStore(filePath);
@@ -579,51 +689,25 @@ async function readJson(filePath, fallback) {
     return fallback;
   }
 }
-
 async function writeJson(filePath, data) {
-  await R1_writeFileAtomic(filePath, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8' });
+  await R1_writeFileAtomic(filePath, JSON.stringify(data, null, 2) + '\n', {
+    encoding: 'utf8'
+  });
 }
-
 function readLines(text) {
   return String(text || '').split(/\r?\n/);
 }
-
-function sha1(text) {
-  return crypto.createHash('sha1').update(String(text || '')).digest('hex');
-}
-
-function normalizeText(text) {
-  return String(text || '')
-    .replace(/[\s\u00A0]+/g, ' ')
-    .replace(/^\s+|\s+$/g, '');
-}
-
 function decodeEntities(text) {
-  return String(text || '')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&apos;/gi, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&nbsp;/gi, ' ');
+  return String(text || '').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&apos;/gi, "'").replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code))).replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16))).replace(/&nbsp;/gi, ' ');
 }
-
 function stripHtml(text) {
-  return decodeEntities(
-    String(text || '')
-      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, '$1')
-      .replace(/<[^>]+>/g, ' ')
-  );
+  return decodeEntities(String(text || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, '$1').replace(/<[^>]+>/g, ' '));
 }
-
 function truncateText(text, maxLength) {
   const source = String(text || '').trim();
   if (source.length <= maxLength) return source;
   return `${source.slice(0, Math.max(0, maxLength - 1))}…`;
 }
-
 function truncateByWidth(text, maxColumns) {
   const source = String(text || '').replace(/\s+/g, ' ').trim();
   if (!source) return '';
@@ -640,7 +724,6 @@ function truncateByWidth(text, maxColumns) {
   }
   return result;
 }
-
 function fitTextWidth(text, maxColumns) {
   const source = String(text || '').replace(/\s+/g, ' ').trim();
   if (!source) return '';
@@ -654,146 +737,34 @@ function fitTextWidth(text, maxColumns) {
   }
   return result;
 }
-
 function escapeXml(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+  return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
-
 function parseDate(value) {
   const time = Date.parse(value || '');
   return Number.isFinite(time) ? new Date(time) : new Date();
 }
-
 function extractAttribute(attributeText, attributeName) {
   const match = String(attributeText || '').match(new RegExp(`\\b${escapeRegex(attributeName)}=["']([^"']+)["']`, 'i'));
   return match ? decodeEntities(match[1]) : '';
 }
-
-function formatDateParts(date, timeZone = TIMEZONE) {
-  // 容错：date 为空字符串/undefined/无法解析的字符串时，new Date(date) 得到 Invalid Date，
-  // Intl.DateTimeFormat.formatToParts(Invalid Date) 抛 RangeError("Invalid time value")。
-  // 该错误会沿 renderNewsSvg → renderNewsFrame → publish/news 一路冒泡导致发布 500。
-  // 回退到当前时间，保证渲染链路不因单条新闻时间戳缺失而整体失败。
-  var d = new Date(date);
-  if (isNaN(d.getTime())) d = new Date();
-  let parts;
-  try {
-    parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }).formatToParts(d);
-  } catch {
-    parts = new Intl.DateTimeFormat('en-CA', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }).formatToParts(d);
-  }
-  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return {
-    year: map.year,
-    month: map.month,
-    day: map.day,
-    hour: map.hour,
-    minute: map.minute,
-    second: map.second,
-  };
-}
-
 function formatDateTime(date) {
   const parts = formatDateParts(date);
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
-
 function formatIsoLocal(date) {
   const value = new Date(date);
-  const pad = (n) => String(n).padStart(2, '0');
+  const pad = n => String(n).padStart(2, '0');
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
 }
-
-function formatDateKey(date) {
-  const parts = formatDateParts(date);
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
 function formatDateTimeWithSeconds(date) {
   const parts = formatDateParts(date);
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
 }
-
 function formatLocalTimeLabel(date) {
   const parts = formatDateParts(date);
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
-
-function getWallTime(date, timeZone = TIMEZONE) {
-  const parts = formatDateParts(date, timeZone);
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour),
-    minute: Number(parts.minute),
-    second: Number(parts.second),
-  };
-}
-
-function getTimeZoneOffsetMinutes(date, timeZone = TIMEZONE) {
-  const utcString = date.toLocaleString('en-US', { timeZone: 'UTC' });
-  const tzString = date.toLocaleString('en-US', { timeZone });
-  const utcDate = new Date(utcString);
-  const tzDate = new Date(tzString);
-  return (utcDate.getTime() - tzDate.getTime()) / 60000;
-}
-
-function dateFromWallTime({ year, month, day, hour, minute, second }, timeZone = TIMEZONE) {
-  let candidate = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0));
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const offsetMinutes = getTimeZoneOffsetMinutes(candidate, timeZone);
-    candidate = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0) + offsetMinutes * 60000);
-    const wall = getWallTime(candidate, timeZone);
-    if (
-      wall.year === year &&
-      wall.month === month &&
-      wall.day === day &&
-      wall.hour === hour &&
-      wall.minute === minute
-    ) {
-      return candidate;
-    }
-  }
-  return candidate;
-}
-
-function canonicalUrl(url) {
-  if (!url) return '';
-  try {
-    const parsed = new URL(url);
-    for (const key of [...parsed.searchParams.keys()]) {
-      if (/utm_|fbclid|gclid|ref|cmp|spm|ncid|session/i.test(key)) parsed.searchParams.delete(key);
-    }
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return String(url).trim();
-  }
-}
-
 function bigramDice(left, right) {
   const a = String(left || '').toLowerCase();
   const b = String(right || '').toLowerCase();
@@ -805,14 +776,13 @@ function bigramDice(left, right) {
   for (let i = 0; i < b.length - 1; i++) gramsB.set(b.slice(i, i + 2), (gramsB.get(b.slice(i, i + 2)) || 0) + 1);
   let overlap = 0;
   for (const [gram, count] of gramsA) overlap += Math.min(count, gramsB.get(gram) || 0);
-  return (2 * overlap) / Math.max(1, [...gramsA.values()].reduce((sum, count) => sum + count, 0) + [...gramsB.values()].reduce((sum, count) => sum + count, 0));
+  return 2 * overlap / Math.max(1, [...gramsA.values()].reduce((sum, count) => sum + count, 0) + [...gramsB.values()].reduce((sum, count) => sum + count, 0));
 }
-
 function classifyCategory(feedCategory, title, summary) {
   const base = String(feedCategory || '').toLowerCase();
   const haystack = `${title || ''} ${summary || ''}`.toLowerCase();
   for (const item of CATEGORY_KEYWORDS) {
-    if (item.words.some((word) => {
+    if (item.words.some(word => {
       const w = String(word || '').toLowerCase();
       if (/[\u4e00-\u9fa5]/.test(w)) return haystack.includes(w);
       return new RegExp(`\\b${escapeRegex(w)}\\b`, 'i').test(haystack);
@@ -821,28 +791,18 @@ function classifyCategory(feedCategory, title, summary) {
   if (base) return base;
   return 'general';
 }
-
-function categoryPriority(category) {
-  return CATEGORY_PRIORITY[String(category || '').toLowerCase()] || 10;
-}
-
 function escapeRegex(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
 function extractTag(xml, tagName) {
   const escapedTagName = escapeRegex(tagName);
-  const patterns = [
-    new RegExp(`<${escapedTagName}[^>]*>([\\s\\S]*?)<\\/${escapedTagName}>`, 'i'),
-    new RegExp(`<[^:>]+:${escapedTagName}[^>]*>([\\s\\S]*?)<\\/[^:>]+:${escapedTagName}>`, 'i'),
-  ];
+  const patterns = [new RegExp(`<${escapedTagName}[^>]*>([\\s\\S]*?)<\\/${escapedTagName}>`, 'i'), new RegExp(`<[^:>]+:${escapedTagName}[^>]*>([\\s\\S]*?)<\\/[^:>]+:${escapedTagName}>`, 'i')];
   for (const pattern of patterns) {
     const match = xml.match(pattern);
     if (match) return stripHtml(match[1]);
   }
   return '';
 }
-
 function extractLink(xml) {
   const linkMatch = xml.match(/<link[^>]*href=["']([^"']+)["'][^>]*\/?>/i);
   if (linkMatch) return decodeEntities(linkMatch[1].trim());
@@ -850,14 +810,12 @@ function extractLink(xml) {
   if (directMatch) return decodeEntities(stripHtml(directMatch[1]).trim());
   return '';
 }
-
 function extractItems(xml) {
   const items = [];
   for (const match of xml.matchAll(/<item[\s\S]*?<\/item>/gi)) items.push(match[0]);
   for (const match of xml.matchAll(/<entry[\s\S]*?<\/entry>/gi)) items.push(match[0]);
   return items;
 }
-
 function parseFeedXml(xmlText, feed) {
   const xml = String(xmlText || '');
   const items = extractItems(xml);
@@ -883,12 +841,11 @@ function parseFeedXml(xmlText, feed) {
       rawContent: normalizeText(stripHtml(content !== summary ? content : '')),
       publishedAt: publishedAt.toISOString(),
       category,
-      weight: Number(feed.weight) || 1,
+      weight: Number(feed.weight) || 1
     });
   }
   return articles;
 }
-
 function parseJsonFeed(jsonText, feed) {
   let data;
   try {
@@ -896,14 +853,8 @@ function parseJsonFeed(jsonText, feed) {
   } catch {
     return [];
   }
-  const candidates = Array.isArray(data)
-    ? data
-    : Array.isArray(data.items)
-      ? data.items
-      : Array.isArray(data.data)
-        ? data.data
-        : [];
-  return candidates.map((item) => {
+  const candidates = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : Array.isArray(data.data) ? data.data : [];
+  return candidates.map(item => {
     const title = normalizeText(item.title || item.headline || item.name || '');
     const summary = normalizeText(stripHtml(item.description || item.summary || item.content || item.excerpt || ''));
     const contentText = normalizeText(stripHtml(item.content || item.content_html || item.summary || item.description || ''));
@@ -922,36 +873,31 @@ function parseJsonFeed(jsonText, feed) {
       rawContent: contentText !== summary ? contentText : '',
       publishedAt: publishedAt.toISOString(),
       category,
-      weight: Number(feed.weight) || 1,
+      weight: Number(feed.weight) || 1
     };
   });
 }
-
 async function fetchText(url, timeoutMs) {
   return r1HttpClient.fetchText(url, timeoutMs || 20000);
 }
-
 async function loadFeeds() {
   const raw = await readJson(FEEDS_FILE, null);
   if (!raw) return [];
   const feeds = Array.isArray(raw) ? raw : raw.feeds;
   if (!Array.isArray(feeds)) return [];
-  return feeds.filter((feed) => feed && feed.id && feed.source && feed.country && feed.category && feed.language && feed.url);
+  return feeds.filter(feed => feed && feed.id && feed.source && feed.country && feed.category && feed.language && feed.url);
 }
-
 async function refreshFeeds() {
   const feeds = await loadFeeds();
   runtime.feeds = feeds;
   runtime.feedsLoadedAt = Date.now();
   return feeds;
 }
-
 async function loadNewsCandidates() {
   if (!runtime.feeds || !runtime.feeds.length || Date.now() - runtime.feedsLoadedAt > 10 * 60 * 1000) {
     await refreshFeeds();
   }
-
-  const fetched = await Promise.all(runtime.feeds.map(async (feed) => {
+  const fetched = await Promise.all(runtime.feeds.map(async feed => {
     try {
       const text = await fetchText(feed.url);
       const trimmed = text.trim();
@@ -963,171 +909,36 @@ async function loadNewsCandidates() {
       return [];
     }
   }));
-
   const all = fetched.flat();
   all.sort((left, right) => {
-    const score = (categoryPriority(right.category) + Number(right.weight || 0)) - (categoryPriority(left.category) + Number(left.weight || 0));
+    const score = categoryPriority(right.category) + Number(right.weight || 0) - (categoryPriority(left.category) + Number(left.weight || 0));
     if (score !== 0) return score;
     return Date.parse(right.publishedAt) - Date.parse(left.publishedAt);
   });
-
   const unique = [];
   for (const article of all) {
     const normalizedTitle = normalizeText(article.title).toLowerCase();
     const normalizedUrl = canonicalUrl(article.url);
-    const duplicate = unique.some((existing) => {
+    const duplicate = unique.some(existing => {
       if (normalizedUrl && canonicalUrl(existing.url) === normalizedUrl) return true;
       const similarity = bigramDice(normalizedTitle, normalizeText(existing.title).toLowerCase());
       return similarity >= 0.88;
     });
     if (!duplicate) unique.push(article);
   }
-
   unique.sort((left, right) => {
-    const score = (categoryPriority(right.category) + Number(right.weight || 0)) - (categoryPriority(left.category) + Number(left.weight || 0));
+    const score = categoryPriority(right.category) + Number(right.weight || 0) - (categoryPriority(left.category) + Number(left.weight || 0));
     if (score !== 0) return score;
     return Date.parse(right.publishedAt) - Date.parse(left.publishedAt);
   });
-
   return unique;
 }
-
-function categoryForRotation(category) {
-  const base = String(category || '').toLowerCase();
-  if (['politics', 'international', 'world'].includes(base)) return 'politics';
-  if (['economy', 'business'].includes(base)) return 'economy';
-  if (['technology', 'tech'].includes(base)) return 'technology';
-  if (['culture', 'entertainment', 'movies'].includes(base)) return 'culture';
-  return base || 'general';
-}
-
-function titleHash(title) {
-  return sha1(normalizeText(title).toLowerCase());
-}
-
-function isRecentlyShown(article, sinceHours) {
-  const cutoff = Date.now() - sinceHours * 60 * 60 * 1000;
-  const url = canonicalUrl(article.url);
-  const hash = titleHash(article.title);
-  return runtime.newsRotation.shown.some((entry) => {
-    if (entry.shownAt && Date.parse(entry.shownAt) < cutoff) return false;
-    if (url && canonicalUrl(entry.url) === url) return true;
-    return entry.titleHash === hash;
-  });
-}
-
-function filterByRotation(candidates, minHours) {
-  return candidates.filter((article) => !isRecentlyShown(article, minHours));
-}
-
-function selectNewsItems(candidates, slotKey) {
-  let pool = filterByRotation(candidates, NEWS_SHOWN_RECALL_HOURS);
-  if (pool.length < NEWS_MIN_ITEMS) {
-    pool = filterByRotation(candidates, NEWS_SHOWN_FALLBACK_HOURS);
-  }
-
-  const byCategory = new Map();
-  for (const article of pool) {
-    const group = categoryForRotation(article.category);
-    if (!byCategory.has(group)) byCategory.set(group, []);
-    byCategory.get(group).push(article);
-  }
-
-  for (const list of byCategory.values()) {
-    list.sort((left, right) => {
-      const score = categoryPriority(right.category) - categoryPriority(left.category);
-      if (score !== 0) return score;
-      return Date.parse(right.publishedAt) - Date.parse(left.publishedAt);
-    });
-  }
-
-  const selected = [];
-  const usedUrls = new Set();
-  const usedHashes = new Set();
-
-  function takeOne(group) {
-    const list = byCategory.get(group) || [];
-    for (let i = 0; i < list.length; i++) {
-      const article = list[i];
-      const url = canonicalUrl(article.url);
-      const hash = titleHash(article.title);
-      if (usedUrls.has(url) || usedHashes.has(hash)) continue;
-      selected.push(article);
-      if (url) usedUrls.add(url);
-      usedHashes.add(hash);
-      list.splice(i, 1);
-      return true;
-    }
-    return false;
-  }
-
-  takeOne('politics');
-  takeOne('economy');
-  takeOne('technology');
-  takeOne('culture');
-
-  const roundRobinGroups = ['politics', 'economy', 'technology', 'culture', 'general'];
-  const pointers = new Map(roundRobinGroups.map((group) => [group, 0]));
-
-  while (selected.length < NEWS_MAX_ITEMS) {
-    let addedInRound = false;
-    for (const group of roundRobinGroups) {
-      const list = byCategory.get(group) || [];
-      let pointer = pointers.get(group) || 0;
-      while (pointer < list.length) {
-        const article = list[pointer];
-        pointer++;
-        const url = canonicalUrl(article.url);
-        const hash = titleHash(article.title);
-        if (usedUrls.has(url) || usedHashes.has(hash)) continue;
-        selected.push(article);
-        if (url) usedUrls.add(url);
-        usedHashes.add(hash);
-        addedInRound = true;
-        break;
-      }
-      pointers.set(group, pointer);
-      if (selected.length >= NEWS_MAX_ITEMS) break;
-    }
-    if (!addedInRound) break;
-  }
-
-  if (selected.length < NEWS_MIN_ITEMS) {
-    const fallbackPool = candidates.filter((article) => {
-      const url = canonicalUrl(article.url);
-      const hash = titleHash(article.title);
-      return !usedUrls.has(url) && !usedHashes.has(hash);
-    });
-    while (selected.length < NEWS_MIN_ITEMS && fallbackPool.length) {
-      const article = fallbackPool.shift();
-      const url = canonicalUrl(article.url);
-      const hash = titleHash(article.title);
-      if (usedUrls.has(url) || usedHashes.has(hash)) continue;
-      selected.push(article);
-      if (url) usedUrls.add(url);
-      usedHashes.add(hash);
-    }
-  }
-
-  selected.sort((left, right) => {
-    const order = { politics: 0, economy: 1, technology: 2, culture: 3, general: 4 };
-    const leftGroup = categoryForRotation(left.category);
-    const rightGroup = categoryForRotation(right.category);
-    const orderDiff = (order[leftGroup] ?? 9) - (order[rightGroup] ?? 9);
-    if (orderDiff !== 0) return orderDiff;
-    return Date.parse(right.publishedAt) - Date.parse(left.publishedAt);
-  });
-
-  return selected;
-}
-
 async function recordShownItems(items, slotKey) {
   const now = new Date().toISOString();
   const retentionCutoff = Date.now() - NEWS_SHOWN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  runtime.newsRotation.shown = runtime.newsRotation.shown.filter((entry) => {
+  runtime.newsRotation.shown = runtime.newsRotation.shown.filter(entry => {
     return entry.shownAt && Date.parse(entry.shownAt) >= retentionCutoff;
   });
-
   for (const item of items) {
     runtime.newsRotation.shown.push({
       url: canonicalUrl(item.url),
@@ -1135,23 +946,16 @@ async function recordShownItems(items, slotKey) {
       title: truncateText(item.title, 120),
       category: item.category,
       slotKey,
-      shownAt: now,
+      shownAt: now
     });
   }
-
   runtime.newsRotation.updatedAt = now;
-  await writeJson(NEWS_ROTATION_FILE, runtime.newsRotation).catch((error) => {
+  await writeJson(NEWS_ROTATION_FILE, runtime.newsRotation).catch(error => {
     console.log(`news rotation state write failed: ${error.message}`);
   });
 }
-
 const BLOCKLIST_WORDS = /porn|nude|nudity|naked|sex|sexy|erotic|adult|bikini|lingerie|nsfw|xxx|model|glamour|swimsuit|裸|色情|成人|性感|比基尼|内衣|写真|私房/gi;
-
-const PROTECTED_ENTITIES = [
-  'OpenAI', 'ChatGPT', 'iPhone', 'TikTok', 'NATO', 'GDP', 'CPI', 'IMF',
-  'ECB', 'NASA', 'FBI', 'CIA', 'IPO', 'ETF', 'CEO',
-];
-
+const PROTECTED_ENTITIES = ['OpenAI', 'ChatGPT', 'iPhone', 'TikTok', 'NATO', 'GDP', 'CPI', 'IMF', 'ECB', 'NASA', 'FBI', 'CIA', 'IPO', 'ETF', 'CEO'];
 function normalizeEntitiesAndAcronyms(text) {
   if (!text) return text;
   let s = String(text);
@@ -1160,14 +964,11 @@ function normalizeEntitiesAndAcronyms(text) {
   s = s.replace(/N\s+A\s+T\s+O/g, 'NATO');
   return s;
 }
-
 function isTextSemanticallyComplete(title, summary, translationStatus) {
   const reasons = [];
   if (!title || !title.trim()) reasons.push('EMPTY_TITLE');
-
   const tHasChinese = /[\u4e00-\u9fff]/.test(title);
   const sHasChinese = /[\u4e00-\u9fff]/.test(summary);
-
   if (!tHasChinese && !sHasChinese) {
     if (title && title.trim()) reasons.push('NON_CHINESE_CONTENT');
   }
@@ -1176,7 +977,6 @@ function isTextSemanticallyComplete(title, summary, translationStatus) {
   if ((translationStatus === 'translated' || translationStatus === 'cached') && !tHasChinese) {
     reasons.push('TRANSLATED_TITLE_NOT_CHINESE');
   }
-
   if (tHasChinese) {
     const chars = [...title];
     if (chars.length < 4) reasons.push('TITLE_TOO_SHORT(' + chars.length + ')');
@@ -1192,7 +992,6 @@ function isTextSemanticallyComplete(title, summary, translationStatus) {
       reasons.push('TITLE_NOT_CHINESE_BUT_SUMMARY_IS');
     }
   }
-
   if (summary && summary.trim()) {
     const sChars = [...summary];
     const sHasChinese = /[\u4e00-\u9fff]/.test(summary);
@@ -1206,14 +1005,14 @@ function isTextSemanticallyComplete(title, summary, translationStatus) {
       reasons.push('TRANSLATED_SUMMARY_NOT_CHINESE');
     }
   }
-
-  return { complete: reasons.length === 0, reasons: reasons };
+  return {
+    complete: reasons.length === 0,
+    reasons: reasons
+  };
 }
-
 function rewriteNewsTitle(article) {
   let title = String(article.zhTitle || article.title || '');
   if (!title.trim()) return '新闻';
-
   title = normalizeEntitiesAndAcronyms(title);
   title = title.replace(/[「『【】」』]/g, ' ').trim();
   title = title.replace(/^[-–—|•\s]+|[-–—|•\s]+$/g, '').trim();
@@ -1232,7 +1031,6 @@ function rewriteNewsTitle(article) {
   title = title.replace(/\s*[（(]\s*(更新中|图|视频|音频|完整版|现场)\s*[）)]/g, '');
   title = title.replace(/\s*\[(圖|图|视频|音频|完整版|更新)\]\s*/g, '');
   title = title.replace(/\s{2,}/g, ' ').trim();
-
   if (!/[\u4e00-\u9fff]/.test(title)) {
     if (title.length > 40) {
       // 按分隔符切，取第一个长度 >10 的段（之前只看 parts[0]，遇 "Breaking: Foo — Bar"
@@ -1242,12 +1040,20 @@ function rewriteNewsTitle(article) {
       if (title.length > 35) title = title.split(/\s+/).slice(0, 6).join(' ');
     }
     if (title.length > 55) {
-      // 按 code point 切，避免 emoji/astral plane 字符被切坏产生孤立 surrogate
-      title = [...title].slice(0, 55).join('');
+      if (runtime.titleSummarizer) {
+         // use summarizer but since we are just rewriting here and might not have full context,
+         // we let summarizeTitle do the semantic truncation if needed.
+         const titleFont = 24;
+         const maxWidth = Math.floor((800 - 14 * 2 - 12) / 2) - 12;
+         const sumRes = runtime.titleSummarizer.summarizeTitle(title, maxWidth, titleFont);
+         title = sumRes.suggestedTitle;
+      } else {
+         // 按 code point 切，避免 emoji/astral plane 字符被切坏产生孤立 surrogate
+         title = [...title].slice(0, 55).join('');
+      }
     }
     return title || '新闻';
   }
-
   const chars = [...title];
   if (chars.length <= 24) {
     const trailMatch = title.match(/(?:^|[^\u4e00-\u9fff])[A-Za-z][a-z]{0,3}$/);
@@ -1266,19 +1072,20 @@ function rewriteNewsTitle(article) {
     }
     return title;
   }
-
   const boundaryChars = ['。', '！', '？', '；', '：', '，', '—', '–', '|', '｜'];
-  let bestCut = -1, bestScore = -1;
-
+  let bestCut = -1,
+    bestScore = -1;
   for (let pos = 24; pos >= 12; pos--) {
     const ch = chars[pos];
     const idx = boundaryChars.indexOf(ch);
     if (idx >= 0) {
       const score = idx < 3 ? 10 : idx < 5 ? 7 : 4;
-      if (score > bestScore) { bestScore = score; bestCut = pos; }
+      if (score > bestScore) {
+        bestScore = score;
+        bestCut = pos;
+      }
     }
   }
-
   if (bestCut > 0) {
     title = chars.slice(0, bestCut).join('').trim();
     if (title.endsWith('，') || title.endsWith('：')) title = title.slice(0, -1).trim();
@@ -1286,22 +1093,18 @@ function rewriteNewsTitle(article) {
     const openQuote = /['"「『""]$/;
     if (!hangingEnd.test(title) && !openQuote.test(title)) return title || '新闻';
   }
-
   for (let p = 22; p >= 12; p--) {
     const c = chars.slice(0, p).join('').trim();
     const hangingEnd = /(的|为|在|向|与|和|及|将|以|从|对|把|被|让|给|由|于|关于|成为|进行|宣布|宣布将|认定|推出|属于|位于|进入|使用|要求|开始)$/;
     const openQuote = /['"「『""]$/;
     if (!hangingEnd.test(c) && !openQuote.test(c)) return c;
   }
-
   return chars.slice(0, 20).join('').trim() || '新闻';
 }
-
 function rewriteNewsSummary(article) {
   let raw = String(article.zhSummary || article.summary || '');
   if (!raw.trim() && article.rawContent) raw = article.rawContent;
   if (!raw.trim()) return '';
-
   raw = normalizeEntitiesAndAcronyms(raw);
   raw = raw.replace(/\s*\(?(?:Photo|Image|Picture|Credit|Source|AP|Reuters|AFP|Getty|EPA|Bloomberg)[^。)（]*?\)?\.?\s*/g, '');
   raw = raw.replace(/\s*Continue reading\.\.\..*$/gi, '');
@@ -1322,10 +1125,8 @@ function rewriteNewsSummary(article) {
   // 之前为 75，与 admin UI 56 不符：admin 显示"过长"红字但 server 接受，
   // SVG 渲染时第 3 行又被截断。统一为 56 消除三处不一致。
   var MAX_SUMMARY_LEN = 56;
-
   let s = raw;
   const totalRawLen = [...raw].length;
-
   if (totalRawLen < 45 && article.rawContent && [...article.rawContent].length > totalRawLen) {
     let rc = String(article.rawContent).trim();
     rc = rc.replace(/^.*?\d{1,2}\s*月\s*\d{1,2}\s*日\s*.*?(消息|报道|讯)[，。、]?\s*/g, '');
@@ -1333,19 +1134,15 @@ function rewriteNewsSummary(article) {
     rc = rc.replace(/^[-–—|•\s]+/g, '').trim();
     if ([...rc].length > totalRawLen + 5) s = rc;
   }
-
   s = s.replace(/\s{2,}/g, ' ').trim();
   if (!s) return '';
-
   const chars = [...s];
-
   if (chars.length <= MAX_SUMMARY_LEN) {
     if (chars.length > 0 && !/[。！？]/.test(chars[chars.length - 1])) {
       return s + '。';
     }
     return s;
   }
-
   const sentenceEnds = ['。', '！', '？', '；'];
   const sentences = [];
   let currentStart = 0;
@@ -1356,10 +1153,9 @@ function rewriteNewsSummary(article) {
     }
   }
   if (currentStart < chars.length) sentences.push(chars.slice(currentStart).join(''));
-
   let result = '';
   for (const sent of sentences) {
-    const nextLen = [...result + sent].length;
+    const nextLen = [...(result + sent)].length;
     if (nextLen <= MAX_SUMMARY_LEN) {
       result += sent;
     } else if ([...result].length >= 40) {
@@ -1371,26 +1167,24 @@ function rewriteNewsSummary(article) {
       const lastComma = Math.max(sent.slice(0, takeLen).lastIndexOf('，'), sent.slice(0, takeLen).lastIndexOf('、'));
       if (lastComma > 3) {
         const part = sentChars.slice(0, lastComma).join('') + '。';
-        if ([...result + part].length <= MAX_SUMMARY_LEN) { result += part; break; }
+        if ([...(result + part)].length <= MAX_SUMMARY_LEN) {
+          result += part;
+          break;
+        }
       }
       break;
     }
   }
-
   if (!result) result = sentences[0] || s;
-
   const rChars = [...result];
   if (rChars.length > 0 && !/[。！？]/.test(rChars[rChars.length - 1])) {
     result += '。';
   }
-
   return result;
 }
-
 function translationCacheKey(article) {
   return sha1([TRANSLATION_PROVIDER, article.language, article.source, article.url || article.title, article.title, article.summary].join('|'));
 }
-
 async function translateArticle(article) {
   const language = String(article.language || '').toLowerCase();
   if (!language || language.startsWith('zh')) {
@@ -1400,10 +1194,9 @@ async function translateArticle(article) {
       originalSummary: article.summary,
       zhTitle: article.title,
       zhSummary: article.summary,
-      translationStatus: 'original',
+      translationStatus: 'original'
     };
   }
-
   if (TRANSLATION_PROVIDER === 'none') {
     console.log(`translation disabled, using original text for ${article.source}: ${article.title || article.url || ''}`);
     return {
@@ -1412,10 +1205,9 @@ async function translateArticle(article) {
       originalSummary: article.summary,
       zhTitle: article.title,
       zhSummary: article.summary,
-      translationStatus: 'disabled',
+      translationStatus: 'disabled'
     };
   }
-
   if (TRANSLATION_PROVIDER === 'openai' && !OPENAI_API_KEY) {
     return {
       ...article,
@@ -1423,10 +1215,9 @@ async function translateArticle(article) {
       originalSummary: article.summary,
       zhTitle: article.title,
       zhSummary: article.summary,
-      translationStatus: 'missing-key',
+      translationStatus: 'missing-key'
     };
   }
-
   if (TRANSLATION_PROVIDER === 'gemini' && !GEMINI_API_KEY && !OPENAI_API_KEY) {
     return {
       ...article,
@@ -1434,10 +1225,9 @@ async function translateArticle(article) {
       originalSummary: article.summary,
       zhTitle: article.title,
       zhSummary: article.summary,
-      translationStatus: 'missing-key',
+      translationStatus: 'missing-key'
     };
   }
-
   if (TRANSLATION_PROVIDER === 'deepl' && !DEEPL_API_KEY) {
     return {
       ...article,
@@ -1445,10 +1235,9 @@ async function translateArticle(article) {
       originalSummary: article.summary,
       zhTitle: article.title,
       zhSummary: article.summary,
-      translationStatus: 'missing-key',
+      translationStatus: 'missing-key'
     };
   }
-
   const cacheKey = translationCacheKey(article);
   const cached = runtime.newsCache.translations?.[cacheKey];
   if (cached) {
@@ -1458,20 +1247,19 @@ async function translateArticle(article) {
       originalSummary: article.summary,
       zhTitle: cached.zhTitle || article.title,
       zhSummary: cached.zhSummary || article.summary,
-      translationStatus: 'cached',
+      translationStatus: 'cached'
     };
   }
-
   try {
     const translated = await translateWithProvider(article);
     runtime.newsCache.translations = runtime.newsCache.translations || {};
     runtime.newsCache.translations[cacheKey] = {
       ...translated,
       provider: TRANSLATION_PROVIDER,
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
     runtime.newsCache.updatedAt = new Date().toISOString();
-    await writeJson(NEWS_CACHE_FILE, runtime.newsCache).catch((error) => {
+    await writeJson(NEWS_CACHE_FILE, runtime.newsCache).catch(error => {
       console.log(`news cache write failed: ${error.message}`);
     });
     return {
@@ -1480,7 +1268,7 @@ async function translateArticle(article) {
       originalSummary: article.summary,
       zhTitle: translated.zhTitle || article.title,
       zhSummary: translated.zhSummary || article.summary,
-      translationStatus: 'translated',
+      translationStatus: 'translated'
     };
   } catch (error) {
     console.log(`translation failed [${article.source}] ${article.url || article.title}: ${error.message}`);
@@ -1490,11 +1278,10 @@ async function translateArticle(article) {
       originalSummary: article.summary,
       zhTitle: article.title,
       zhSummary: article.summary,
-      translationStatus: 'failed',
+      translationStatus: 'failed'
     };
   }
 }
-
 async function translateWithProvider(article) {
   if (TRANSLATION_PROVIDER === 'openai') {
     if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY missing');
@@ -1502,19 +1289,24 @@ async function translateWithProvider(article) {
       method: 'POST',
       headers: {
         authorization: `Bearer ${OPENAI_API_KEY}`,
-        'content-type': 'application/json',
+        'content-type': 'application/json'
       },
       body: JSON.stringify({
         model: OPENAI_MODEL,
         temperature: 0,
-        messages: [
-          {
-            role: 'system',
-            content: '将新闻翻译并重写成简体中文简报。标题不超过24个汉字，必须是一行能读完的完整句子，不能以"的/为/在/向/与/和/及/将/以/从/对/把/被/让/给/由/于"等虚词结尾。摘要45-56个汉字，保留核心事实，以句号结尾。只返回JSON：{"zhTitle":"...","zhSummary":"..."}',
-          },
-          { role: 'user', content: JSON.stringify({ title: article.title, summary: article.summary, source: article.source, category: article.category }) },
-        ],
-      }),
+        messages: [{
+          role: 'system',
+          content: '将新闻翻译并重写成简体中文简报。标题不超过24个汉字，必须是一行能读完的完整句子，不能以"的/为/在/向/与/和/及/将/以/从/对/把/被/让/给/由/于"等虚词结尾。摘要45-56个汉字，保留核心事实，以句号结尾。只返回JSON：{"zhTitle":"...","zhSummary":"..."}'
+        }, {
+          role: 'user',
+          content: JSON.stringify({
+            title: article.title,
+            summary: article.summary,
+            source: article.source,
+            category: article.category
+          })
+        }]
+      })
     });
     if (!response.ok) throw new Error(`OpenAI HTTP ${response.status}`);
     const data = await response.json();
@@ -1522,10 +1314,9 @@ async function translateWithProvider(article) {
     const parsed = parseJsonObject(content) || {};
     return {
       zhTitle: normalizeText(parsed.zhTitle || parsed.title || article.title),
-      zhSummary: normalizeText(parsed.zhSummary || parsed.summary || article.summary),
+      zhSummary: normalizeText(parsed.zhSummary || parsed.summary || article.summary)
     };
   }
-
   if (TRANSLATION_PROVIDER === 'deepl') {
     if (!DEEPL_API_KEY) throw new Error('DEEPL_API_KEY missing');
     const params = new URLSearchParams();
@@ -1535,18 +1326,19 @@ async function translateWithProvider(article) {
     params.set('target_lang', 'ZH');
     const response = await fetch(DEEPL_API_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded'
+      },
+      body: params.toString()
     });
     if (!response.ok) throw new Error(`DeepL HTTP ${response.status}`);
     const data = await response.json();
-    const translations = Array.isArray(data.translations) ? data.translations.map((item) => normalizeText(item.text)) : [];
+    const translations = Array.isArray(data.translations) ? data.translations.map(item => normalizeText(item.text)) : [];
     return {
       zhTitle: translations[0] || article.title,
-      zhSummary: translations[1] || article.summary,
+      zhSummary: translations[1] || article.summary
     };
   }
-
   if (TRANSLATION_PROVIDER === 'gemini') {
     const apiKey = GEMINI_API_KEY || OPENAI_API_KEY;
     const baseUrl = GEMINI_API_BASE || OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com';
@@ -1556,38 +1348,58 @@ async function translateWithProvider(article) {
     let url, headers, body;
     if (isOpenAICompat) {
       url = `${baseUrl}/chat/completions`;
-      headers = { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' };
+      headers = {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json'
+      };
       body = JSON.stringify({
-        model, temperature: 0,
-        messages: [
-          { role: 'system', content: '将英文/法文新闻改写成简体中文。标题12-24字，不能以"的/为/在/向/与/和/及/将/以/从/对/把/被/让/给/由/于"等虚词结尾。摘要45-56字中文，以句号结尾。只返回JSON：{"title":"...","summary":"..."}' },
-          { role: 'user', content: JSON.stringify({ title: article.title, summary: article.summary, source: article.source }) },
-        ],
+        model,
+        temperature: 0,
+        messages: [{
+          role: 'system',
+          content: '将英文/法文新闻改写成简体中文。标题12-24字，不能以"的/为/在/向/与/和/及/将/以/从/对/把/被/让/给/由/于"等虚词结尾。摘要45-56字中文，以句号结尾。只返回JSON：{"title":"...","summary":"..."}'
+        }, {
+          role: 'user',
+          content: JSON.stringify({
+            title: article.title,
+            summary: article.summary,
+            source: article.source
+          })
+        }]
       });
     } else {
       url = `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      headers = { 'content-type': 'application/json' };
+      headers = {
+        'content-type': 'application/json'
+      };
       body = JSON.stringify({
-        contents: [{ parts: [{ text: `将英文/法文新闻改写成简体中文。标题：12-24字，保留核心信息，不能以"的/为/在/向/与/和/及/将/以/从/对/把/被/让/给/由/于"等虚词结尾。摘要：45-56字中文，回答：发生了什么、谁相关、影响，以句号结尾。\n\n原文标题：${article.title}\n原文摘要：${article.summary}\n来源：${article.source}\n\n只返回JSON：{"title":"...","summary":"..."}` }] }],
-        generationConfig: { temperature: 0 },
+        contents: [{
+          parts: [{
+            text: `将英文/法文新闻改写成简体中文。标题：12-24字，保留核心信息，不能以"的/为/在/向/与/和/及/将/以/从/对/把/被/让/给/由/于"等虚词结尾。摘要：45-56字中文，回答：发生了什么、谁相关、影响，以句号结尾。\n\n原文标题：${article.title}\n原文摘要：${article.summary}\n来源：${article.source}\n\n只返回JSON：{"title":"...","summary":"..."}`
+          }]
+        }],
+        generationConfig: {
+          temperature: 0
+        }
       });
     }
-    const response = await fetch(url, { method: 'POST', headers, body });
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body
+    });
     if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
     const data = await response.json();
     let content = '';
-    if (isOpenAICompat) content = data?.choices?.[0]?.message?.content || '';
-    else content = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
+    if (isOpenAICompat) content = data?.choices?.[0]?.message?.content || '';else content = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
     const parsed = parseJsonObject(content) || {};
     return {
       zhTitle: normalizeText(parsed.title || parsed.zhTitle || article.title),
-      zhSummary: normalizeText(parsed.summary || parsed.zhSummary || article.summary),
+      zhSummary: normalizeText(parsed.summary || parsed.zhSummary || article.summary)
     };
   }
-
   throw new Error(`Unsupported TRANSLATION_PROVIDER=${TRANSLATION_PROVIDER}`);
 }
-
 function parseJsonObject(text) {
   const raw = String(text || '').trim();
   if (!raw) return null;
@@ -1602,18 +1414,29 @@ function parseJsonObject(text) {
     return null;
   }
 }
-
 function evaluateNewsItemQuality(item) {
   const title = item.zhTitle || '';
   const summary = item.zhSummary || '';
   const tLen = [...title].length;
   const sLen = [...summary].length;
-  const reasons = { title: [], summary: [] };
+  const reasons = {
+    title: [],
+    summary: []
+  };
   const danglingInvestment = /(计划|拟|将|准备|继续|开始|推进|加大|扩大)投资$/;
-
-  if (!title.trim()) { reasons.title.push('EMPTY_TITLE'); }
-  if (tLen > 24) reasons.title.push('TOO_LONG(' + tLen + ')');
-
+  if (!title.trim()) {
+    reasons.title.push('EMPTY_TITLE');
+  }
+  
+  if (runtime.titleSummarizer) {
+     const titleFont = 24;
+     const cardW = Math.floor((800 - 14 * 2 - 12) / 2); // 380
+     const maxWidth = cardW - 12; // 368
+     const width = runtime.titleSummarizer.measureTextWidthPixels(title, titleFont);
+     if (width > maxWidth) reasons.title.push('TOO_WIDE(' + Math.round(width) + 'px > ' + maxWidth + 'px)');
+  } else {
+     if (tLen > 24) reasons.title.push('TOO_LONG(' + tLen + ')');
+  }
   const badEndings = /(的|为|在|向|与|和|及|将|以|从|对|把|被|让|给|由|于|关于|成为|进行|宣布|宣布将|认定|推出|属于|位于|进入|使用|要求|开始)$/;
   if (badEndings.test(title)) reasons.title.push('BAD_END');
   if (danglingInvestment.test(title)) reasons.title.push('DANGLING_INVESTMENT');
@@ -1621,11 +1444,9 @@ function evaluateNewsItemQuality(item) {
   if (/\d+$/.test(title)) reasons.title.push('DIGIT_END');
   if (/(让|使|令|帮助|助)[^，。！？，\s]{1,8}$/.test(title)) reasons.title.push('DANGLING_CAUSATIVE');
   if (/^[\d.万元%$€¥\s]+$/.test(title.replace(/[，,、\s]/g, '')) || /^[预]?(售|约|计)\s/.test(title)) reasons.title.push('NO_SUBJECT');
-
-  const quotedParts = (title.match(/["「『""』」][^"「『""』」]+["「『""』」]/g) || []);
+  const quotedParts = title.match(/["「『""』」][^"「『""』」]+["「『""』」]/g) || [];
   const quotedLen = quotedParts.reduce((s, p) => s + [...p].length, 0);
   if (tLen > 0 && quotedLen / tLen > 0.45 && !title.match(/[公司集团全球国际政府美国中国日本欧盟]/)) reasons.title.push('LOW_INFO_QUOTE');
-
   if (!summary.trim()) reasons.summary.push('EMPTY_SUMMARY');
   if (sLen < 45) reasons.summary.push('SHORT_SUMMARY(' + sLen + ')');
   // 与 rewriteNewsSummary 的 MAX_SUMMARY_LEN(56) 对齐。之前为 75 但
@@ -1633,16 +1454,21 @@ function evaluateNewsItemQuality(item) {
   if (sLen > 56) reasons.summary.push('LONG_SUMMARY(' + sLen + ')');
   if (/(Read more|Continue reading)/i.test(summary)) reasons.summary.push('HAS_READMORE');
   if (/<[^>]+>/.test(summary)) reasons.summary.push('HAS_HTML');
-
   const titleComplete = reasons.title.length === 0;
   const summaryComplete = reasons.summary.length === 0;
   const summaryFallback = !summaryComplete && sLen > 0 && sLen < 45 && reasons.summary.length <= 1;
-
-  const score = titleComplete ? (summaryComplete ? 100 : summaryFallback ? 50 : 30) : 0;
-
-  return { titleComplete, summaryComplete, summaryFallback, titleReason: reasons.title.join(','), summaryReason: reasons.summary.join(','), score, titleLen: tLen, summaryLen: sLen };
+  const score = titleComplete ? summaryComplete ? 100 : summaryFallback ? 50 : 30 : 0;
+  return {
+    titleComplete,
+    summaryComplete,
+    summaryFallback,
+    titleReason: reasons.title.join(','),
+    summaryReason: reasons.summary.join(','),
+    score,
+    titleLen: tLen,
+    summaryLen: sLen
+  };
 }
-
 async function buildNewsSnapshot(now, opts) {
   opts = opts || {};
   const key = `news:${formatDateKey(now)}:${Math.floor(now.getTime() / (NEWS_REFRESH_MINUTES * 60 * 1000))}`;
@@ -1651,10 +1477,8 @@ async function buildNewsSnapshot(now, opts) {
   // 但磁盘一个字节没变，审查页 /api/admin/news 永远显示旧 draft 内容——
   // 这正是用户报告"显示后台拉取但审查页没新内容"的根因。
   if (!opts.force && runtime.cachedSnapshots.has(key)) return runtime.cachedSnapshots.get(key);
-
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
   const slotKey = snapshot.slotKey || `news:${formatDateKey(now)}`;
-
   const rawItems = await loadNewsCandidates();
   const selected = selectNewsItems(rawItems, slotKey);
   // NOTE: recordShownItems 之前在这里调用，会把 selectNewsItems 选中的全部 url
@@ -1663,16 +1487,25 @@ async function buildNewsSnapshot(now, opts) {
   // 现在把 recordShownItems 移到 final 确定后（L1810+），只记录真正进入 final
   // 的项。selectNewsItems 的 rotation 过滤仍正常工作（它读旧 rotation）。
 
-  const stats = { rawCandidates: rawItems.length, deduped: 0, evaluated: 0, pass: 0, softPass: 0, rejectTitle: 0, rejectSummary: 0, rejectSemantic: 0, final: 0, rejects: [] };
+  const stats = {
+    rawCandidates: rawItems.length,
+    deduped: 0,
+    evaluated: 0,
+    pass: 0,
+    softPass: 0,
+    rejectTitle: 0,
+    rejectSummary: 0,
+    rejectSemantic: 0,
+    final: 0,
+    rejects: []
+  };
   const seenKeys = new Map();
-
   function isDuplicate(entry) {
     const key = (entry.zhTitle || entry.title || '').replace(/[\s]/g, '').toLowerCase().slice(0, 12);
     if (seenKeys.has(key)) return true;
     seenKeys.set(key, true);
     return false;
   }
-
   const mainPool = [];
   for (const item of selected) {
     const result = await translateArticle(item);
@@ -1688,12 +1521,15 @@ async function buildNewsSnapshot(now, opts) {
       } else {
         stats.rejectSemantic++;
         if (stats.rejects.length < 5) {
-          stats.rejects.push({ title: result.zhTitle || result.title || '', source: result.source || '', reason: 'SEMANTIC:' + semanticCheck.reasons.join(',') });
+          stats.rejects.push({
+            title: result.zhTitle || result.title || '',
+            source: result.source || '',
+            reason: 'SEMANTIC:' + semanticCheck.reasons.join(',')
+          });
         }
       }
     }
   }
-
   if (mainPool.length < NEWS_MAX_ITEMS) {
     for (const item of rawItems) {
       const lang = String(item.language || '').toLowerCase();
@@ -1702,7 +1538,14 @@ async function buildNewsSnapshot(now, opts) {
       const key = (item.title || '').replace(/[\s]/g, '').toLowerCase().slice(0, 12);
       if (seenKeys.has(key)) continue;
       seenKeys.set(key, true);
-      const entry = { ...item, originalTitle: item.title, originalSummary: item.summary, zhTitle: item.title, zhSummary: item.summary, translationStatus: 'original' };
+      const entry = {
+        ...item,
+        originalTitle: item.title,
+        originalSummary: item.summary,
+        zhTitle: item.title,
+        zhSummary: item.summary,
+        translationStatus: 'original'
+      };
       entry.zhTitle = rewriteNewsTitle(entry);
       entry.zhSummary = rewriteNewsSummary(entry);
       const semanticCheck = isTextSemanticallyComplete(entry.zhTitle, entry.zhSummary, 'original');
@@ -1711,49 +1554,52 @@ async function buildNewsSnapshot(now, opts) {
       } else {
         stats.rejectSemantic++;
         if (stats.rejects.length < 5) {
-          stats.rejects.push({ title: entry.zhTitle || entry.title || '', source: entry.source || '', reason: 'SEMANTIC:' + semanticCheck.reasons.join(',') });
+          stats.rejects.push({
+            title: entry.zhTitle || entry.title || '',
+            source: entry.source || '',
+            reason: 'SEMANTIC:' + semanticCheck.reasons.join(',')
+          });
         }
       }
     }
   }
-
   stats.deduped = mainPool.length;
-
   const passItems = [];
   const softPassItems = [];
-
   for (const item of mainPool) {
     stats.evaluated++;
     const quality = evaluateNewsItemQuality(item);
     if (quality.titleComplete && quality.summaryComplete) {
-      passItems.push({ item, quality });
+      passItems.push({
+        item,
+        quality
+      });
       stats.pass++;
     } else if (quality.titleComplete && quality.summaryFallback) {
-      softPassItems.push({ item, quality });
+      softPassItems.push({
+        item,
+        quality
+      });
       stats.softPass++;
     } else {
       if (!quality.titleComplete) stats.rejectTitle++;
       if (!quality.summaryComplete) stats.rejectSummary++;
       if (stats.rejects.length < 5) {
-        stats.rejects.push({ title: item.zhTitle || item.title || '', source: item.source || '', reason: quality.titleReason || quality.summaryReason || 'QUALITY_FAIL' });
+        stats.rejects.push({
+          title: item.zhTitle || item.title || '',
+          source: item.source || '',
+          reason: quality.titleReason || quality.summaryReason || 'QUALITY_FAIL'
+        });
       }
     }
   }
-
-  function canonicalUrl(u) {
-    if (!u) return '';
-    return String(u).replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/^https?:\/\//, '').toLowerCase().trim();
-  }
-
   function normalizeDedupKey(text) {
     return (text || '').replace(/[\s,，。！？、；：""''「『」』（）()【】\[\]\{\}]/g, '').toLowerCase().trim();
   }
-
   const final = [];
   const sourceCount = new Map();
   const seenUrls = new Set();
   const seenTitles = new Set();
-
   function isDuplicate(item) {
     const url = canonicalUrl(item.sourceUrl || item.url || '');
     if (url && seenUrls.has(url)) return true;
@@ -1763,7 +1609,6 @@ async function buildNewsSnapshot(now, opts) {
     if (zhTitle && origTitle && zhTitle !== origTitle && seenTitles.has(zhTitle)) return true;
     return false;
   }
-
   function markSeen(item) {
     const url = canonicalUrl(item.sourceUrl || item.url || '');
     if (url) seenUrls.add(url);
@@ -1772,9 +1617,10 @@ async function buildNewsSnapshot(now, opts) {
     const zhTitle = normalizeDedupKey(item.zhTitle || '');
     if (zhTitle) seenTitles.add(zhTitle);
   }
-
   function tryAdd(items) {
-    for (const { item } of items) {
+    for (const {
+      item
+    } of items) {
       if (final.length >= NEWS_MAX_ITEMS) break;
       if (isDuplicate(item)) continue;
       const src = item.source || '';
@@ -1784,10 +1630,8 @@ async function buildNewsSnapshot(now, opts) {
       final.push(item);
     }
   }
-
   tryAdd(passItems);
   tryAdd(softPassItems);
-
   if (final.length < NEWS_MAX_ITEMS) {
     for (const item of mainPool) {
       if (final.length >= NEWS_MAX_ITEMS) break;
@@ -1799,26 +1643,24 @@ async function buildNewsSnapshot(now, opts) {
       final.push(item);
     }
   }
-
   stats.final = final.length;
   runtime._newsPipelineStats = stats;
 
   // 只记录真正进入 final 的项，避免翻译失败被丢弃的 url 仍占用 24h rotation。
   // （从 L1638 的旧位置移到这里）
   if (final.length > 0) {
-    try { await recordShownItems(final, slotKey); } catch(e) { console.log('recordShownItems failed: ' + e.message); }
+    try {
+      await recordShownItems(final, slotKey);
+    } catch (e) {
+      console.log('recordShownItems failed: ' + e.message);
+    }
   }
-
-  const translationNotice = TRANSLATION_PROVIDER === 'none'
-    ? '翻译未启用'
-    : ((TRANSLATION_PROVIDER === 'openai' && !OPENAI_API_KEY) || (TRANSLATION_PROVIDER === 'deepl' && !DEEPL_API_KEY) || (TRANSLATION_PROVIDER === 'gemini' && !GEMINI_API_KEY && !OPENAI_API_KEY))
-      ? '翻译未配置'
-      : '';
+  const translationNotice = TRANSLATION_PROVIDER === 'none' ? '翻译未启用' : TRANSLATION_PROVIDER === 'openai' && !OPENAI_API_KEY || TRANSLATION_PROVIDER === 'deepl' && !DEEPL_API_KEY || TRANSLATION_PROVIDER === 'gemini' && !GEMINI_API_KEY && !OPENAI_API_KEY ? '翻译未配置' : '';
   const news = {
     translationProvider: TRANSLATION_PROVIDER,
     translationNotice,
     updatedAt: new Date().toISOString(),
-    items: final.map((item) => ({
+    items: final.map(item => ({
       originalTitle: item.originalTitle,
       originalSummary: item.originalSummary,
       // item.zhTitle/zhSummary 已在 mainPool 构建时（L1654-1655 或 L1676-1677）
@@ -1831,17 +1673,21 @@ async function buildNewsSnapshot(now, opts) {
       source: item.source,
       category: item.category,
       publishedAt: item.publishedAt,
-      translationStatus: item.translationStatus,
+      translationStatus: item.translationStatus
     })),
-    frameId: `news:${sha1(final.map((item) => [item.url, item.originalTitle, item.zhTitle].join('|')).join('||'))}`,
+    frameId: `news:${sha1(final.map(item => [item.url, item.originalTitle, item.zhTitle].join('|')).join('||'))}`,
     title: final[0] ? `${final[0].source} / ${final[0].category}` : 'NEWS',
-    slotKey,
+    slotKey
   };
 
   // Save last-good-news if we have enough items
   if (final.length >= NEWS_MAX_ITEMS) {
     runtime.lastGoodNews = news;
-    try { await writeJson(LAST_GOOD_NEWS_FILE, news); } catch(e) { console.log('last-good-news write failed: ' + e.message); }
+    try {
+      await writeJson(LAST_GOOD_NEWS_FILE, news);
+    } catch (e) {
+      console.log('last-good-news write failed: ' + e.message);
+    }
   }
 
   // Persist the wider candidate pool (mainPool minus final) so the admin
@@ -1850,23 +1696,30 @@ async function buildNewsSnapshot(now, opts) {
   // consumed by sel, leaving candidates=[] and breaking补位.
   if (mainPool && mainPool.length > 0) {
     try {
-      var candidatePool = mainPool
-        .filter(function(it) { return !final.some(function(f) { return f === it; }); })
-        .map(function(it) {
-          return {
-            source: it.source || '',
-            category: it.category || '',
-            title: it.zhTitle || it.originalTitle || it.title || '',
-            summary: it.zhSummary || it.originalSummary || it.summary || '',
-            url: it.url || it.sourceUrl || '',
-            publishedAt: it.publishedAt || '',
-            translationStatus: it.translationStatus || 'original',
-            originalTitle: it.originalTitle || '',
-            originalSummary: it.originalSummary || ''
-          };
+      var candidatePool = mainPool.filter(function (it) {
+        return !final.some(function (f) {
+          return f === it;
         });
-      await writeJson(path.join(DATA_DIR, 'news_candidates_pool.json'), { items: candidatePool, updatedAt: new Date().toISOString() });
-    } catch(e) { console.log('candidates pool write failed: ' + e.message); }
+      }).map(function (it) {
+        return {
+          source: it.source || '',
+          category: it.category || '',
+          title: it.zhTitle || it.originalTitle || it.title || '',
+          summary: it.zhSummary || it.originalSummary || it.summary || '',
+          url: it.url || it.sourceUrl || '',
+          publishedAt: it.publishedAt || '',
+          translationStatus: it.translationStatus || 'original',
+          originalTitle: it.originalTitle || '',
+          originalSummary: it.originalSummary || ''
+        };
+      });
+      await writeJson(path.join(DATA_DIR, 'news_candidates_pool.json'), {
+        items: candidatePool,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (e) {
+      console.log('candidates pool write failed: ' + e.message);
+    }
   }
 
   // If no items, fall back to last-good-news or built-in placeholder
@@ -1890,7 +1743,7 @@ async function buildNewsSnapshot(now, opts) {
         source: psrc,
         category: 'general',
         publishedAt: new Date().toISOString(),
-        translationStatus: 'placeholder',
+        translationStatus: 'placeholder'
       });
     }
     var fallbackNews = {
@@ -1900,16 +1753,14 @@ async function buildNewsSnapshot(now, opts) {
       items: placeholderItems,
       frameId: 'news:' + sha1('placeholder:' + Date.now()),
       title: 'STANDBY',
-      slotKey: snapshot.slotKey || 'standby',
+      slotKey: snapshot.slotKey || 'standby'
     };
     runtime.cachedSnapshots.set(key, fallbackNews);
     return fallbackNews;
   }
-
   runtime.cachedSnapshots.set(key, news);
   return news;
 }
-
 async function loadImageIndex() {
   try {
     const data = await readJson(IMAGE_INDEX_FILE, []);
@@ -1922,18 +1773,55 @@ async function loadImageIndex() {
     return [];
   }
 }
-
-var FALLBACK_STUDY_THEMES = [
-  { id: 'fb-dialogue-sb', theme: 'dialogue', kind: 'storyboard', title: 'Dialogue Framing - Rule of Thirds', lessonTags: ['rule-of-thirds', 'framing', 'dialogue'] },
-  { id: 'fb-wideshot', theme: 'wide_shot', kind: 'shot', title: 'Wide Shot - Establishing Context', lessonTags: ['wide-shot', 'establishing', 'composition'] },
-  { id: 'fb-entrance', theme: 'entrance', kind: 'shot', title: 'Entrance Framing - Full Body', lessonTags: ['entrance', 'full-shot', 'balance'] },
-  { id: 'fb-night', theme: 'night', kind: 'shot', title: 'Night Scene - Low Key', lessonTags: ['night', 'low-light', 'silhouette'] },
-  { id: 'fb-ensemble', theme: 'ensemble', kind: 'shot', title: 'Group Balance - Ensemble', lessonTags: ['ensemble', 'group', 'balance'] },
-  { id: 'fb-color', theme: 'color', kind: 'film_still', title: 'Color Harmony - Complementary', lessonTags: ['color', 'harmony', 'palette'] },
-  { id: 'fb-dialogue-ms', theme: 'dialogue', kind: 'shot', title: 'Medium Shot - Dialogue', lessonTags: ['medium-shot', 'over-shoulder', 'dialogue'] },
-  { id: 'fb-ensemble-sb', theme: 'ensemble', kind: 'storyboard', title: 'Blocking Layout - Storyboard', lessonTags: ['storyboard', 'blocking', 'layout'] },
-];
-
+var FALLBACK_STUDY_THEMES = [{
+  id: 'fb-dialogue-sb',
+  theme: 'dialogue',
+  kind: 'storyboard',
+  title: 'Dialogue Framing - Rule of Thirds',
+  lessonTags: ['rule-of-thirds', 'framing', 'dialogue']
+}, {
+  id: 'fb-wideshot',
+  theme: 'wide_shot',
+  kind: 'shot',
+  title: 'Wide Shot - Establishing Context',
+  lessonTags: ['wide-shot', 'establishing', 'composition']
+}, {
+  id: 'fb-entrance',
+  theme: 'entrance',
+  kind: 'shot',
+  title: 'Entrance Framing - Full Body',
+  lessonTags: ['entrance', 'full-shot', 'balance']
+}, {
+  id: 'fb-night',
+  theme: 'night',
+  kind: 'shot',
+  title: 'Night Scene - Low Key',
+  lessonTags: ['night', 'low-light', 'silhouette']
+}, {
+  id: 'fb-ensemble',
+  theme: 'ensemble',
+  kind: 'shot',
+  title: 'Group Balance - Ensemble',
+  lessonTags: ['ensemble', 'group', 'balance']
+}, {
+  id: 'fb-color',
+  theme: 'color',
+  kind: 'film_still',
+  title: 'Color Harmony - Complementary',
+  lessonTags: ['color', 'harmony', 'palette']
+}, {
+  id: 'fb-dialogue-ms',
+  theme: 'dialogue',
+  kind: 'shot',
+  title: 'Medium Shot - Dialogue',
+  lessonTags: ['medium-shot', 'over-shoulder', 'dialogue']
+}, {
+  id: 'fb-ensemble-sb',
+  theme: 'ensemble',
+  kind: 'storyboard',
+  title: 'Blocking Layout - Storyboard',
+  lessonTags: ['storyboard', 'blocking', 'layout']
+}];
 function generateFallbackStudySvg(entry) {
   var boxes = [];
   var bg = '#f5f3ee';
@@ -1941,12 +1829,27 @@ function generateFallbackStudySvg(entry) {
   var textColor = '#2c2c2c';
   var accentColor = '#8b7355';
   boxes.push('<rect width="800" height="480" fill="' + bg + '"/>');
-  var thirdsLines = [
-    { x1: 267, y1: 0, x2: 267, y2: 480 },
-    { x1: 533, y1: 0, x2: 533, y2: 480 },
-    { x1: 0, y1: 160, x2: 800, y2: 160 },
-    { x1: 0, y1: 320, x2: 800, y2: 320 },
-  ];
+  var thirdsLines = [{
+    x1: 267,
+    y1: 0,
+    x2: 267,
+    y2: 480
+  }, {
+    x1: 533,
+    y1: 0,
+    x2: 533,
+    y2: 480
+  }, {
+    x1: 0,
+    y1: 160,
+    x2: 800,
+    y2: 160
+  }, {
+    x1: 0,
+    y1: 320,
+    x2: 800,
+    y2: 320
+  }];
   for (var li = 0; li < thirdsLines.length; li++) {
     var l = thirdsLines[li];
     boxes.push('<line x1="' + l.x1 + '" y1="' + l.y1 + '" x2="' + l.x2 + '" y2="' + l.y2 + '" stroke="' + gridColor + '" stroke-width="1" stroke-dasharray="6,4"/>');
@@ -1970,18 +1873,18 @@ function generateFallbackStudySvg(entry) {
     boxes.push('<text x="400" y="460" text-anchor="middle" font-family="sans-serif" font-size="11" fill="' + accentColor + '">composition study card · ' + escapeXml(entry.lessonTags.join(' · ')) + '</text>');
   } else {
     // Shot: draw framing rectangle in center
-    var fw = 480, fh = 288;
-    boxes.push('<rect x="' + ((800 - fw) / 2) + '" y="' + ((480 - fh) / 2) + '" width="' + fw + '" height="' + fh + '" ' + frameStyle + ' rx="4"/>');
+    var fw = 480,
+      fh = 288;
+    boxes.push('<rect x="' + (800 - fw) / 2 + '" y="' + (480 - fh) / 2 + '" width="' + fw + '" height="' + fh + '" ' + frameStyle + ' rx="4"/>');
     if (entry.theme === 'wide_shot' || entry.theme === 'entrance') {
-      boxes.push('<rect x="' + ((800 - fw) / 2) + '" y="' + ((480 - fh) / 2) + '" width="' + (fw / 3) + '" height="' + fh + '" fill="#8b7355" opacity="0.08"/>');
-      boxes.push('<rect x="' + ((800 - fw) / 2 + fw * 2 / 3) + '" y="' + ((480 - fh) / 2) + '" width="' + (fw / 3) + '" height="' + fh + '" fill="#8b7355" opacity="0.08"/>');
+      boxes.push('<rect x="' + (800 - fw) / 2 + '" y="' + (480 - fh) / 2 + '" width="' + fw / 3 + '" height="' + fh + '" fill="#8b7355" opacity="0.08"/>');
+      boxes.push('<rect x="' + ((800 - fw) / 2 + fw * 2 / 3) + '" y="' + (480 - fh) / 2 + '" width="' + fw / 3 + '" height="' + fh + '" fill="#8b7355" opacity="0.08"/>');
     }
     boxes.push('<text x="400" y="36" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="bold" fill="' + textColor + '">' + escapeXml(entry.title) + '</text>');
     boxes.push('<text x="400" y="470" text-anchor="middle" font-family="sans-serif" font-size="11" fill="' + accentColor + '">composition study card · ' + escapeXml(entry.lessonTags.join(' · ')) + '</text>');
   }
   return '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480">' + boxes.join('') + '</svg>';
 }
-
 async function ensureFallbackStudyFrames() {
   if (runtime.fallbackStudyReady) return;
   await ensureDir(FALLBACK_STUDY_DIR);
@@ -1993,13 +1896,22 @@ async function ensureFallbackStudyFrames() {
     var epfPath = path.join(FALLBACK_STUDY_DIR, t.id + '.epf');
     if (!fs.existsSync(pngPath) || !fs.existsSync(epfPath)) {
       try {
-        var { data, info } = await sharp(Buffer.from(svgStr))
-          .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
-          .flatten({ background: '#ffffff' })
-          .raw()
-          .toBuffer({ resolveWithObject: true });
+        var {
+          data,
+          info
+        } = await sharp(Buffer.from(svgStr)).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+          fit: 'fill'
+        }).flatten({
+          background: '#ffffff'
+        }).raw().toBuffer({
+          resolveWithObject: true
+        });
         var epfBuf = imageToFrameBuffer(data, info.width, info.height, info.channels);
-        await fsp.writeFile(pngPath, await sharp(Buffer.from(svgStr)).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).flatten({ background: '#ffffff' }).png().toBuffer());
+        await fsp.writeFile(pngPath, await sharp(Buffer.from(svgStr)).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+          fit: 'fill'
+        }).flatten({
+          background: '#ffffff'
+        }).png().toBuffer());
         await fsp.writeFile(epfPath, epfBuf);
         console.log('generated fallback study frame: ' + t.id);
       } catch (genErr) {
@@ -2018,7 +1930,13 @@ async function ensureFallbackStudyFrames() {
       poolType: 'study_frames',
       safetyStatus: 'approved',
       rightsStatus: 'known',
-      rights: { author: 'Built-in', license: 'CC0', licenseUrl: '', usageTerms: 'Study use', sourcePageUrl: '' },
+      rights: {
+        author: 'Built-in',
+        license: 'CC0',
+        licenseUrl: '',
+        usageTerms: 'Study use',
+        sourcePageUrl: ''
+      },
       lessonTags: t.lessonTags,
       processedPngPath: pngPath,
       epfPath: epfPath,
@@ -2028,28 +1946,32 @@ async function ensureFallbackStudyFrames() {
       createdAt: new Date().toISOString(),
       lastShownAt: null,
       shownCount: 0,
-      metadata: { fallback: true, lessonTags: t.lessonTags },
-      hash: sha1(t.id),
+      metadata: {
+        fallback: true,
+        lessonTags: t.lessonTags
+      },
+      hash: sha1(t.id)
     });
   }
   runtime.fallbackStudyEntries = entries;
   runtime.fallbackStudyReady = true;
   console.log('fallback study frames ready: ' + entries.length + ' entries');
 }
-
 function selectableImages() {
-  return (runtime.fullImageIndex || runtime.imageIndex || []).filter(function(e) { return isImageReady(e) && isImageApproved(e); });
+  return (runtime.fullImageIndex || runtime.imageIndex || []).filter(function (e) {
+    return isImageReady(e) && isImageApproved(e);
+  });
 }
-
 function studySelectableImages() {
   var realEntries = (runtime.fullImageIndex || runtime.imageIndex || []).filter(isStudySelectable);
   if (realEntries.length > 0) return realEntries;
   if (runtime.fallbackStudyReady && runtime.fallbackStudyEntries) {
-    return runtime.fallbackStudyEntries.filter(function(e) { return fs.existsSync(e.processedPngPath); });
+    return runtime.fallbackStudyEntries.filter(function (e) {
+      return fs.existsSync(e.processedPngPath);
+    });
   }
   return [];
 }
-
 async function reloadImageIndexIfNeeded() {
   try {
     const stats = await fsp.stat(IMAGE_INDEX_FILE);
@@ -2060,48 +1982,11 @@ async function reloadImageIndexIfNeeded() {
     // image index may not exist yet
   }
 }
-
-function isImageReady(entry) {
-  if (!entry || !entry.id || !entry.theme) return false;
-  if (!entry.processedPngPath) return false;
-  // 路径解析统一：相对路径基于 ROOT_DIR，避免 cwd 不对时所有图片被判 not ready
-  var pp = entry.processedPngPath;
-  var ppAbs = path.isAbsolute(pp) ? pp : path.join(ROOT_DIR, pp);
-  if (!fs.existsSync(ppAbs)) return false;
-  if (entry.width !== FRAME_WIDTH || entry.height !== FRAME_HEIGHT) return false;
-  return true;
-}
-
-function isImageApproved(entry) {
-  // 项目无真实 NSFW 分类器运行时，safetyStatus 永远停留在 'pending'，
-  // 导致真实抓取图片永远无法进入自动轮播（电子纸只能显示 fallback study card）。
-  // 放宽为：approved 或 pending 都可选（rejected 不可选）。
-  // 若未来接入真实分类器，恢复为 entry.safetyStatus === 'approved'。
-  return entry && (entry.safetyStatus === 'approved' || entry.safetyStatus === 'pending' || !entry.safetyStatus);
-}
-
-function isStudySelectable(entry) {
-  return isImageReady(entry) && isImageApproved(entry) && entry.poolType === 'study_frames';
-}
-
-function getImageKind(entry) {
-  return entry && entry.kind === 'storyboard' ? 'storyboard' : 'shot';
-}
-
-function groupImagesByKindAndTheme(imageIndex) {
-  const result = { shot: new Map(), storyboard: new Map() };
-  for (const entry of imageIndex || []) {
-    if (!isImageReady(entry)) continue;
-    const kind = getImageKind(entry);
-    const theme = String(entry.theme || 'unknown').toLowerCase();
-    if (!result[kind].has(theme)) result[kind].set(theme, []);
-    result[kind].get(theme).push(entry);
-  }
-  return result;
-}
-
 function groupImagesByKind(imageIndex) {
-  const result = { shot: [], storyboard: [] };
+  const result = {
+    shot: [],
+    storyboard: []
+  };
   for (const entry of imageIndex || []) {
     if (!isImageReady(entry)) continue;
     const kind = getImageKind(entry);
@@ -2109,52 +1994,13 @@ function groupImagesByKind(imageIndex) {
   }
   return result;
 }
-
-function themePoolFromKind(imageIndex, kind) {
-  const grouped = groupImagesByKindAndTheme(imageIndex);
-  const kindMap = grouped[kind] || new Map();
-  const pool = [];
-  for (const theme of PHOTO_THEME_POOL) {
-    if (kindMap.has(theme) && kindMap.get(theme).length) pool.push(theme);
-  }
-  for (const theme of kindMap.keys()) {
-    if (!pool.includes(theme)) pool.push(theme);
-  }
-  return pool;
-}
-
-function groupImagesByTheme(imageIndex) {
-  const map = new Map();
-  for (const entry of imageIndex || []) {
-    if (!isImageReady(entry)) continue;
-    const theme = String(entry.theme || 'unknown').toLowerCase();
-    if (!map.has(theme)) map.set(theme, []);
-    map.get(theme).push(entry);
-  }
-  return map;
-}
-
-function themePoolFromIndex(imageIndex) {
-  const grouped = groupImagesByTheme(imageIndex);
-  const pool = [];
-  for (const theme of PHOTO_THEME_POOL) {
-    if (grouped.has(theme) && grouped.get(theme).length) pool.push(theme);
-  }
-  for (const theme of grouped.keys()) {
-    if (!pool.includes(theme)) pool.push(theme);
-  }
-  return pool.length ? pool : PHOTO_THEME_POOL.slice();
-}
-
 function nextThemeFromState(imageIndex, state, daySeed) {
   const pool = themePoolFromIndex(imageIndex);
   if (!pool.length) return null;
-
   let cursor = Number.isFinite(state.themeCursor) ? state.themeCursor : 0;
   if (state.lastSwitchDate !== formatDateKey(new Date())) {
     cursor = (Math.abs(daySeed) + cursor) % pool.length;
   }
-
   let theme = null;
   const grouped = groupImagesByTheme(imageIndex);
   for (let attempt = 0; attempt < pool.length; attempt++) {
@@ -2166,217 +2012,35 @@ function nextThemeFromState(imageIndex, state, daySeed) {
       break;
     }
   }
-
-  return { theme, cursor: cursor % pool.length };
-}
-
-function filterRecentImages(images, hours) {
-  const cutoff = Date.now() - hours * 60 * 60 * 1000;
-  return images.filter((image) => !image.lastShownAt || Date.parse(image.lastShownAt) < cutoff);
-}
-
-function sortByLastShown(images) {
-  return [...images].sort((left, right) => {
-    const leftTime = left.lastShownAt ? Date.parse(left.lastShownAt) : 0;
-    const rightTime = right.lastShownAt ? Date.parse(right.lastShownAt) : 0;
-    return leftTime - rightTime;
-  });
-}
-
-function updateLibraryStateForPhoto(snapshot, imageIndex) {
-  const daySeed = Number.parseInt(sha1(snapshot.slotKey).slice(0, 8), 16);
-  const state = { ...runtime.libraryState };
-  const sameSlot = state.lastSlotKey === snapshot.slotKey;
-
-  // Same slot: return cached selection (preserving kind)
-  if (sameSlot && state.currentKind && state.currentTheme) {
-    const grouped = groupImagesByKindAndTheme(imageIndex);
-    const images = (grouped[state.currentKind]?.get(state.currentTheme) || []);
-    if (images.length) {
-      const idx = Math.max(0, Math.min(Number(state.currentImageIndex) || 0, images.length - 1));
-      return { theme: state.currentTheme, entry: images[idx], state, kind: state.currentKind };
-    }
-  }
-
-  // New day: reset
-  if (state.lastSwitchDate !== formatDateKey(snapshot.nextSwitchAt)) {
-    const poolLength = Math.max(1, themePoolFromIndex(imageIndex).length);
-    state.patternIndex = Math.abs(daySeed) % SHOT_STORYBOARD_PATTERN.length;
-    state.themeCursor = Math.abs(daySeed) % poolLength;
-    state.currentKind = null;
-    state.currentTheme = null;
-    state.currentImageIndex = 0;
-    state.remainingThemeSlots = 0;
-  }
-
-  const grouped = groupImagesByKindAndTheme(imageIndex);
-
-  // Determine kind from pattern
-  let kind = SHOT_STORYBOARD_PATTERN[state.patternIndex % SHOT_STORYBOARD_PATTERN.length];
-
-  // Fallback: if no images for this kind, try the other
-  if (!grouped[kind] || !grouped[kind].size) {
-    kind = kind === 'shot' ? 'storyboard' : 'shot';
-  }
-
-  // Still nothing: NO_IMAGES
-  if (!grouped[kind] || !grouped[kind].size) {
-    return { theme: 'NO_IMAGES', entry: null, state, kind };
-  }
-
-  const kindChanged = state.currentKind !== kind;
-  const needsNewTheme = kindChanged || state.remainingThemeSlots <= 0 || !state.currentTheme;
-
-  let theme = state.currentTheme;
-  let images = [];
-
-  if (needsNewTheme) {
-    if (kind === 'storyboard') {
-      // Storyboard: prefer current/previous shot theme
-      const shotTheme = state.lastShotTheme || state.currentTheme;
-      if (shotTheme && grouped.storyboard.has(shotTheme) && grouped.storyboard.get(shotTheme).length) {
-        theme = shotTheme;
-      } else if (grouped.storyboard.size) {
-        // Any storyboard theme
-        const themes = [...grouped.storyboard.keys()];
-        const cursor = Math.abs(daySeed + (state.themeCursor || 0)) % themes.length;
-        theme = themes[cursor];
-      } else {
-        // Fallback to shot
-        kind = 'shot';
-      }
-    }
-
-    if (kind === 'shot') {
-      const pool = themePoolFromKind(imageIndex, 'shot');
-      if (pool.length) {
-        const cursor = (state.themeCursor || 0) % pool.length;
-        theme = pool[cursor];
-        state.themeCursor = (cursor + 1) % pool.length;
-        state.lastShotTheme = theme;
-      } else if (grouped.shot.size) {
-        const themes = [...grouped.shot.keys()];
-        theme = themes[(state.themeCursor || 0) % themes.length];
-        state.themeCursor = ((state.themeCursor || 0) + 1) % themes.length;
-      }
-    }
-
-    images = theme ? (grouped[kind]?.get(theme) || []) : [];
-    state.currentImageIndex = 0;
-    state.remainingThemeSlots = 1 + (Math.abs(daySeed + (state.themeCursor || 0)) % 2);
-  } else {
-    images = theme ? (grouped[kind]?.get(theme) || []) : [];
-  }
-
-  // Last-resort fallback: pick any image from current kind
-  if (!theme || !images.length) {
-    for (const [t, imgs] of grouped[kind] || []) {
-      if (imgs.length) {
-        theme = t;
-        images = imgs;
-        break;
-      }
-    }
-  }
-
-  if (!theme || !images.length) {
-    return { theme: 'NO_IMAGES', entry: null, state, kind };
-  }
-
-  let pool = filterRecentImages(images, 7 * 24);
-  if (!pool.length) pool = sortByLastShown(images);
-
-  const idx = Number.isFinite(state.currentImageIndex) ? state.currentImageIndex % pool.length : 0;
-  const entry = pool[idx];
-  state.currentTheme = theme;
-  state.currentImageIndex = (idx + 1) % pool.length;
-  state.remainingThemeSlots = Math.max(0, Number(state.remainingThemeSlots) - 1);
-  state.currentKind = kind;
-  state.patternIndex = (state.patternIndex + 1) % SHOT_STORYBOARD_PATTERN.length;
-  state.lastSlotKey = snapshot.slotKey;
-  state.lastSwitchDate = formatDateKey(snapshot.nextSwitchAt);
-
-  return { theme, entry, state, kind };
-}
-
-function selectPhotoSnapshot(now, imageIndex = runtime.imageIndex || []) {
-  const t = getWallTime(now, TIMEZONE);
-  const resolved = resolveDisplayMode(t, TIMEZONE);
-  const dateKey = `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
-  const inDayWindow = t.hour >= 10 && t.hour < 19;
-  const slotIndex = inDayWindow ? ((t.hour - 10) * 2) + (t.minute >= 30 ? 1 : 0) : 0;
-  const nextSwitchAt = computeNextSwitchAt(now);
-
-  return { mode: resolved.mode, slotIndex, slotKey: resolved.slotKey, nextSwitchAt };
+  return {
+    theme,
+    cursor: cursor % pool.length
+  };
 }
 
 // resolveDisplayMode imported from lib/schedule.js
-
-function computeNextSwitchAt(now) {
-  const t = getWallTime(now, TIMEZONE);
-  let year = t.year;
-  let month = t.month;
-  let day = t.day;
-  let hour = t.hour;
-  let minute = 0;
-
-  if (t.hour < 10) {
-    hour = 10;
-    minute = 30;
-  } else if (t.hour >= 19) {
-    const next = new Date(Date.UTC(year, month - 1, day + 1, 12));
-    const nextWall = getWallTime(next, TIMEZONE);
-    year = nextWall.year;
-    month = nextWall.month;
-    day = nextWall.day;
-    hour = 10;
-    minute = 30;
-  } else if (t.minute < 30) {
-    hour = t.hour;
-    minute = 30;
-  } else if (t.hour === 18) {
-    hour = 19;
-    minute = 0;
-  } else {
-    hour = t.hour + 1;
-    minute = 0;
-  }
-
-  return dateFromWallTime({ year, month, day, hour, minute, second: 0 }, TIMEZONE);
-}
 
 /**
  * selectStudyPhoto — shared pure function used by production selector and tests.
  * Calls updateLibraryStateForPhoto on the study-only selectable subset.
  * Returns { theme, entry, state, kind } or { theme:'NO_STUDY_FRAMES', entry:null }.
  */
-function selectStudyPhoto(now, imageIndex, libraryState) {
-  const snapshot = selectPhotoSnapshot(now, imageIndex);
-  const studyIndex = (imageIndex || []).filter(isStudySelectable);
-  const selection = updateLibraryStateForPhoto(snapshot, studyIndex);
-  if (!selection.entry) {
-    return { theme: 'NO_STUDY_FRAMES', entry: null, kind: 'shot', state: selection.state };
-  }
-  return selection;
-}
 
 async function buildPhotoSnapshot(now) {
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
   const selection = updateLibraryStateForPhoto(snapshot, studySelectableImages());
   runtime.libraryState = selection.state;
-  await writeJson(LIBRARY_STATE_FILE, runtime.libraryState).catch((error) => {
+  await writeJson(LIBRARY_STATE_FILE, runtime.libraryState).catch(error => {
     console.log(`library state write failed: ${error.message}`);
   });
-
   if (selection.entry) {
     selection.entry.lastShownAt = new Date().toISOString();
     selection.entry.shownCount = (selection.entry.shownCount || 0) + 1;
     // Persist the full image index (not just the selectable subset) to preserve pending/rejected entries
-    await writeJson(IMAGE_INDEX_FILE, runtime.fullImageIndex || runtime.imageIndex || []).catch((error) => {
+    await writeJson(IMAGE_INDEX_FILE, runtime.fullImageIndex || runtime.imageIndex || []).catch(error => {
       console.log(`image index write failed: ${error.message}`);
     });
   }
-
   const contentId = selection.entry ? selection.entry.id : 'fallback';
   const displayKind = selection.kind || getImageKind(selection.entry) || 'shot';
   const frameId = `photo:${snapshot.slotKey}:${displayKind}:${selection.theme}:${contentId}`;
@@ -2384,7 +2048,7 @@ async function buildPhotoSnapshot(now) {
   return {
     // id 必须写入：publish-history/:id/preview 缩略图、save-edit/delete/library 缓存失效
     // 都靠 payload.id 匹配。之前缺这个字段导致 4 个路由的"按 id 匹配"全部失效。
-    id: hasImage ? (selection.entry.id || contentId) : contentId,
+    id: hasImage ? selection.entry.id || contentId : contentId,
     mode: 'photo',
     kind: displayKind,
     slotKey: snapshot.slotKey,
@@ -2394,14 +2058,14 @@ async function buildPhotoSnapshot(now) {
     frameId,
     title: selection.theme || 'PHOTO',
     imageStatus: hasImage ? 'ready' : 'empty',
-    imageName: hasImage ? (selection.entry.imageName || path.basename(selection.entry.processedPngPath)) : '',
-    imageSource: hasImage ? (selection.entry.source || '') : '',
+    imageName: hasImage ? selection.entry.imageName || path.basename(selection.entry.processedPngPath) : '',
+    imageSource: hasImage ? selection.entry.source || '' : '',
     imageTheme: hasImage ? selection.entry.theme : '',
     imagePath: hasImage ? selection.entry.processedPngPath : null,
     epfPath: hasImage ? selection.entry.epfPath : null,
     // Pass the saved recipe through so renderPhotoFrame can apply it.
     // Without this the editor adjustments never reach the e-paper display.
-    recipe: hasImage ? (selection.entry.recipe || null) : null,
+    recipe: hasImage ? selection.entry.recipe || null : null
   };
 }
 
@@ -2412,7 +2076,7 @@ async function buildPhotoSnapshot(now) {
 // receives a proper payload object and EPF1 Buffer.
 async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
   var snap = selectPhotoSnapshot(now);
-  var assetTheme = (asset.metadata && asset.metadata.theme) || asset.libraryType || 'PHOTO';
+  var assetTheme = asset.metadata && asset.metadata.theme || asset.libraryType || 'PHOTO';
   var frameId = (prefix || 'photo:asset') + ':' + asset.assetId + ':' + Date.now().toString(36);
   var photo = {
     // id + assetId 必须写入：library/:id DELETE 缓存失效靠 payload.assetId 匹配，
@@ -2432,12 +2096,20 @@ async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
     imageSource: asset.sourceType || asset.libraryType || '',
     imageTheme: assetTheme,
     imagePath: asset.localPath,
-    epfPath: (asset.metadata && asset.metadata.epfPath) || null,
+    epfPath: asset.metadata && asset.metadata.epfPath || null
   };
   // Render the EPF1 frame from the asset's local image file.
-  var selection = { entry: null, theme: assetTheme, kind: 'shot' };
+  var selection = {
+    entry: null,
+    theme: assetTheme,
+    kind: 'shot'
+  };
   if (photo.imagePath && fs.existsSync(photo.imagePath)) {
-    selection.entry = { processedPngPath: photo.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT };
+    selection.entry = {
+      processedPngPath: photo.imagePath,
+      width: FRAME_WIDTH,
+      height: FRAME_HEIGHT
+    };
   }
   var rawFrame = await renderPhotoFrame(selection, now);
   var frame = buildFrameBuffer(rawFrame);
@@ -2464,17 +2136,15 @@ async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
       imageName: photo.imageName,
       imageSource: photo.imageSource,
       imageTheme: photo.imageTheme,
-      kind: 'shot',
+      kind: 'shot'
     },
     frame: frame,
-    photo: photo,
+    photo: photo
   };
 }
-
 function createSvgHeader(width, height, body) {
   return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${body}</svg>`);
 }
-
 function wrapText(text, maxColumns) {
   const source = String(text || '').replace(/\s+/g, ' ').trim();
   if (!source) return [''];
@@ -2495,19 +2165,23 @@ function wrapText(text, maxColumns) {
   if (current) lines.push(current);
   return lines;
 }
-
 function categoryStyle(category) {
   const style = CATEGORY_COLORS[String(category || '').toLowerCase()] || CATEGORY_COLORS.general;
   return style;
 }
-
 const NEWS_LAYOUT = {
-  HEADER_H: 36, FOOTER_H: 18, MARGIN: 14, COL_GAP: 12, ROW_GAP: 8,
-  badgeH: 14, badgeFont: 10, titleFont: 24, summaryFont: 18,
+  HEADER_H: 36,
+  FOOTER_H: 18,
+  MARGIN: 14,
+  COL_GAP: 12,
+  ROW_GAP: 8,
+  badgeH: 14,
+  badgeFont: 10,
+  titleFont: 24,
+  summaryFont: 18
 };
 NEWS_LAYOUT.cardW = Math.floor((FRAME_WIDTH - NEWS_LAYOUT.MARGIN * 2 - NEWS_LAYOUT.COL_GAP) / 2);
 NEWS_LAYOUT.cardH = Math.floor((FRAME_HEIGHT - NEWS_LAYOUT.HEADER_H - NEWS_LAYOUT.FOOTER_H - NEWS_LAYOUT.ROW_GAP * 2 - 8) / 3);
-
 function layoutNewsCard(item, opts) {
   opts = opts || NEWS_LAYOUT;
   const titleMax = Math.floor((opts.cardW - 12) / (opts.titleFont * 0.55));
@@ -2528,19 +2202,22 @@ function layoutNewsCard(item, opts) {
     titleFontSize: opts.titleFont,
     summaryFontSize: opts.summaryFont,
     overflow: overflow,
-    titleBounds: { y: titleY, height: opts.titleFont },
-    summaryBounds: { y: sumStartY, height: 3 * sumLineH },
+    titleBounds: {
+      y: titleY,
+      height: opts.titleFont
+    },
+    summaryBounds: {
+      y: sumStartY,
+      height: 3 * sumLineH
+    }
   };
 }
-
 function renderNewsSvg(news, now) {
   const items = (news.items || []).slice(0, 6);
   if (!items.length) {
-    return createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT,
-      `<rect width="100%" height="100%" fill="#ffffff"/>
+    return createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT, `<rect width="100%" height="100%" fill="#ffffff"/>
        <text x="20" y="240" font-family="${escapeXml(FONT_STACK)}" font-size="24" fill="#000000">暂无新闻</text>`);
   }
-
   const L = NEWS_LAYOUT;
   const boxes = [];
   boxes.push(`<rect x="0" y="0" width="${FRAME_WIDTH}" height="${FRAME_HEIGHT}" fill="#ffffff"/>`);
@@ -2549,18 +2226,15 @@ function renderNewsSvg(news, now) {
   boxes.push(`<rect x="0" y="0" width="${FRAME_WIDTH}" height="${L.HEADER_H}" fill="#000000"/>`);
   boxes.push(`<text x="14" y="25" font-family="${escapeXml(FONT_STACK)}" font-size="16" font-weight="700" fill="#ffffff">简报 NEWS</text>`);
   boxes.push(`<text x="${FRAME_WIDTH - 14}" y="25" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="12" fill="#ffffff">${escapeXml(formatDateTime(now))}</text>`);
-
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const col = i % 2;
     const row = Math.floor(i / 2);
     const x0 = L.MARGIN + col * (L.cardW + L.COL_GAP);
     const y0 = L.HEADER_H + 4 + row * (L.cardH + L.ROW_GAP);
-
     const style = categoryStyle(item.category);
     const label = CATEGORY_LABELS[String(item.category || '').toLowerCase()] || item.category || '综合';
     const badgeW = 7 + label.length * 8;
-
     const layout = layoutNewsCard(item, L);
 
     // Card background
@@ -2585,12 +2259,10 @@ function renderNewsSvg(news, now) {
   // Footer
   boxes.push(`<rect x="0" y="${FRAME_HEIGHT - L.FOOTER_H}" width="${FRAME_WIDTH}" height="${L.FOOTER_H}" fill="#000000"/>`);
   const ftMsg = news.translationNotice || (TRANSLATION_PROVIDER === 'none' || !TRANSLATION_PROVIDER ? '翻译未启用' : '');
-  boxes.push(`<text x="10" y="${FRAME_HEIGHT - 4}" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#ffffff">${escapeXml(now.toTimeString().slice(0,5))}</text>`);
+  boxes.push(`<text x="10" y="${FRAME_HEIGHT - 4}" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#ffffff">${escapeXml(now.toTimeString().slice(0, 5))}</text>`);
   if (ftMsg) boxes.push(`<text x="${FRAME_WIDTH - 10}" y="${FRAME_HEIGHT - 4}" text-anchor="end" font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="#ffffff">${escapeXml(ftMsg)}</text>`);
-
   return createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT, boxes.join(''));
 }
-
 async function renderPhotoFrame(selection, now) {
   if (!selection.entry || !selection.entry.processedPngPath) {
     return renderPlaceholderFrame('NO IMAGE', now);
@@ -2609,72 +2281,92 @@ async function renderPhotoFrame(selection, now) {
   // 当 entry.recipe 存在时优先使用 recipe 值；否则保持原有 'clean' 模式默认值。
   var recipe = selection.entry && selection.entry.recipe ? selection.entry.recipe : null;
   var hasRecipe = !!recipe;
-  var rBright = hasRecipe ? (Number(recipe.brightness) || 1) : (PHOTO_QUANT_MODE === 'clean' ? 1.03 : 1);
-  var rSat = hasRecipe ? (Number(recipe.saturation) || 1) : (PHOTO_QUANT_MODE === 'clean' ? 1.15 : 1);
-  var rContrast = hasRecipe ? (Number(recipe.contrast) || 1) : 1;
-  var rGamma = hasRecipe ? (Number(recipe.gamma) || 1) : 1;
-  var rRotate = hasRecipe ? (Number(recipe.rotate) || 0) : 0;
+  var rBright = hasRecipe ? Number(recipe.brightness) || 1 : PHOTO_QUANT_MODE === 'clean' ? 1.03 : 1;
+  var rSat = hasRecipe ? Number(recipe.saturation) || 1 : PHOTO_QUANT_MODE === 'clean' ? 1.15 : 1;
+  var rContrast = hasRecipe ? Number(recipe.contrast) || 1 : 1;
+  var rGamma = hasRecipe ? Number(recipe.gamma) || 1 : 1;
+  var rRotate = hasRecipe ? Number(recipe.rotate) || 0 : 0;
   var rFlipH = hasRecipe ? !!recipe.flipH : false;
   var rFlipV = hasRecipe ? !!recipe.flipV : false;
-  var rSharpen = hasRecipe ? (Number(recipe.sharpen) || 0) : 0;
-  var rBlur = hasRecipe ? (Number(recipe.blur) || 0) : (PHOTO_QUANT_MODE === 'clean' ? 0.5 : 0);
-
+  var rSharpen = hasRecipe ? Number(recipe.sharpen) || 0 : 0;
+  var rBlur = hasRecipe ? Number(recipe.blur) || 0 : PHOTO_QUANT_MODE === 'clean' ? 0.5 : 0;
   var pipe = sharp(rpfAbs);
   if (rRotate) pipe = pipe.rotate(rRotate);
-  pipe = pipe.resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill', kernel: PHOTO_QUANT_MODE === 'clean' ? 'lanczos3' : 'lanczos3' });
+  if (recipe && recipe.crop) {
+    pipe = pipe.extract({
+      left: recipe.crop.left,
+      top: recipe.crop.top,
+      width: recipe.crop.width,
+      height: recipe.crop.height
+    });
+  }
+  pipe = pipe.resize(FRAME_WIDTH, FRAME_HEIGHT, {
+    fit: 'fill',
+    kernel: PHOTO_QUANT_MODE === 'clean' ? 'lanczos3' : 'lanczos3'
+  });
   if (rFlipH) pipe = pipe.flop();
   if (rFlipV) pipe = pipe.flip();
-  pipe = pipe.flatten({ background: '#ffffff' });
+  pipe = pipe.flatten({
+    background: '#ffffff'
+  });
   if (rContrast !== 1) pipe = pipe.linear(rContrast, -(0.5 * rContrast) + 0.5);
-  if (rBright !== 1 || rSat !== 1) pipe = pipe.modulate({ brightness: rBright, saturation: rSat });
+  if (rBright !== 1 || rSat !== 1) pipe = pipe.modulate({
+    brightness: rBright,
+    saturation: rSat
+  });
   if (rGamma !== 1) pipe = pipe.gamma(rGamma);
-  if (rSharpen > 0) pipe = pipe.sharpen({ sigma: rSharpen });
+  if (rSharpen > 0) pipe = pipe.sharpen({
+    sigma: rSharpen
+  });
   if (rBlur > 0) pipe = pipe.blur(rBlur);
-
-  const { data, info } = await pipe.raw().toBuffer({ resolveWithObject: true });
+  const {
+    data,
+    info
+  } = await pipe.raw().toBuffer({
+    resolveWithObject: true
+  });
   return imageToFrameBuffer(data, info.width, info.height, info.channels);
 }
-
 function renderPlaceholderFrame(label, now) {
   const instructions = '请上传图片到 images/shots/<主题>/ 或 images/storyboard/<主题>/';
-  const svg = createSvgHeader(
-    FRAME_WIDTH,
-    FRAME_HEIGHT,
-    `<rect width="100%" height="100%" fill="#ffffff"/>
+  const svg = createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT, `<rect width="100%" height="100%" fill="#ffffff"/>
      <text x="40" y="200" font-family="${escapeXml(FONT_STACK)}" font-size="38" font-weight="700" fill="#000000">${escapeXml(label)}</text>
      <text x="40" y="260" font-family="${escapeXml(FONT_STACK)}" font-size="16" fill="#666666">${escapeXml(instructions)}</text>
-     <text x="40" y="310" font-family="${escapeXml(FONT_STACK)}" font-size="18" fill="#000000">${escapeXml(formatDateTime(now))}</text>`
-  );
-  return sharp(svg)
-    .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
-    .flatten({ background: '#ffffff' })
-    .raw()
-    .toBuffer({ resolveWithObject: true })
-    .then(({ data, info }) => imageToFrameBuffer(data, info.width, info.height, info.channels));
+     <text x="40" y="310" font-family="${escapeXml(FONT_STACK)}" font-size="18" fill="#000000">${escapeXml(formatDateTime(now))}</text>`);
+  return sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+    fit: 'fill'
+  }).flatten({
+    background: '#ffffff'
+  }).raw().toBuffer({
+    resolveWithObject: true
+  }).then(({
+    data,
+    info
+  }) => imageToFrameBuffer(data, info.width, info.height, info.channels));
 }
-
 async function renderNewsFrame(news, now) {
   const svg = renderNewsSvg(news, now);
-  const { data, info } = await sharp(svg)
-    .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
-    .flatten({ background: '#ffffff' })
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  const {
+    data,
+    info
+  } = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+    fit: 'fill'
+  }).flatten({
+    background: '#ffffff'
+  }).raw().toBuffer({
+    resolveWithObject: true
+  });
   return imageToFrameBuffer(data, info.width, info.height, info.channels);
 }
-
 function imageToFrameBuffer(raw, width, height, channels) {
   return epaperImageFrame.imageToFrameBuffer(raw, width, height, channels, DITHERING_ENABLED);
 }
-
 function buildFrameBuffer(frameImage) {
   return epaperImageFrame.buildFrameBuffer(frameImage);
 }
-
 function hexPreview(buf, bytes) {
   return epaperEpf1.hexPreview(buf, bytes || 32);
 }
-
 function computeSnapshot(now) {
   const photoOrNews = selectPhotoSnapshot(now, runtime.imageIndex || []);
   return {
@@ -2690,7 +2382,7 @@ function computeSnapshot(now) {
     timezone: TIMEZONE,
     timestamp: now.toISOString(),
     frameUrl: `/api/frame.bin?panel=${options.panel}`,
-    currentKind: photoOrNews.mode === 'photo' ? (runtime.libraryState.currentKind || 'shot') : null,
+    currentKind: photoOrNews.mode === 'photo' ? runtime.libraryState.currentKind || 'shot' : null
   };
 }
 
@@ -2706,15 +2398,17 @@ async function ensureActiveSnapshotForSchedule(now) {
         // BOUNDARY_EXPIRY: exit ONE_SHOT, clear persisted override, fall through to schedule publish
         runtime.operatingModeService.exitOneShot();
         if (runtime.overridePersistence) {
-          try { runtime.overridePersistence.clearOverride(); } catch(e) {}
+          try {
+            runtime.overridePersistence.clearOverride();
+          } catch (e) {}
         }
         r1Logger.info('ONE_SHOT expired at boundary, restoring AUTO schedule');
       } else {
         // ONE_SHOT still active — keep current snapshot, no republish
         return await runtime.publicationService.getActive();
       }
-    } else if (osMode === 'FOCUS_LOCK') {
-      // FOCUS_LOCK persists until explicit DELETE — keep current snapshot
+    } else if (osMode === 'FOCUS_LOCK' || osMode === 'MANUAL_NEWS' || osMode === 'MANUAL_PHOTO') {
+      // These modes persist until explicit manual action — keep current snapshot
       return await runtime.publicationService.getActive();
     }
   }
@@ -2723,11 +2417,12 @@ async function ensureActiveSnapshotForSchedule(now) {
   var scheduleKey = schedule.mode + ':' + (schedule.slotKey || '');
   if (active && active.frameId.indexOf(scheduleKey) === 0) return active;
   var content = await getContentForNow(now);
-    var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'schedule' });
-    await runtime.publicationService.publish(snap);
-    return snap;
+  var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, {
+    publishReason: 'schedule'
+  });
+  await runtime.publicationService.publish(snap);
+  return snap;
 }
-
 async function getContentForNow(now, opts) {
   opts = opts || {};
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
@@ -2737,12 +2432,23 @@ async function getContentForNow(now, opts) {
   if (effectiveMode === 'news') {
     // opts.newsOverride 允许调用方跳过 buildNewsSnapshot 直接传入草稿快照，
     // 用于 publish/news 端点发布用户在 admin UI 编辑过的新闻内容。
-    const news = opts.newsOverride || await buildNewsSnapshot(now);
+    const news = opts.newsOverride || (await buildNewsSnapshot(now));
     const frameId = `${snapshot.mode}:${snapshot.slotKey}:${news.frameId}`;
     const cacheKey = frameId;
     if (!runtime.cachedFrames.has(cacheKey)) {
-      const frame = buildFrameBuffer(await renderNewsFrame({ ...news, nextSwitchAt: snapshot.nextSwitchAt }, now));
-      runtime.cachedFrames.set(cacheKey, { frame, payload: news, snapshot: { ...snapshot, frameId, title: news.title } });
+      const frame = buildFrameBuffer(await renderNewsFrame({
+        ...news,
+        nextSwitchAt: snapshot.nextSwitchAt
+      }, now));
+      runtime.cachedFrames.set(cacheKey, {
+        frame,
+        payload: news,
+        snapshot: {
+          ...snapshot,
+          frameId,
+          title: news.title
+        }
+      });
     }
     const cached = runtime.cachedFrames.get(cacheKey);
     return {
@@ -2760,19 +2466,20 @@ async function getContentForNow(now, opts) {
         timestamp: now.toISOString(),
         items: news.items,
         translationProvider: news.translationProvider,
-        translationNotice: news.translationNotice,
+        translationNotice: news.translationNotice
       },
       frame: cached.frame,
-      news,
+      news
     };
   }
-
   var photo;
   if (opts.photoId) {
     // 用指定 photoId 从 image_index.json 构建照片快照，而不是自动选图
     // （publish/photo 路由用此参数确保发布用户指定的图片）
     var manualIdx = runtime.imageIndex || [];
-    var manualEntry = manualIdx.find(function(e) { return e.id === opts.photoId; });
+    var manualEntry = manualIdx.find(function (e) {
+      return e.id === opts.photoId;
+    });
     if (!manualEntry) throw new Error('photo not found: ' + opts.photoId);
     var manualSlot = selectPhotoSnapshot(now);
     var manualFrameId = 'photo:' + manualSlot.slotKey + ':manual:' + opts.photoId;
@@ -2793,21 +2500,35 @@ async function getContentForNow(now, opts) {
       imageTheme: manualEntry.theme || '',
       imagePath: manualEntry.processedPngPath || null,
       epfPath: manualEntry.epfPath || null,
-      recipe: opts.photoRecipe || manualEntry.recipe || null,
+      recipe: opts.photoRecipe || manualEntry.recipe || null
     };
   } else {
     photo = await buildPhotoSnapshot(now);
   }
   const cacheKey = photo.frameId;
   if (!runtime.cachedFrames.has(cacheKey)) {
-    const selection = { entry: null, theme: photo.title || null, kind: photo.kind || 'shot' };
+    const selection = {
+      entry: null,
+      theme: photo.title || null,
+      kind: photo.kind || 'shot'
+    };
     if (photo.imagePath && fs.existsSync(photo.imagePath)) {
-      selection.entry = { processedPngPath: photo.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT, recipe: photo.recipe || null, epfPath: photo.epfPath || null };
+      selection.entry = {
+        processedPngPath: photo.imagePath,
+        width: FRAME_WIDTH,
+        height: FRAME_HEIGHT,
+        recipe: photo.recipe || null,
+        epfPath: photo.epfPath || null
+      };
     }
     const rawFrame = await renderPhotoFrame(selection, now);
     const frame = buildFrameBuffer(rawFrame);
     runtime.renderCount++;
-    runtime.cachedFrames.set(cacheKey, { frame, payload: photo, snapshot: photo });
+    runtime.cachedFrames.set(cacheKey, {
+      frame,
+      payload: photo,
+      snapshot: photo
+    });
   }
   return {
     snapshot: {
@@ -2827,16 +2548,15 @@ async function getContentForNow(now, opts) {
       imageSource: photo.imageSource,
       imageTheme: photo.imageTheme,
       theme: photo.theme,
-      kind: photo.kind,
+      kind: photo.kind
     },
     frame: runtime.cachedFrames.get(cacheKey).frame,
-    photo,
+    photo
   };
 }
-
 async function warmRefreshLoop() {
   setInterval(() => {
-    refreshAhead().catch((error) => console.log(`background refresh failed: ${error.message}`));
+    refreshAhead().catch(error => console.log(`background refresh failed: ${error.message}`));
   }, 10 * 60 * 1000).unref();
 
   // Automatic photo fetch and processing every 6 hours
@@ -2845,21 +2565,30 @@ async function warmRefreshLoop() {
       runtime.syncLocks.photos = true;
       console.log('Running automated background photo sync...');
       try {
-        const { runFetchImages } = require('./scripts/fetch-images.js');
-        const { runProcessImages } = require('./scripts/process-images.js');
-        runFetchImages({ limit: 10 })
-          .then(() => runProcessImages({ limit: 0 }))
-          .then(() => loadImageIndex())
-          .then((entries) => { if (Array.isArray(entries)) runtime.imageIndex = entries; })
-          .then(() => { runtime.syncLocks.photos = false; })
-          .catch(e => { console.log('Auto photo sync failed:', e); runtime.syncLocks.photos = false; });
+        const {
+          runFetchImages
+        } = require('./scripts/fetch-images.js');
+        const {
+          runProcessImages
+        } = require('./scripts/process-images.js');
+        runFetchImages({
+          limit: 10
+        }).then(() => runProcessImages({
+          limit: 0
+        })).then(() => loadImageIndex()).then(entries => {
+          if (Array.isArray(entries)) runtime.imageIndex = entries;
+        }).then(() => {
+          runtime.syncLocks.photos = false;
+        }).catch(e => {
+          console.log('Auto photo sync failed:', e);
+          runtime.syncLocks.photos = false;
+        });
       } catch (e) {
         runtime.syncLocks.photos = false;
       }
     }
   }, 6 * 60 * 60 * 1000).unref();
 }
-
 async function refreshAhead() {
   const now = new Date();
   const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
@@ -2869,54 +2598,60 @@ async function refreshAhead() {
     await buildNewsSnapshot(now);
     runtime.lastNewsRefreshAt = Date.now();
   }
-
   if (snapshot.mode === 'photo') {
     await buildPhotoSnapshot(now);
   }
 }
-
-
-
 function nowForRequest(req) {
   if (runtime.nowProvider) return runtime.nowProvider();
   return new Date();
 }
-
 function wallTimeForRequest(req) {
   return getWallTime(nowForRequest(req), TIMEZONE);
 }
-
 function clientKey(req) {
   return req.socket.remoteAddress || 'unknown';
 }
-
 function ensureCachedFrame(photo, now) {
   const k = photo.frameId;
   if (runtime.cachedFrames.has(k)) return runtime.cachedFrames.get(k).frame;
   return null;
 }
-
 function readBody(req, limit, asBuffer) {
-  return new Promise(function(ok, fail) {
+  return new Promise(function (ok, fail) {
     var chunks = [];
     var total = 0;
-    req.on('data', function(c) { total += c.length; if (limit && total > limit) { req.destroy(); fail(new Error('too large')); return; } chunks.push(c); });
-    req.on('end', function() {
+    req.on('data', function (c) {
+      total += c.length;
+      if (limit && total > limit) {
+        req.destroy();
+        fail(new Error('too large'));
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', function () {
       var b = Buffer.concat(chunks);
       ok(asBuffer ? b : b.toString('utf8'));
     });
     req.on('error', fail);
   });
 }
-
 function respondJson(res, data) {
   var b = Buffer.from(JSON.stringify(data, null, 2));
-  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': b.length });
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': b.length
+  });
   res.end(b);
 }
 function failJson(res, code, msg) {
-  var b = Buffer.from(JSON.stringify({ error: msg }));
-  res.writeHead(code, { 'Content-Type': 'application/json' });
+  var b = Buffer.from(JSON.stringify({
+    error: msg
+  }));
+  res.writeHead(code, {
+    'Content-Type': 'application/json'
+  });
   res.end(b);
 }
 function adminNetworkCheck(req) {
@@ -2926,12 +2661,12 @@ function adminNetworkCheck(req) {
   if (!ip) return false;
   return adminPolicy.isAddressAllowed(ip, ADM_PARSED_CIDRS.parsed);
 }
-
 function adminCSRFCheck(req) {
-  if (ADMIN_ACCESS_MODE !== 'lan') return { allowed: true };
+  if (ADMIN_ACCESS_MODE !== 'lan') return {
+    allowed: true
+  };
   return adminCSRF.checkCSRF(req, ADMIN_ALLOW_HEADERLESS_WRITE);
 }
-
 function adminAuth(req) {
   if (ADMIN_ACCESS_MODE === 'lan') {
     if (!adminNetworkCheck(req)) return false;
@@ -2950,22 +2685,19 @@ function serveAdminFile(name) {
   }
   return Buffer.from(c);
 }
-
 async function handleRequest(req, res) {
   const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const panelIndex = PANEL_SIZES[Number(parsed.searchParams.get('panel'))]
-    ? Number(parsed.searchParams.get('panel'))
-    : options.panel;
+  const panelIndex = PANEL_SIZES[Number(parsed.searchParams.get('panel'))] ? Number(parsed.searchParams.get('panel')) : options.panel;
   const now = runtime.nowProvider ? runtime.nowProvider() : new Date();
-
   try {
     if (parsed.pathname === '/') {
       const state = computeSnapshot(now);
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8'
+      });
       res.end(renderIndexHtml(state));
       return;
     }
-
     if (parsed.pathname === '/api/news.json') {
       const news = await buildNewsSnapshot(now);
       const body = Buffer.from(JSON.stringify({
@@ -2974,74 +2706,116 @@ async function handleRequest(req, res) {
         translationNotice: news.translationNotice,
         items: news.items,
         frameId: news.frameId,
-        title: news.title,
+        title: news.title
       }, null, 2));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': body.length
+      });
       res.end(body);
       return;
     }
-
     if (parsed.pathname === '/api/state.json') {
       const client = clientKey(req);
-      if (!runtime.publicationService) { failJson(res, 503, 'SNAPSHOT_SERVICE_UNAVAILABLE'); return; }
+      if (!runtime.publicationService) {
+        failJson(res, 503, 'SNAPSHOT_SERVICE_UNAVAILABLE');
+        return;
+      }
       var activeSnap = await ensureActiveSnapshotForSchedule(now);
       runtime.pinStore.pin(client, activeSnap.snapshotId);
       const body = Buffer.from(JSON.stringify({
-        ...activeSnap.payload, snapshotId: activeSnap.snapshotId, panelIndex,
+        ...activeSnap.payload,
+        snapshotId: activeSnap.snapshotId,
+        panelIndex,
         operatingMode: runtime.operatingModeService ? runtime.operatingModeService.getMode() : 'AUTO',
         frameUrl: `${req.headers.host ? `http://${req.headers.host}` : ''}/api/frame.bin?panel=${panelIndex}`,
         frameSha256: activeSnap.frameSha256,
-        frameLength: activeSnap.frameLength,
+        frameLength: activeSnap.frameLength
       }, null, 2));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': body.length
+      });
       res.end(body);
       return;
     }
-
     if (parsed.pathname === '/api/frame.bin') {
       const client = clientKey(req);
-      if (!runtime.publicationService) { res.writeHead(503, { 'Content-Type': 'text/plain' }); res.end('SNAPSHOT_SERVICE_UNAVAILABLE'); return; }
+      if (!runtime.publicationService) {
+        res.writeHead(503, {
+          'Content-Type': 'text/plain'
+        });
+        res.end('SNAPSHOT_SERVICE_UNAVAILABLE');
+        return;
+      }
       var pinnedId = runtime.pinStore.get(client);
       var frameSnap = null;
-      if (pinnedId) { frameSnap = runtime.snapshotCache.get(pinnedId); if (!frameSnap) frameSnap = await runtime.publicationService.loadSnapshot(pinnedId); }
+      if (pinnedId) {
+        frameSnap = runtime.snapshotCache.get(pinnedId);
+        if (!frameSnap) frameSnap = await runtime.publicationService.loadSnapshot(pinnedId);
+      }
       if (frameSnap) {
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': frameSnap.frame.length,
-          'X-Frame-Id': frameSnap.frameId, 'X-Frame-Hex-Preview': hexPreview(frameSnap.frame), 'X-Pinned': '1',
-          'X-Frame-Mode': frameSnap.mode, 'X-Frame-Slot': frameSnap.payload.slotKey || frameSnap.frameId });
-        res.end(frameSnap.frame); return;
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': frameSnap.frame.length,
+          'X-Frame-Id': frameSnap.frameId,
+          'X-Frame-Hex-Preview': hexPreview(frameSnap.frame),
+          'X-Pinned': '1',
+          'X-Frame-Mode': frameSnap.mode,
+          'X-Frame-Slot': frameSnap.payload.slotKey || frameSnap.frameId
+        });
+        res.end(frameSnap.frame);
+        return;
       }
       var activeSnap = await runtime.publicationService.getActive();
       if (!activeSnap) activeSnap = await ensureActiveSnapshotForSchedule(now);
       if (activeSnap) {
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': activeSnap.frame.length,
-          'X-Frame-Id': activeSnap.frameId, 'X-Frame-Hex-Preview': hexPreview(activeSnap.frame),
-          'X-Frame-Mode': activeSnap.mode, 'X-Frame-Slot': activeSnap.payload.slotKey || activeSnap.frameId });
-        res.end(activeSnap.frame); return;
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': activeSnap.frame.length,
+          'X-Frame-Id': activeSnap.frameId,
+          'X-Frame-Hex-Preview': hexPreview(activeSnap.frame),
+          'X-Frame-Mode': activeSnap.mode,
+          'X-Frame-Slot': activeSnap.payload.slotKey || activeSnap.frameId
+        });
+        res.end(activeSnap.frame);
+        return;
       }
-      res.writeHead(503, { 'Content-Type': 'text/plain' }); res.end('SNAPSHOT_SERVICE_UNAVAILABLE');
+      res.writeHead(503, {
+        'Content-Type': 'text/plain'
+      });
+      res.end('SNAPSHOT_SERVICE_UNAVAILABLE');
       return;
     }
-
     if (parsed.pathname === '/debug/news.svg') {
       const news = await buildNewsSnapshot(now);
-      const svg = renderNewsSvg({ ...news, nextSwitchAt: computeNextSwitchAt(now) }, now);
-      res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Content-Length': svg.length });
+      const svg = renderNewsSvg({
+        ...news,
+        nextSwitchAt: computeNextSwitchAt(now)
+      }, now);
+      res.writeHead(200, {
+        'Content-Type': 'image/svg+xml; charset=utf-8',
+        'Content-Length': svg.length
+      });
       res.end(svg);
       return;
     }
-
     if (parsed.pathname === '/debug/news.png') {
       const news = await buildNewsSnapshot(now);
-      const svg = renderNewsSvg({ ...news, nextSwitchAt: computeNextSwitchAt(now) }, now);
-      const png = await sharp(svg)
-        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
-        .png()
-        .toBuffer();
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
+      const svg = renderNewsSvg({
+        ...news,
+        nextSwitchAt: computeNextSwitchAt(now)
+      }, now);
+      const png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+        fit: 'fill'
+      }).png().toBuffer();
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': png.length
+      });
       res.end(png);
       return;
     }
-
     if (parsed.pathname === '/api/library.json') {
       await reloadImageIndexIfNeeded();
       const index = runtime.imageIndex || [];
@@ -3056,15 +2830,16 @@ async function handleRequest(req, res) {
       for (const entry of ready) {
         const kind = getImageKind(entry);
         const theme = String(entry.theme || 'unknown').toLowerCase();
-        if (!themeMap.has(theme)) themeMap.set(theme, { theme, shot: 0, storyboard: 0 });
+        if (!themeMap.has(theme)) themeMap.set(theme, {
+          theme,
+          shot: 0,
+          storyboard: 0
+        });
         themeMap.get(theme)[kind]++;
-        if (kind === 'shot') shotsCount++;
-        else storyboardCount++;
+        if (kind === 'shot') shotsCount++;else storyboardCount++;
       }
-
       const themes = [...themeMap.values()].sort((a, b) => a.theme.localeCompare(b.theme));
-
-      const summary = ready.map((entry) => ({
+      const summary = ready.map(entry => ({
         id: entry.id,
         theme: entry.theme,
         kind: getImageKind(entry),
@@ -3076,13 +2851,9 @@ async function handleRequest(req, res) {
         height: entry.height,
         createdAt: entry.createdAt,
         lastShownAt: entry.lastShownAt,
-        shownCount: entry.shownCount,
+        shownCount: entry.shownCount
       }));
-
-      const nextImageName = state.currentTheme && summary.length
-        ? summary.find((e) => e.theme === state.currentTheme)?.imageName || ''
-        : '';
-
+      const nextImageName = state.currentTheme && summary.length ? summary.find(e => e.theme === state.currentTheme)?.imageName || '' : '';
       const body = Buffer.from(JSON.stringify({
         updatedAt: new Date().toISOString(),
         totalImages: ready.length,
@@ -3093,13 +2864,15 @@ async function handleRequest(req, res) {
         currentKind: state.currentKind || 'shot',
         patternIndex: state.patternIndex,
         nextImageName,
-        images: summary,
+        images: summary
       }, null, 2));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': body.length
+      });
       res.end(body);
       return;
     }
-
     if (parsed.pathname === '/debug/photo-info.json') {
       await reloadImageIndexIfNeeded();
       const photo = await buildPhotoSnapshot(now);
@@ -3116,132 +2889,272 @@ async function handleRequest(req, res) {
         nextSwitchAt: photo.nextSwitchAt,
         nextSwitchLocal: photo.nextSwitchLocal,
         timezone: photo.timezone,
-        totalImages: (runtime.imageIndex || []).length,
+        totalImages: (runtime.imageIndex || []).length
       }, null, 2));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': body.length
+      });
       res.end(body);
       return;
     }
-
     if (parsed.pathname === '/debug/photo.png') {
       await reloadImageIndexIfNeeded();
       const photo = await buildPhotoSnapshot(now);
       let png;
       let contentType = 'image/png';
       if (photo.imagePath && fs.existsSync(photo.imagePath)) {
-        png = await sharp(photo.imagePath)
-          .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
-          .png()
-          .toBuffer();
+        png = await sharp(photo.imagePath).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+          fit: 'fill'
+        }).png().toBuffer();
       } else {
-        const svg = createSvgHeader(
-          FRAME_WIDTH,
-          FRAME_HEIGHT,
-          `<rect width="100%" height="100%" fill="#ffffff"/>
+        const svg = createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT, `<rect width="100%" height="100%" fill="#ffffff"/>
            <text x="40" y="240" font-family="${escapeXml(FONT_STACK)}" font-size="36" font-weight="700" fill="#000000">NO IMAGE</text>
-           <text x="40" y="300" font-family="${escapeXml(FONT_STACK)}" font-size="18" fill="#000000">${escapeXml(formatDateTime(now))}</text>`
-        );
-        png = await sharp(svg)
-          .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
-          .png()
-          .toBuffer();
+           <text x="40" y="300" font-family="${escapeXml(FONT_STACK)}" font-size="18" fill="#000000">${escapeXml(formatDateTime(now))}</text>`);
+        png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+          fit: 'fill'
+        }).png().toBuffer();
       }
-      res.writeHead(200, { 'Content-Type': contentType, 'Content-Length': png.length, 'X-Frame-Id': photo.frameId });
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Content-Length': png.length,
+        'X-Frame-Id': photo.frameId
+      });
       res.end(png);
       return;
     }
-
     if (parsed.pathname === '/api/review.json') {
       const content = await getContentForNow(now);
       const s = content.snapshot;
-      const review = { timestamp: now.toISOString(), timezone: TIMEZONE, mode: s.mode, frameId: s.frameId, panelIndex, totalImages: (runtime.imageIndex || []).length, imageStatus: s.imageStatus || null, imageTheme: s.imageTheme || null, title: s.title || null, nextSwitchAt: s.nextSwitchAt, nextSwitchLocal: s.nextSwitchLocal, width: FRAME_WIDTH, height: FRAME_HEIGHT, frameSize: content.frame.length };
+      const review = {
+        timestamp: now.toISOString(),
+        timezone: TIMEZONE,
+        mode: s.mode,
+        frameId: s.frameId,
+        panelIndex,
+        totalImages: (runtime.imageIndex || []).length,
+        imageStatus: s.imageStatus || null,
+        imageTheme: s.imageTheme || null,
+        title: s.title || null,
+        nextSwitchAt: s.nextSwitchAt,
+        nextSwitchLocal: s.nextSwitchLocal,
+        width: FRAME_WIDTH,
+        height: FRAME_HEIGHT,
+        frameSize: content.frame.length
+      };
       const body = Buffer.from(JSON.stringify(review, null, 2));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': body.length
+      });
       res.end(body);
       return;
     }
-
     if (parsed.pathname === '/debug/news-review-6.png') {
       const news = await buildNewsSnapshot(now);
-      const svg = renderNewsSvg({ ...news, nextSwitchAt: computeNextSwitchAt(now) }, now);
-      const png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).png().toBuffer();
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
+      const svg = renderNewsSvg({
+        ...news,
+        nextSwitchAt: computeNextSwitchAt(now)
+      }, now);
+      const png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+        fit: 'fill'
+      }).png().toBuffer();
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': png.length
+      });
       res.end(png);
       return;
     }
-
     if (parsed.pathname === '/debug/photo-review.png') {
       const photo = await buildPhotoSnapshot(now);
       let png;
       if (photo.imagePath && fs.existsSync(photo.imagePath)) {
-        png = await sharp(photo.imagePath).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).png().toBuffer();
+        png = await sharp(photo.imagePath).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+          fit: 'fill'
+        }).png().toBuffer();
       } else {
         const svg = createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT, `<rect width="100%" height="100%" fill="#ffffff"/><text x="40" y="240" font-family="${escapeXml(FONT_STACK)}" font-size="36" font-weight="700" fill="#000000">NO IMAGE</text><text x="40" y="300" font-family="${escapeXml(FONT_STACK)}" font-size="18" fill="#000000">${escapeXml(formatDateTime(now))}</text>`);
-        png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).png().toBuffer();
+        png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+          fit: 'fill'
+        }).png().toBuffer();
       }
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length, 'X-Frame-Id': photo.frameId });
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': png.length,
+        'X-Frame-Id': photo.frameId
+      });
       res.end(png);
       return;
     }
-
     if (parsed.pathname === '/debug/photo-before-after.png') {
       const photo = await buildPhotoSnapshot(now);
       let png;
       if (photo.imagePath && fs.existsSync(photo.imagePath)) {
-        const rawData = await sharp(photo.imagePath).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).raw().toBuffer();
+        const rawData = await sharp(photo.imagePath).resize(FRAME_WIDTH, FRAME_HEIGHT, {
+          fit: 'fill'
+        }).raw().toBuffer();
         const afterRaw = Buffer.alloc(FRAME_WIDTH * FRAME_HEIGHT * 4);
         for (let i = 0; i < FRAME_WIDTH * FRAME_HEIGHT; i++) {
           const bi = Math.floor(i / 2);
-          const fb = runtime.cachedFrames.get(photo.frameId); const fbuf = fb ? fb.frame.slice(10) : Buffer.alloc(192000, 0x11); const byteVal = i % 2 === 0 ? (fbuf[bi] >> 4) & 0x0F : fbuf[bi] & 0x0F;
+          const fb = runtime.cachedFrames.get(photo.frameId);
+          const fbuf = fb ? fb.frame.slice(10) : Buffer.alloc(192000, 0x11);
+          const byteVal = i % 2 === 0 ? fbuf[bi] >> 4 & 0x0F : fbuf[bi] & 0x0F;
           const c = epaperPalette.PALETTE.find(p => p.code === byteVal) || epaperPalette.PALETTE[0];
           const o = i * 4;
-          afterRaw[o] = c.rgb[0]; afterRaw[o+1] = c.rgb[1]; afterRaw[o+2] = c.rgb[2]; afterRaw[o+3] = 255;
+          afterRaw[o] = c.rgb[0];
+          afterRaw[o + 1] = c.rgb[1];
+          afterRaw[o + 2] = c.rgb[2];
+          afterRaw[o + 3] = 255;
         }
-        png = await sharp({ create: { width: FRAME_WIDTH * 2, height: FRAME_HEIGHT, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } })
-          .composite([
-            { input: rawData, raw: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3 }, left: 0, top: 0 },
-            { input: afterRaw, raw: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 4 }, left: FRAME_WIDTH, top: 0 },
-          ])
-          .png().toBuffer();
+        png = await sharp({
+          create: {
+            width: FRAME_WIDTH * 2,
+            height: FRAME_HEIGHT,
+            channels: 4,
+            background: {
+              r: 255,
+              g: 255,
+              b: 255,
+              alpha: 1
+            }
+          }
+        }).composite([{
+          input: rawData,
+          raw: {
+            width: FRAME_WIDTH,
+            height: FRAME_HEIGHT,
+            channels: 3
+          },
+          left: 0,
+          top: 0
+        }, {
+          input: afterRaw,
+          raw: {
+            width: FRAME_WIDTH,
+            height: FRAME_HEIGHT,
+            channels: 4
+          },
+          left: FRAME_WIDTH,
+          top: 0
+        }]).png().toBuffer();
       } else {
-        png = await sharp({ create: { width: FRAME_WIDTH * 2, height: FRAME_HEIGHT, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } })
-          .composite([
-            { input: { create: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3, background: { r: 255, g: 255, b: 255 } } }, left: 0, top: 0 },
-            { input: { create: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3, background: { r: 255, g: 255, b: 255 } } }, left: FRAME_WIDTH, top: 0 },
-          ])
-          .png().toBuffer();
+        png = await sharp({
+          create: {
+            width: FRAME_WIDTH * 2,
+            height: FRAME_HEIGHT,
+            channels: 4,
+            background: {
+              r: 255,
+              g: 255,
+              b: 255,
+              alpha: 1
+            }
+          }
+        }).composite([{
+          input: {
+            create: {
+              width: FRAME_WIDTH,
+              height: FRAME_HEIGHT,
+              channels: 3,
+              background: {
+                r: 255,
+                g: 255,
+                b: 255
+              }
+            }
+          },
+          left: 0,
+          top: 0
+        }, {
+          input: {
+            create: {
+              width: FRAME_WIDTH,
+              height: FRAME_HEIGHT,
+              channels: 3,
+              background: {
+                r: 255,
+                g: 255,
+                b: 255
+              }
+            }
+          },
+          left: FRAME_WIDTH,
+          top: 0
+        }]).png().toBuffer();
       }
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': png.length
+      });
       res.end(png);
       return;
     }
-
-        if (parsed.pathname === '/debug/photo-palette.json') {
+    if (parsed.pathname === '/debug/photo-palette.json') {
       const photo = await buildPhotoSnapshot(now);
       const cacheKey = photo.frameId;
       if (!runtime.cachedFrames.has(cacheKey)) {
-        const sel = { entry: null, theme: photo.title || null, kind: photo.kind || 'shot' };
-        if (photo.imagePath && fs.existsSync(photo.imagePath)) { sel.entry = { processedPngPath: photo.imagePath, width: 800, height: 480 }; }
+        const sel = {
+          entry: null,
+          theme: photo.title || null,
+          kind: photo.kind || 'shot'
+        };
+        if (photo.imagePath && fs.existsSync(photo.imagePath)) {
+          sel.entry = {
+            processedPngPath: photo.imagePath,
+            width: 800,
+            height: 480
+          };
+        }
         const rawFrame = await renderPhotoFrame(sel, now);
         const frame = buildFrameBuffer(rawFrame);
         runtime.renderCount++;
-        runtime.cachedFrames.set(cacheKey, { frame, payload: photo, snapshot: photo });
+        runtime.cachedFrames.set(cacheKey, {
+          frame,
+          payload: photo,
+          snapshot: photo
+        });
       }
       const payload = runtime.cachedFrames.get(cacheKey).frame.slice(10);
       const counts = {};
       for (let i = 0; i < payload.length; i++) {
-        counts[String((payload[i] >> 4) & 0x0F)] = (counts[String((payload[i] >> 4) & 0x0F)] || 0) + 1;
+        counts[String(payload[i] >> 4 & 0x0F)] = (counts[String(payload[i] >> 4 & 0x0F)] || 0) + 1;
         counts[String(payload[i] & 0x0F)] = (counts[String(payload[i] & 0x0F)] || 0) + 1;
       }
-        const palette = epaperPalette.PALETTE.map(function(c) { return { code: c.code, name: c.name, pixelCount: counts[String(c.code)] || 0 }; });
-      palette.push({ code: 4, name: 'orange(unsupported)', pixelCount: counts['4'] || 0 });
-      palette.push({ code: 7, name: 'reserved', pixelCount: counts['7'] || 0 });
-      const body = Buffer.from(JSON.stringify({ timestamp: now.toISOString(), frameId: photo.frameId, imageName: photo.imageName, width: FRAME_WIDTH, height: FRAME_HEIGHT, totalPixels: FRAME_WIDTH * FRAME_HEIGHT, unsupportedCode4: counts['4'] || 0, palette }, null, 2));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      const palette = epaperPalette.PALETTE.map(function (c) {
+        return {
+          code: c.code,
+          name: c.name,
+          pixelCount: counts[String(c.code)] || 0
+        };
+      });
+      palette.push({
+        code: 4,
+        name: 'orange(unsupported)',
+        pixelCount: counts['4'] || 0
+      });
+      palette.push({
+        code: 7,
+        name: 'reserved',
+        pixelCount: counts['7'] || 0
+      });
+      const body = Buffer.from(JSON.stringify({
+        timestamp: now.toISOString(),
+        frameId: photo.frameId,
+        imageName: photo.imageName,
+        width: FRAME_WIDTH,
+        height: FRAME_HEIGHT,
+        totalPixels: FRAME_WIDTH * FRAME_HEIGHT,
+        unsupportedCode4: counts['4'] || 0,
+        palette
+      }, null, 2));
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': body.length
+      });
       res.end(body);
       return;
     }
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/pin-state.json') {
       const client = clientKey(req);
       var pinnedId = runtime.pinStore ? runtime.pinStore.get(client) : null;
@@ -3252,9 +3165,12 @@ async function handleRequest(req, res) {
         snapshotId: pinnedId || null,
         pinStoreSize: runtime.pinStore ? runtime.pinStore.size() : 0,
         renderCount: runtime.renderCount,
-        cachedFrames: runtime.cachedFrames.size,
+        cachedFrames: runtime.cachedFrames.size
       }, null, 2));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': body.length
+      });
       res.end(body);
       return;
     }
@@ -3266,25 +3182,33 @@ async function handleRequest(req, res) {
         NEWS_ROTATION_FILE: NEWS_ROTATION_FILE,
         IMAGE_INDEX_FILE: IMAGE_INDEX_FILE,
         FEEDS_FILE: FEEDS_FILE,
-        CONFIG_FILE: APP_CONFIG.configFile || path.join(ROOT_DIR, 'config.json'),
+        CONFIG_FILE: APP_CONFIG.configFile || path.join(ROOT_DIR, 'config.json')
       }, null, 2));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': r.length
+      });
       res.end(r);
       return;
     }
-
-
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/clock') {
       const iso = parsed.searchParams.get('iso');
       if (iso) {
         runtime.nowProvider = () => new Date(iso);
         runtime.pinNowProvider = () => new Date(iso).getTime();
         if (runtime.pinStore && typeof runtime.pinStore.setClock === 'function') {
-          runtime.pinStore.setClock({ nowMs: runtime.pinNowProvider });
+          runtime.pinStore.setClock({
+            nowMs: runtime.pinNowProvider
+          });
         }
-        const r = Buffer.from(JSON.stringify({ set: true, iso }));
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+        const r = Buffer.from(JSON.stringify({
+          set: true,
+          iso
+        }));
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': r.length
+        });
         res.end(r);
         return;
       }
@@ -3294,17 +3218,27 @@ async function handleRequest(req, res) {
         if (runtime.pinStore && typeof runtime.pinStore.setClock === 'function') {
           runtime.pinStore.setClock(null);
         }
-        const r = Buffer.from(JSON.stringify({ set: false }));
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+        const r = Buffer.from(JSON.stringify({
+          set: false
+        }));
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': r.length
+        });
         res.end(r);
         return;
       }
-      const r = Buffer.from(JSON.stringify({ nowProviderActive: runtime.nowProvider !== null, serverTime: new Date().toISOString() }));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+      const r = Buffer.from(JSON.stringify({
+        nowProviderActive: runtime.nowProvider !== null,
+        serverTime: new Date().toISOString()
+      }));
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': r.length
+      });
       res.end(r);
       return;
     }
-    
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-short-read') {
       var buf = Buffer.alloc(192010, 0xAA);
       buf.write('EPF1', 0, 4, 'ascii');
@@ -3312,14 +3246,17 @@ async function handleRequest(req, res) {
       buf.writeUInt16LE(480, 6);
       buf.writeUInt8(49, 8);
       buf.writeUInt8(1, 9);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': 192010, 'X-Frame-Id': 'test-frame-validation' });
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': 192010,
+        'X-Frame-Id': 'test-frame-validation'
+      });
       // Send only first 100000 bytes and close — simulates network truncation
       var partial = buf.slice(0, 100000);
       res.write(partial);
       res.socket.end();
       return;
     }
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-ok') {
       var fb2 = runtime.cachedFrames.get(clientKey(req));
       var fbAny = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0] : null;
@@ -3329,47 +3266,58 @@ async function handleRequest(req, res) {
         'Content-Length': buf.length,
         'X-Frame-Id': 'test-frame-ok',
         'X-Frame-Mode': 'photo',
-        'X-Frame-Slot': 'test',
+        'X-Frame-Slot': 'test'
       });
       res.end(buf);
       return;
     }
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-500') {
-      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.writeHead(500, {
+        'Content-Type': 'text/plain'
+      });
       res.end('Internal Server Error');
       return;
     }
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-id-missing') {
       var buf3 = Buffer.alloc(192010, 0x11);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf3.length });
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': buf3.length
+      });
       res.end(buf3);
       return;
     }
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-id-mismatch') {
       var buf4 = Buffer.alloc(192010, 0x11);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf4.length, 'X-Frame-Id': 'wrong-id' });
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': buf4.length,
+        'X-Frame-Id': 'wrong-id'
+      });
       res.end(buf4);
       return;
     }
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-short') {
       var buf5 = Buffer.alloc(100, 0x11);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf5.length, 'X-Frame-Id': 'test-frame-validation' });
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': buf5.length,
+        'X-Frame-Id': 'test-frame-validation'
+      });
       res.end(buf5);
       return;
     }
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-bad-magic') {
       var buf6 = Buffer.alloc(192010, 0xFF);
       buf6.write('BAD!', 0, 4, 'ascii');
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf6.length, 'X-Frame-Id': 'test-frame-validation' });
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': buf6.length,
+        'X-Frame-Id': 'test-frame-validation'
+      });
       res.end(buf6);
       return;
     }
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-bad-size') {
       var buf7 = Buffer.alloc(192010, 0x11);
       buf7.write('EPF1', 0, 4, 'ascii');
@@ -3377,11 +3325,14 @@ async function handleRequest(req, res) {
       buf7.writeUInt16LE(567, 6);
       buf7.writeUInt8(49, 8);
       buf7.writeUInt8(1, 9);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf7.length, 'X-Frame-Id': 'test-frame-validation' });
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': buf7.length,
+        'X-Frame-Id': 'test-frame-validation'
+      });
       res.end(buf7);
       return;
     }
-
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-bad-panel') {
       var buf8 = Buffer.alloc(192010, 0x11);
       buf8.write('EPF1', 0, 4, 'ascii');
@@ -3389,27 +3340,34 @@ async function handleRequest(req, res) {
       buf8.writeUInt16LE(480, 6);
       buf8.writeUInt8(99, 8);
       buf8.writeUInt8(1, 9);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf8.length, 'X-Frame-Id': 'test-frame-validation' });
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': buf8.length,
+        'X-Frame-Id': 'test-frame-validation'
+      });
       res.end(buf8);
       return;
     }
-
-
-
-    
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/test-instance') {
       var insId = APP_CONFIG.testInstanceId || '';
-      var r = Buffer.from(JSON.stringify({ instanceId: insId, pid: process.pid }));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
+      var r = Buffer.from(JSON.stringify({
+        instanceId: insId,
+        pid: process.pid
+      }));
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': r.length
+      });
       res.end(r);
       return;
     }
 
-    
     // ── Admin routes ──
-    if (parsed.pathname === '/admin' || parsed.pathname === '/admin/' ||
-        parsed.pathname.startsWith('/admin/') || parsed.pathname.startsWith('/api/admin/')) {
-      if (!adminNetworkCheck(req)) { failJson(res, 403, 'ADMIN_NETWORK_DENIED'); return; }
+    if (parsed.pathname === '/admin' || parsed.pathname === '/admin/' || parsed.pathname.startsWith('/admin/') || parsed.pathname.startsWith('/api/admin/')) {
+      if (!adminNetworkCheck(req)) {
+        failJson(res, 403, 'ADMIN_NETWORK_DENIED');
+        return;
+      }
       if (req.method !== 'GET' && req.method !== 'OPTIONS') {
         var csrfResult = adminCSRFCheck(req);
         if (!csrfResult.allowed) {
@@ -3422,66 +3380,126 @@ async function handleRequest(req, res) {
           return;
         }
       }
-      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
     }
     if (parsed.pathname === '/api/admin/access-mode') {
-      respondJson(res, { mode: ADMIN_ACCESS_MODE });
+      respondJson(res, {
+        mode: ADMIN_ACCESS_MODE
+      });
       return;
     }
     if (parsed.pathname === '/admin' || parsed.pathname === '/admin/') {
       var h = serveAdminFile('index.html');
-      if (h) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' }); res.end(h); return; }
-      res.writeHead(500); res.end('Admin file missing'); return;
+      if (h) {
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        res.end(h);
+        return;
+      }
+      res.writeHead(500);
+      res.end('Admin file missing');
+      return;
     }
     if (parsed.pathname === '/admin/admin.css') {
       var c = serveAdminFile('admin.css');
-      if (c) { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' }); res.end(c); return; }
+      if (c) {
+        res.writeHead(200, {
+          'Content-Type': 'text/css; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        res.end(c);
+        return;
+      }
     }
     if (parsed.pathname === '/admin/admin.js') {
       var j = serveAdminFile('admin.js');
-      if (j) { res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' }); res.end(j); return; }
+      if (j) {
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        res.end(j);
+        return;
+      }
     }
-
     if (parsed.pathname === '/api/admin/dashboard') {
-      if (ADMIN_ACCESS_MODE !== 'lan' && !ADMIN_TOKEN) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
-      if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (ADMIN_ACCESS_MODE !== 'lan' && !ADMIN_TOKEN) {
+        failJson(res, 401, 'ADMIN_TOKEN not configured');
+        return;
+      }
+      if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) {
+        failJson(res, 401, 'authorization header missing');
+        return;
+      }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
       if (!snap) {
         try {
           var c = await getContentForNow(new Date());
           snap = c.snapshot;
-        } catch(e) {}
+        } catch (e) {}
       }
       var newsItemCount = 0;
       try {
         var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
-        if (fs.existsSync(lgPath2)) { var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8')); if (lg2 && lg2.items) newsItemCount = lg2.items.length; }
-      } catch(e) {}
-      respondJson(res, { status: 'ok', timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount, newsItemCount: newsItemCount, manualOverride: runtime.manualOverride || null, overrideExpiresAt: runtime.overrideExpiresAt || null, lastPublishedAt: runtime.lastPublishedAt || null });
+        if (fs.existsSync(lgPath2)) {
+          var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8'));
+          if (lg2 && lg2.items) newsItemCount = lg2.items.length;
+        }
+      } catch (e) {}
+      respondJson(res, {
+        status: 'ok',
+        timezone: TIMEZONE,
+        currentMode: snap ? snap.mode : null,
+        currentSlot: snap ? snap.slotKey : null,
+        frameId: snap ? snap.frameId : null,
+        nextSwitchLocal: snap ? snap.nextSwitchLocal : null,
+        frameCacheEntries: runtime.cachedFrames.size,
+        uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000),
+        frameRenderCount: runtime.renderCount,
+        newsItemCount: newsItemCount,
+        manualOverride: runtime.manualOverride || null,
+        overrideExpiresAt: runtime.overrideExpiresAt || null,
+        lastPublishedAt: runtime.lastPublishedAt || null
+      });
       return;
     }
-
     if (parsed.pathname === '/api/admin/control-mode') {
-      if (ADMIN_ACCESS_MODE !== 'lan' && !ADMIN_TOKEN) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
-      if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (ADMIN_ACCESS_MODE !== 'lan' && !ADMIN_TOKEN) {
+        failJson(res, 401, 'ADMIN_TOKEN not configured');
+        return;
+      }
+      if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) {
+        failJson(res, 401, 'authorization header missing');
+        return;
+      }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var snap2 = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
       if (!snap2) {
         try {
           var c2 = await getContentForNow(new Date());
           snap2 = c2.snapshot;
-        } catch(e) {}
+        } catch (e) {}
       }
-      var mode = runtime.manualOverride ? 'manual' : (snap2 ? snap2.mode : 'unknown');
+      var mode = runtime.manualOverride ? 'manual' : snap2 ? snap2.mode : 'unknown';
       var description = '';
-      if (mode === 'manual') description = '手动覆盖 — 当前内容由管理员手动指定';
-      else if (mode === 'unknown') description = '暂无排程信息 — 调度器可能尚未运行';
-      else description = '自动调度 — 由时间 SLOT 调度器自动选择内容';
+      if (mode === 'manual') description = '手动覆盖 — 当前内容由管理员手动指定';else if (mode === 'unknown') description = '暂无排程信息 — 调度器可能尚未运行';else description = '自动调度 — 由时间 SLOT 调度器自动选择内容';
       respondJson(res, {
         status: 'ok',
         mode: mode,
-        modeLabel: mode === 'manual' ? '手动覆盖' : (mode === 'unknown' ? '未知' : '自动调度'),
+        modeLabel: mode === 'manual' ? '手动覆盖' : mode === 'unknown' ? '未知' : '自动调度',
         description: description,
         overrideActive: !!runtime.manualOverride,
         overrideExpiresAt: runtime.overrideExpiresAt || null,
@@ -3490,13 +3508,13 @@ async function handleRequest(req, res) {
       });
       return;
     }
-
     if (parsed.pathname === '/api/admin/content-sync/status') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var newsStats = runtime.syncStatus.news;
       var photoStats = runtime.syncStatus.photos;
-      
       respondJson(res, {
         news: {
           jobRunning: runtime.syncLocks.news,
@@ -3507,7 +3525,7 @@ async function handleRequest(req, res) {
           itemsFetched: newsStats.itemsFetched,
           itemsProcessed: newsStats.itemsProcessed || 0,
           itemsAdded: newsStats.itemsAdded,
-          nextRunAt: runtime.lastNewsRefreshAt ? runtime.lastNewsRefreshAt + (NEWS_REFRESH_MINUTES * 60 * 1000) : 0
+          nextRunAt: runtime.lastNewsRefreshAt ? runtime.lastNewsRefreshAt + NEWS_REFRESH_MINUTES * 60 * 1000 : 0
         },
         photos: {
           jobRunning: runtime.syncLocks.photos,
@@ -3518,26 +3536,30 @@ async function handleRequest(req, res) {
           itemsFetched: photoStats.itemsFetched || 0,
           itemsProcessed: photoStats.itemsProcessed,
           newIds: photoStats.newIds,
-          nextRunAt: runtime.lastPhotoSyncAt ? runtime.lastPhotoSyncAt + (PHOTO_SYNC_MINUTES * 60 * 1000) : 0
+          nextRunAt: runtime.lastPhotoSyncAt ? runtime.lastPhotoSyncAt + PHOTO_SYNC_MINUTES * 60 * 1000 : 0
         }
       });
       return;
     }
-
     if (parsed.pathname === '/api/admin/content-sync/news') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (req.method !== 'POST') { failJson(res, 405, 'method not allowed'); return; }
-      
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
+      if (req.method !== 'POST') {
+        failJson(res, 405, 'method not allowed');
+        return;
+      }
       if (runtime.syncLocks.news) {
         failJson(res, 409, 'News sync is already running');
         return;
       }
-      
       runtime.syncLocks.news = true;
       runtime.syncStatus.news.jobRunning = true;
       runtime.syncStatus.news.lastAttemptAt = Date.now();
-      
-      buildNewsSnapshot(new Date(), { force: true }).then((snap) => {
+      buildNewsSnapshot(new Date(), {
+        force: true
+      }).then(snap => {
         runtime.lastNewsRefreshAt = Date.now();
         runtime.syncStatus.news.lastSuccessAt = Date.now();
         runtime.syncStatus.news.lastError = null;
@@ -3554,7 +3576,9 @@ async function handleRequest(req, res) {
         try {
           var staleDraftPath = path.join(DATA_DIR, 'admin_news_draft.json');
           if (fs.existsSync(staleDraftPath)) fs.unlinkSync(staleDraftPath);
-        } catch(e) { r1Logger.warn('clear stale news draft failed: ' + e.message); }
+        } catch (e) {
+          r1Logger.warn('clear stale news draft failed: ' + e.message);
+        }
         runtime.syncLocks.news = false;
         runtime.syncStatus.news.jobRunning = false;
       }).catch(err => {
@@ -3564,32 +3588,47 @@ async function handleRequest(req, res) {
         runtime.syncLocks.news = false;
         runtime.syncStatus.news.jobRunning = false;
       });
-      
-      respondJson(res, { status: 'started', jobId: 'news-' + Date.now() });
+      respondJson(res, {
+        status: 'started',
+        jobId: 'news-' + Date.now()
+      });
       return;
     }
-
     if (parsed.pathname === '/api/admin/content-sync/photos') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (req.method !== 'POST') { failJson(res, 405, 'method not allowed'); return; }
-      
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
+      if (req.method !== 'POST') {
+        failJson(res, 405, 'method not allowed');
+        return;
+      }
       if (runtime.syncLocks.photos) {
         failJson(res, 409, 'Photo sync is already running');
         return;
       }
-      
       runtime.syncLocks.photos = true;
       runtime.syncStatus.photos.jobRunning = true;
       runtime.syncStatus.photos.lastAttemptAt = Date.now();
-      
       try {
-        const { runFetchImages } = require('./scripts/fetch-images.js');
-        const { runProcessImages } = require('./scripts/process-images.js');
-        runFetchImages({ limit: 10 }).then((fetchResults) => {
-          return runProcessImages({ limit: 0 }).then((processResults) => {
-            return { fetchResults, processResults };
+        const {
+          runFetchImages
+        } = require('./scripts/fetch-images.js');
+        const {
+          runProcessImages
+        } = require('./scripts/process-images.js');
+        runFetchImages({
+          limit: 10
+        }).then(fetchResults => {
+          return runProcessImages({
+            limit: 0
+          }).then(processResults => {
+            return {
+              fetchResults,
+              processResults
+            };
           });
-        }).then((results) => {
+        }).then(results => {
           runtime.syncStatus.photos.lastSuccessAt = Date.now();
           runtime.syncStatus.photos.lastError = null;
           runtime.lastPhotoSyncAt = Date.now();
@@ -3605,7 +3644,7 @@ async function handleRequest(req, res) {
           // 必须把 loadImageIndex() 的返回值赋给 runtime.imageIndex，
           // 否则内存索引永远是启动时的快照，新抓的图不进入自动轮播。
           return loadImageIndex();
-        }).then((entries) => {
+        }).then(entries => {
           if (Array.isArray(entries)) runtime.imageIndex = entries;
           runtime.syncLocks.photos = false;
           runtime.syncStatus.photos.jobRunning = false;
@@ -3623,13 +3662,17 @@ async function handleRequest(req, res) {
         runtime.syncLocks.photos = false;
         runtime.syncStatus.photos.jobRunning = false;
       }
-      
-      respondJson(res, { status: 'started', jobId: 'photo-' + Date.now() });
+      respondJson(res, {
+        status: 'started',
+        jobId: 'photo-' + Date.now()
+      });
       return;
     }
-
     if (parsed.pathname === '/api/admin/news') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var sel = [];
       // 1. 优先读用户保存的草稿（admin_news_draft.json），否则刷新页面后编辑全部丢失
       try {
@@ -3639,31 +3682,45 @@ async function handleRequest(req, res) {
           if (draft && draft.items && draft.items.length > 0) {
             // 保留 originalTitle/originalSummary 否则前端 renderNewsDetail
             // 的"显示原文"功能在保存草稿后永远失效（hasOrg 永远 false）。
-            sel = draft.items.map(function(it) { return {
-              source: it.source || '',
-              category: it.category || '',
-              title: it.title || '',
-              summary: it.summary || '',
-              url: it.url || '',
-              titleLen: (it.title || '').length,
-              summaryLen: (it.summary || '').length,
-              publishedAt: it.publishedAt || '',
-              translationStatus: it.translationStatus || 'original',
-              originalTitle: it.originalTitle || '',
-              originalSummary: it.originalSummary || ''
-            }; });
+            sel = draft.items.map(function (it) {
+              return {
+                source: it.source || '',
+                category: it.category || '',
+                title: it.title || '',
+                summary: it.summary || '',
+                url: it.url || '',
+                titleLen: (it.title || '').length,
+                summaryLen: (it.summary || '').length,
+                publishedAt: it.publishedAt || '',
+                translationStatus: it.translationStatus || 'original',
+                originalTitle: it.originalTitle || '',
+                originalSummary: it.originalSummary || ''
+              };
+            });
           }
         }
-      } catch(e) {}
+      } catch (e) {}
       // 2. Fallback: read from last_good_news.json if no draft
       if (sel.length === 0) {
         try {
           var lgPath = path.join(DATA_DIR, 'last_good_news.json');
           if (fs.existsSync(lgPath)) {
             var lg = JSON.parse(fs.readFileSync(lgPath, 'utf8'));
-            if (lg && lg.items) sel = lg.items.map(function(it) { return { source: it.source, category: it.category, title: it.zhTitle || it.originalTitle, summary: it.zhSummary || it.originalSummary, url: it.sourceUrl, titleLen: (it.zhTitle||it.originalTitle||'').length, summaryLen: (it.zhSummary||it.originalSummary||'').length, publishedAt: it.publishedAt, translationStatus: it.translationStatus }; });
+            if (lg && lg.items) sel = lg.items.map(function (it) {
+              return {
+                source: it.source,
+                category: it.category,
+                title: it.zhTitle || it.originalTitle,
+                summary: it.zhSummary || it.originalSummary,
+                url: it.sourceUrl,
+                titleLen: (it.zhTitle || it.originalTitle || '').length,
+                summaryLen: (it.zhSummary || it.originalSummary || '').length,
+                publishedAt: it.publishedAt,
+                translationStatus: it.translationStatus
+              };
+            });
           }
-        } catch(e) {}
+        } catch (e) {}
       }
       // 3. Build candidates list from news_candidates_pool.json (written by
       //    buildNewsSnapshot) — this contains the wider mainPool (translated,
@@ -3679,15 +3736,17 @@ async function handleRequest(req, res) {
           var pool = JSON.parse(fs.readFileSync(poolPath, 'utf8'));
           if (pool && Array.isArray(pool.items)) {
             var selUrls = {};
-            sel.forEach(function(s) { if (s.url) selUrls[s.url] = true; });
-            pool.items.forEach(function(it) {
+            sel.forEach(function (s) {
+              if (s.url) selUrls[s.url] = true;
+            });
+            pool.items.forEach(function (it) {
               var u = it.url || it.sourceUrl;
               if (u && !selUrls[u]) {
                 candidates.push({
                   source: it.source || '',
                   category: it.category || '',
-                  title: it.title || (it.zhTitle || it.originalTitle || ''),
-                  summary: it.summary || (it.zhSummary || it.originalSummary || ''),
+                  title: it.title || it.zhTitle || it.originalTitle || '',
+                  summary: it.summary || it.zhSummary || it.originalSummary || '',
                   url: u,
                   titleLen: (it.title || it.zhTitle || it.originalTitle || '').length,
                   summaryLen: (it.summary || it.zhSummary || it.originalSummary || '').length,
@@ -3709,58 +3768,121 @@ async function handleRequest(req, res) {
             var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8'));
             if (lg2 && lg2.items) {
               var selUrls2 = {};
-              sel.forEach(function(s) { if (s.url) selUrls2[s.url] = true; });
-              lg2.items.forEach(function(it) {
+              sel.forEach(function (s) {
+                if (s.url) selUrls2[s.url] = true;
+              });
+              lg2.items.forEach(function (it) {
                 var u = it.sourceUrl;
                 if (u && !selUrls2[u]) {
-                  candidates.push({ source: it.source, category: it.category, title: it.zhTitle || it.originalTitle, summary: it.zhSummary || it.originalSummary, url: u, titleLen: (it.zhTitle||it.originalTitle||'').length, summaryLen: (it.zhSummary||it.originalSummary||'').length, publishedAt: it.publishedAt, translationStatus: it.translationStatus });
+                  candidates.push({
+                    source: it.source,
+                    category: it.category,
+                    title: it.zhTitle || it.originalTitle,
+                    summary: it.zhSummary || it.originalSummary,
+                    url: u,
+                    titleLen: (it.zhTitle || it.originalTitle || '').length,
+                    summaryLen: (it.zhSummary || it.originalSummary || '').length,
+                    publishedAt: it.publishedAt,
+                    translationStatus: it.translationStatus
+                  });
                 }
               });
             }
           }
         }
-      } catch(e) {}
+      } catch (e) {}
       // 兼容前端两种读法:新闻审查页读 d.selected,发布中心选择器读 d.news
-      respondJson(res, { selected: sel, candidates: candidates, news: sel });
+      respondJson(res, {
+        selected: sel,
+        candidates: candidates,
+        news: sel
+      });
       return;
     }
-
     if (parsed.pathname === '/api/admin/news/draft' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       try {
         var db = JSON.parse(await readBody(req));
         var di = db.items || db.selected || [];
         // 硬性要求 6 条（与 EPD 卡片布局契约一致）。
         // 前端 removeNews 应在 candidates 为空时禁止继续删除，而不是让服务器放宽限制。
-        if (di.length !== 6) { failJson(res, 400, 'need exactly 6 items, got ' + di.length); return; }
-        var su = {}, st = {};
+        if (di.length !== 6) {
+          failJson(res, 400, 'need exactly 6 items, got ' + di.length);
+          return;
+        }
+        var su = {},
+          st = {};
         for (var dk = 0; dk < di.length; dk++) {
           var d = di[dk];
-          if (!d.title || !d.title.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': title empty'); return; }
-          // 用 code point 数（[...str].length）与 evaluateNewsItemQuality 对齐。
-          // 之前用 .length（UTF-16 code unit）会在含 emoji/4字节 CJK 扩展字符时
-          // 与 quality gate 计数不一致，导致 admin 接受但 quality 拒绝（或反之）。
-          var titleCpLen = [...d.title].length;
-          if (titleCpLen > 24) { failJson(res, 400, 'item ' + (dk+1) + ': title too long (' + titleCpLen + ' code points)'); return; }
-          if (!d.summary || !d.summary.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': summary empty'); return; }
-          if (!d.url || !d.url.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': URL empty'); return; }
-          if (!d.source || !d.source.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': source empty'); return; }
-          if (!d.category || !d.category.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': category empty'); return; }
+          if (!d.title || !d.title.trim()) {
+            failJson(res, 400, 'item ' + (dk + 1) + ': title empty');
+            return;
+          }
+          const titleFont = 24;
+          const cardW = Math.floor((800 - 14 * 2 - 12) / 2); // 380
+          const maxWidth = cardW - 12; // 368
+          if (runtime.titleSummarizer) {
+            const width = runtime.titleSummarizer.measureTextWidthPixels(d.title, titleFont);
+            if (width > maxWidth) {
+              failJson(res, 400, 'item ' + (dk + 1) + ': title too wide (' + Math.round(width) + 'px > ' + maxWidth + 'px). Please edit.');
+              return;
+            }
+          } else {
+            var titleCpLen = [...d.title].length;
+            if (titleCpLen > 24) {
+              failJson(res, 400, 'item ' + (dk + 1) + ': title too long (' + titleCpLen + ' code points)');
+              return;
+            }
+          }
+          if (!d.summary || !d.summary.trim()) {
+            failJson(res, 400, 'item ' + (dk + 1) + ': summary empty');
+            return;
+          }
+          if (!d.url || !d.url.trim()) {
+            failJson(res, 400, 'item ' + (dk + 1) + ': URL empty');
+            return;
+          }
+          if (!d.source || !d.source.trim()) {
+            failJson(res, 400, 'item ' + (dk + 1) + ': source empty');
+            return;
+          }
+          if (!d.category || !d.category.trim()) {
+            failJson(res, 400, 'item ' + (dk + 1) + ': category empty');
+            return;
+          }
           var un = d.url.toLowerCase().replace(/[?#].*$/, '');
-          if (su[un]) { failJson(res, 400, 'duplicate URL: ' + d.url); return; }
+          if (su[un]) {
+            failJson(res, 400, 'duplicate URL: ' + d.url);
+            return;
+          }
           su[un] = true;
           var tn = d.title.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
-          if (st[tn]) { failJson(res, 400, 'duplicate title: ' + d.title); return; }
+          if (st[tn]) {
+            failJson(res, 400, 'duplicate title: ' + d.title);
+            return;
+          }
           st[tn] = true;
         }
-        await R1_writeFileAtomic(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: di }, null, 2));
-        respondJson(res, { status: 'ok', count: di.length });
-      } catch(e) { failJson(res, 500, e.message); }
+        await R1_writeFileAtomic(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({
+          items: di
+        }, null, 2));
+        respondJson(res, {
+          status: 'ok',
+          count: di.length
+        });
+      } catch (e) {
+        failJson(res, 500, e.message);
+      }
       return;
     }
-
     if (parsed.pathname === '/api/admin/publish/news' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       // publicationService/snapshotStore 缺失时必须返回 503，不能返回 200 假 frameId。
       // 之前块外有 respondJson({frameId:fid})，服务缺失时静默空操作，前端以为成功。
       if (!runtime.publicationService || !runtime.snapshotStore) {
@@ -3769,121 +3891,156 @@ async function handleRequest(req, res) {
       }
       var fid = 'manual-news:' + Date.now().toString(36);
       try {
-          // 读取用户保存的草稿。若存在，将 draft.items 作为 newsOverride 传入
-          // getContentForNow，绕过 buildNewsSnapshot 的自动选品流程，确保
-          // 用户在 admin UI 上的编辑（标题/摘要修改、排序、补位）真正生效。
-          // 之前的实现直接调 getContentForNow({forceMode:'news'})，完全
-          // 忽略草稿，发布的永远是 RSS 自动重抓的内容——用户编辑全无效。
-          var draftOverride = null;
-          try {
-            var pubDraftPath = path.join(DATA_DIR, 'admin_news_draft.json');
-            if (fs.existsSync(pubDraftPath)) {
-              var pubDraft = JSON.parse(fs.readFileSync(pubDraftPath, 'utf8'));
-              if (pubDraft && Array.isArray(pubDraft.items) && pubDraft.items.length > 0) {
-                // Map draft items (admin schema) to news snapshot items schema
-                var overrideItems = pubDraft.items.map(function(it) {
-                  return {
-                    originalTitle: it.originalTitle || '',
-                    originalSummary: it.originalSummary || '',
-                    zhTitle: it.title || '',
-                    zhSummary: it.summary || '',
-                    sourceUrl: it.url || '',
-                    source: it.source || '',
-                    category: it.category || '',
-                    // publishedAt 必须是可解析的 ISO 字符串；空字符串会让
-                    // new Date('') 得到 Invalid Date，renderNewsSvg 调 formatDateTime
-                    // 时抛 RangeError("Invalid time value")，整个发布 500。
-                    publishedAt: it.publishedAt || new Date().toISOString(),
-                    translationStatus: it.translationStatus || 'original'
-                  };
-                });
-                draftOverride = {
-                  translationProvider: TRANSLATION_PROVIDER,
-                  translationNotice: '',
-                  updatedAt: new Date().toISOString(),
-                  items: overrideItems,
-                  frameId: 'news:draft:' + sha1(JSON.stringify(overrideItems)).slice(0, 16),
-                  title: overrideItems[0] ? (overrideItems[0].source + ' / ' + overrideItems[0].category) : 'NEWS',
-                  slotKey: 'draft:' + Date.now().toString(36)
+        // 读取用户保存的草稿。若存在，将 draft.items 作为 newsOverride 传入
+        // getContentForNow，绕过 buildNewsSnapshot 的自动选品流程，确保
+        // 用户在 admin UI 上的编辑（标题/摘要修改、排序、补位）真正生效。
+        // 之前的实现直接调 getContentForNow({forceMode:'news'})，完全
+        // 忽略草稿，发布的永远是 RSS 自动重抓的内容——用户编辑全无效。
+        var draftOverride = null;
+        try {
+          var pubDraftPath = path.join(DATA_DIR, 'admin_news_draft.json');
+          if (fs.existsSync(pubDraftPath)) {
+            var pubDraft = JSON.parse(fs.readFileSync(pubDraftPath, 'utf8'));
+            if (pubDraft && Array.isArray(pubDraft.items) && pubDraft.items.length > 0) {
+              // Map draft items (admin schema) to news snapshot items schema
+              var overrideItems = pubDraft.items.map(function (it) {
+                return {
+                  originalTitle: it.originalTitle || '',
+                  originalSummary: it.originalSummary || '',
+                  zhTitle: it.title || '',
+                  zhSummary: it.summary || '',
+                  sourceUrl: it.url || '',
+                  source: it.source || '',
+                  category: it.category || '',
+                  // publishedAt 必须是可解析的 ISO 字符串；空字符串会让
+                  // new Date('') 得到 Invalid Date，renderNewsSvg 调 formatDateTime
+                  // 时抛 RangeError("Invalid time value")，整个发布 500。
+                  publishedAt: it.publishedAt || new Date().toISOString(),
+                  translationStatus: it.translationStatus || 'original'
                 };
-              }
+              });
+              draftOverride = {
+                translationProvider: TRANSLATION_PROVIDER,
+                translationNotice: '',
+                updatedAt: new Date().toISOString(),
+                items: overrideItems,
+                frameId: 'news:draft:' + sha1(JSON.stringify(overrideItems)).slice(0, 16),
+                title: overrideItems[0] ? overrideItems[0].source + ' / ' + overrideItems[0].category : 'NEWS',
+                slotKey: 'draft:' + Date.now().toString(36)
+              };
             }
-          } catch(e) { r1Logger.warn('read draft for publish failed: ' + e.message); }
-
-          var pubOpts = { forceMode: 'news' };
-          if (draftOverride) pubOpts.newsOverride = draftOverride;
-          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date(), pubOpts);
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: draftOverride ? 'manual_news_draft' : 'manual_news' });
-          await runtime.publicationService.publish(snap);
-          runtime.lastPublishedAt = new Date().toISOString();
-          runtime.manualOverride = { mode: 'manual-news', publishedAt: runtime.lastPublishedAt };
-          runtime.overrideExpiresAt = null;
-      } catch(e) {
+          }
+        } catch (e) {
+          r1Logger.warn('read draft for publish failed: ' + e.message);
+        }
+        var pubOpts = {
+          forceMode: 'news'
+        };
+        if (draftOverride) pubOpts.newsOverride = draftOverride;
+        var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date(), pubOpts);
+        var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, {
+          publishReason: draftOverride ? 'manual_news_draft' : 'manual_news'
+        });
+        
+        var pubResult = await runtime.adminPublishService.publish(snap, 'MANUAL_NEWS');
+        respondJson(res, pubResult);
+        return;
+      } catch (e) {
         r1Logger.warn('admin/news publish failed: ' + e.message);
-        runtime.recentError = { at: new Date().toISOString(), route: 'publish/news', message: e.message };
+        runtime.recentError = {
+          at: new Date().toISOString(),
+          route: 'publish/news',
+          message: e.message
+        };
         failJson(res, 500, 'publish failed: ' + e.message);
         return;
       }
-      // 返回真实 snap.frameId（前端可对照 /api/state.json 验证发布生效）。
-      // 旧代码返回临时生成的 fid='manual-news:xxx'，与实际发布帧对不上。
-      respondJson(res, { status: 'ok', frameId: snap.frameId, snapshotId: snap.snapshotId });
-      return;
     }
-
     if (parsed.pathname === '/api/admin/publish/photo' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var photoId = '';
       var pbBody = null;
-      try { pbBody = JSON.parse(await readBody(req)); } catch(e) { failJson(res, 400, 'invalid JSON body'); return; }
-      if (!pbBody || typeof pbBody !== 'object') { failJson(res, 400, 'invalid body'); return; }
-      photoId = (pbBody && pbBody.photoId) || '';
-      if (!photoId) { failJson(res, 400, 'photoId required'); return; }
-      var imgIdx = [];
-      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
-      if (!Array.isArray(imgIdx)) imgIdx = [];
-      var foundPhoto = imgIdx.some(function(e) { return e.id === photoId; });
-      if (!foundPhoto) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
-      if (!runtime.publicationService || !runtime.snapshotStore) {
+      try {
+        pbBody = JSON.parse(await readBody(req));
+      } catch (e) {
+        failJson(res, 400, 'invalid JSON body');
+        return;
+      }
+      if (!pbBody || typeof pbBody !== 'object') {
+        failJson(res, 400, 'invalid body');
+        return;
+      }
+      photoId = pbBody && pbBody.photoId || '';
+      if (!photoId) {
+        failJson(res, 400, 'photoId required');
+        return;
+      }
+      if (!runtime.publicationService || !runtime.snapshotStore || !runtime.imageRecipeService) {
         failJson(res, 503, 'publication service unavailable');
         return;
       }
+      
+      var photoRecipe = null;
       try {
-          // 读取 image_index.json 中该 photoId 的 recipe，传给 getContentForNow。
-          // 之前不传 recipe，用户在编辑器调的亮度/对比度/翻转等对发布的 frame 无影响。
-          var photoRecipe = null;
-          var photoEntry = imgIdx.filter(function(e) { return e.id === photoId; })[0];
-          if (photoEntry && photoEntry.recipe) photoRecipe = photoEntry.recipe;
-          // forceMode:'photo' + photoId 确保发布用户指定的图片，而不是 getContentForNow 自动选择的内容
-          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date(), { forceMode: 'photo', photoId: photoId, photoRecipe: photoRecipe });
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_photo' });
-          await runtime.publicationService.publish(snap);
-          runtime.lastPublishedAt = new Date().toISOString();
-          runtime.manualOverride = { mode: 'manual-photo', publishedAt: runtime.lastPublishedAt, photoId: photoId || null };
-          runtime.overrideExpiresAt = null;
-      } catch(e) {
+        photoRecipe = await runtime.imageRecipeService.validateAndApplyRecipe(photoId, pbBody.photoRecipe || null);
+      } catch (err) {
+        failJson(res, 400, 'Recipe validation failed: ' + err.message);
+        return;
+      }
+      try {
+        // 读取 image_index.json 中该 photoId 的 recipe，传给 getContentForNow。
+        // 之前不传 recipe，用户在编辑器调的亮度/对比度/翻转等对发布的 frame 无影响。
+        var photoRecipe = null;
+        var photoEntry = imgIdx.filter(function (e) {
+          return e.id === photoId;
+        })[0];
+        if (photoEntry && photoEntry.recipe) photoRecipe = photoEntry.recipe;
+        // forceMode:'photo' + photoId 确保发布用户指定的图片，而不是 getContentForNow 自动选择的内容
+        var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date(), {
+          forceMode: 'photo',
+          photoId: photoId,
+          photoRecipe: photoRecipe
+        });
+        var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, {
+          publishReason: 'manual_photo'
+        });
+        
+        var pubResult = await runtime.adminPublishService.publish(snap, 'MANUAL_PHOTO');
+        respondJson(res, pubResult);
+        return;
+      } catch (e) {
         r1Logger.warn('admin/photo publish failed: ' + e.message);
-        runtime.recentError = { at: new Date().toISOString(), route: 'publish/photo', message: e.message };
+        runtime.recentError = {
+          at: new Date().toISOString(),
+          route: 'publish/photo',
+          message: e.message
+        };
         failJson(res, 500, 'publish failed: ' + e.message);
         return;
       }
-      // 返回真实 snap.frameId，与 /api/state.json 一致
-      respondJson(res, { status: 'ok', frameId: snap.frameId, snapshotId: snap.snapshotId });
-      return;
     }
 
     // R3.7: ONE_SHOT publication — pin a snapshot until next HH:00/HH:30 boundary
     if (parsed.pathname === '/api/admin/publish/one-shot' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       if (!runtime.operatingModeService || !runtime.publicationService) {
-        failJson(res, 503, 'operating mode service unavailable'); return;
+        failJson(res, 503, 'operating mode service unavailable');
+        return;
       }
       try {
-        var osBody = JSON.parse(await readBody(req) || '{}');
+        var osBody = JSON.parse((await readBody(req)) || '{}');
         var contentType = String(osBody.contentType || 'photo').toLowerCase();
         var libraryType = String(osBody.libraryType || 'custom').toLowerCase();
         var assetId = osBody.assetId || '';
         if (contentType !== 'photo' && contentType !== 'news') {
-          failJson(res, 400, 'contentType must be "photo" or "news", got: ' + contentType); return;
+          failJson(res, 400, 'contentType must be "photo" or "news", got: ' + contentType);
+          return;
         }
         var osNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
         var osExpiresAt = computeNextSwitchAt(osNow);
@@ -3893,49 +4050,46 @@ async function handleRequest(req, res) {
         } else if (assetId) {
           // Explicit asset selection via assetSelectionService
           if (!runtime.assetSelectionService) {
-            failJson(res, 400, 'assetSelectionService unavailable — cannot select explicit asset'); return;
+            failJson(res, 400, 'assetSelectionService unavailable — cannot select explicit asset');
+            return;
           }
           try {
             var osSelection = await runtime.assetSelectionService.selectForOneShot(libraryType, assetId);
             osContent = await buildPhotoSnapshotFromAsset(osSelection.asset, osNow, 'one-shot:photo');
-          } catch(selErr) {
-            failJson(res, 400, 'asset selection failed: ' + selErr.message); return;
+          } catch (selErr) {
+            failJson(res, 400, 'asset selection failed: ' + selErr.message);
+            return;
           }
         } else {
           osContent = await buildPhotoSnapshot(osNow);
         }
         var osFrameId = 'one-shot:' + contentType + ':' + Date.now().toString(36);
-        var osSnap = R3_snapshotModel.createSnapshot(osFrameId, osContent.snapshot, osContent.frame, contentType, { publishReason: 'one_shot' });
-        await runtime.publicationService.publish(osSnap);
-        runtime.operatingModeService.enterOneShot(osSnap.snapshotId, osExpiresAt);
-        runtime.lastPublishedAt = new Date().toISOString();
-        runtime.manualOverride = { mode: 'ONE_SHOT_OVERRIDE', snapshotId: osSnap.snapshotId, assetId: assetId || null, contentType: contentType };
+        var osSnap = R3_snapshotModel.createSnapshot(osFrameId, osContent.snapshot, osContent.frame, contentType, {
+          publishReason: 'one_shot'
+        });
+        
+        var pubResult = await runtime.adminPublishService.publish(osSnap, 'ONE_SHOT_OVERRIDE', {
+          expiresAt: osExpiresAt.toISOString(),
+          assetId: assetId || null,
+          libraryType: libraryType,
+          contentType: contentType
+        });
+        
+        // The one-shot endpoint also preserves specific legacy properties in manualOverride for UI compatibility
+        runtime.manualOverride = {
+          mode: 'ONE_SHOT_OVERRIDE',
+          snapshotId: osSnap.snapshotId,
+          assetId: assetId || null,
+          contentType: contentType
+        };
         runtime.overrideExpiresAt = osExpiresAt.toISOString();
-        // V3: persist override via overridePersistence (replaces ad-hoc writeFileSync).
-        // On restart, validateOverrideAsync() re-checks the asset; if it has been
-        // deleted / marked unsafe, the override is cleared (no silent swap).
-        if (runtime.overridePersistence) {
-          try {
-            runtime.overridePersistence.saveOverride({
-              mode: 'ONE_SHOT_OVERRIDE',
-              assetId: assetId || null,
-              snapshotId: osSnap.snapshotId,
-              libraryType: libraryType,
-              contentType: contentType,
-              savedAt: new Date().toISOString(),
-              expiresAt: osExpiresAt.toISOString(),
-            });
-          } catch (e) {
-            r1Logger.warn('Failed to persist ONE_SHOT override: ' + e.message);
-          }
-        }
         respondJson(res, {
           snapshotId: osSnap.snapshotId,
           frameId: osFrameId,
           expiresAt: osExpiresAt.toISOString(),
-          operatingMode: 'ONE_SHOT_OVERRIDE',
+          operatingMode: 'ONE_SHOT_OVERRIDE'
         });
-      } catch(e) {
+      } catch (e) {
         r1Logger.warn('one-shot publish failed: ' + e.message);
         failJson(res, 500, 'one-shot publish failed: ' + e.message);
       }
@@ -3944,12 +4098,16 @@ async function handleRequest(req, res) {
 
     // R3.7: FOCUS_LOCK — pin a snapshot until explicit DELETE
     if (parsed.pathname === '/api/admin/focus-lock' && req.method === 'PUT') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       if (!runtime.operatingModeService || !runtime.publicationService) {
-        failJson(res, 503, 'operating mode service unavailable'); return;
+        failJson(res, 503, 'operating mode service unavailable');
+        return;
       }
       try {
-        var flBody = JSON.parse(await readBody(req) || '{}');
+        var flBody = JSON.parse((await readBody(req)) || '{}');
         var flLibraryType = String(flBody.libraryType || 'custom').toLowerCase();
         var flTheme = flBody.theme || null;
         var flAlbumId = flBody.albumId || null;
@@ -3957,30 +4115,41 @@ async function handleRequest(req, res) {
         var flContent;
         // Use assetSelectionService to find a matching asset (no schedule fallback)
         if (!runtime.assetSelectionService) {
-          failJson(res, 503, 'assetSelectionService unavailable'); return;
+          failJson(res, 503, 'assetSelectionService unavailable');
+          return;
         }
         try {
           var flSelection = await runtime.assetSelectionService.selectForFocusLock({
             libraryType: flLibraryType,
             theme: flTheme,
-            albumId: flAlbumId,
+            albumId: flAlbumId
           });
           flContent = await buildPhotoSnapshotFromAsset(flSelection.asset, flNow, 'focus-lock:photo');
-        } catch(selErr) {
+        } catch (selErr) {
           // No matching asset → 404 (no schedule fallback)
-          failJson(res, 404, 'no matching asset found: ' + selErr.message); return;
+          failJson(res, 404, 'no matching asset found: ' + selErr.message);
+          return;
         }
         var flFrameId = 'focus-lock:' + Date.now().toString(36);
-        var flSnap = R3_snapshotModel.createSnapshot(flFrameId, flContent.snapshot, flContent.frame, 'photo', { publishReason: 'focus_change' });
+        var flSnap = R3_snapshotModel.createSnapshot(flFrameId, flContent.snapshot, flContent.frame, 'photo', {
+          publishReason: 'focus_change'
+        });
         await runtime.publicationService.publish(flSnap);
         runtime.operatingModeService.enterFocusLock(flSnap.snapshotId, {
           libraryType: flLibraryType,
           theme: flTheme,
           albumId: flAlbumId,
-          resolvedAssetId: flSelection.assetId,
+          resolvedAssetId: flSelection.assetId
         });
         runtime.lastPublishedAt = new Date().toISOString();
-        runtime.manualOverride = { mode: 'FOCUS_LOCK', snapshotId: flSnap.snapshotId, assetId: flSelection.assetId, libraryType: flLibraryType, theme: flTheme, albumId: flAlbumId };
+        runtime.manualOverride = {
+          mode: 'FOCUS_LOCK',
+          snapshotId: flSnap.snapshotId,
+          assetId: flSelection.assetId,
+          libraryType: flLibraryType,
+          theme: flTheme,
+          albumId: flAlbumId
+        };
         runtime.overrideExpiresAt = null;
         // V3: persist override via overridePersistence for restart restore.
         if (runtime.overridePersistence) {
@@ -3992,7 +4161,7 @@ async function handleRequest(req, res) {
               libraryType: flLibraryType,
               theme: flTheme,
               albumId: flAlbumId,
-              savedAt: new Date().toISOString(),
+              savedAt: new Date().toISOString()
             });
           } catch (e) {
             r1Logger.warn('Failed to persist FOCUS_LOCK override: ' + e.message);
@@ -4005,19 +4174,22 @@ async function handleRequest(req, res) {
           libraryType: flLibraryType,
           theme: flTheme,
           albumId: flAlbumId,
-          resolvedAssetId: flSelection.assetId,
+          resolvedAssetId: flSelection.assetId
         });
-      } catch(e) {
+      } catch (e) {
         r1Logger.warn('focus-lock enter failed: ' + e.message);
         failJson(res, 500, 'focus-lock failed: ' + e.message);
       }
       return;
     }
-
     if (parsed.pathname === '/api/admin/focus-lock' && req.method === 'DELETE') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       if (!runtime.operatingModeService || !runtime.publicationService) {
-        failJson(res, 503, 'operating mode service unavailable'); return;
+        failJson(res, 503, 'operating mode service unavailable');
+        return;
       }
       try {
         runtime.operatingModeService.exitFocusLock();
@@ -4025,26 +4197,35 @@ async function handleRequest(req, res) {
         runtime.overrideExpiresAt = null;
         // V3: clear persisted override via overridePersistence (replaces ad-hoc unlinkSync)
         if (runtime.overridePersistence) {
-          try { runtime.overridePersistence.clearOverride(); } catch(e) {}
+          try {
+            runtime.overridePersistence.clearOverride();
+          } catch (e) {}
         }
         // Re-publish current schedule-based snapshot
         if (runtime.snapshotStore) {
           var flRestoreNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
           var flRestoreContent = await getContentForNow(flRestoreNow);
-          var flRestoreSnap = R3_snapshotModel.createSnapshot(flRestoreContent.snapshot.frameId, flRestoreContent.snapshot, flRestoreContent.frame, flRestoreContent.snapshot.mode, { publishReason: 'schedule_restore' });
+          var flRestoreSnap = R3_snapshotModel.createSnapshot(flRestoreContent.snapshot.frameId, flRestoreContent.snapshot, flRestoreContent.frame, flRestoreContent.snapshot.mode, {
+            publishReason: 'schedule_restore'
+          });
           await runtime.publicationService.publish(flRestoreSnap);
           runtime.lastPublishedAt = new Date().toISOString();
         }
-        respondJson(res, { status: 'ok', operatingMode: 'AUTO' });
-      } catch(e) {
+        respondJson(res, {
+          status: 'ok',
+          operatingMode: 'AUTO'
+        });
+      } catch (e) {
         r1Logger.warn('focus-lock exit failed: ' + e.message);
         failJson(res, 500, 'focus-lock release failed: ' + e.message);
       }
       return;
     }
-
     if (parsed.pathname === '/api/admin/rollback' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       if (runtime.publicationService) {
         try {
           var rbBody = JSON.parse(await readBody(req));
@@ -4057,22 +4238,36 @@ async function handleRequest(req, res) {
           if (!rbSnapshotId && rbPublishId && runtime.publicationHistory) {
             try {
               var rbHistList = await runtime.publicationHistory.list();
-              var rbHistEntry = rbHistList.filter(function(e) { return e.id === rbPublishId; })[0];
+              var rbHistEntry = rbHistList.filter(function (e) {
+                return e.id === rbPublishId;
+              })[0];
               if (rbHistEntry) rbSnapshotId = rbHistEntry.snapshotId;
-            } catch(e) { r1Logger.warn('rollback history lookup failed: ' + e.message); }
+            } catch (e) {
+              r1Logger.warn('rollback history lookup failed: ' + e.message);
+            }
           }
-          if (!rbSnapshotId) { failJson(res, 400, 'snapshotId required (publishId not found in history)'); return; }
+          if (!rbSnapshotId) {
+            failJson(res, 400, 'snapshotId required (publishId not found in history)');
+            return;
+          }
           await runtime.publicationService.rollback(rbSnapshotId);
           runtime.lastPublishedAt = new Date().toISOString();
           // Rollback to a prior snapshot reverts any active ONE_SHOT/FOCUS_LOCK
           // since the rolled-back content represents the new source of truth.
           if (runtime.operatingModeService) {
-            try { runtime.operatingModeService.exitOneShot(); } catch(e) {}
-            try { runtime.operatingModeService.exitFocusLock(); } catch(e) {}
+            try {
+              runtime.operatingModeService.exitOneShot();
+            } catch (e) {}
+            try {
+              runtime.operatingModeService.exitFocusLock();
+            } catch (e) {}
           }
           runtime.manualOverride = null;
           runtime.overrideExpiresAt = null;
-          respondJson(res, { status: 'ok', snapshotId: rbSnapshotId });
+          respondJson(res, {
+            status: 'ok',
+            snapshotId: rbSnapshotId
+          });
           return;
         } catch (e) {
           failJson(res, 400, 'rollback failed: ' + e.message);
@@ -4083,20 +4278,26 @@ async function handleRequest(req, res) {
       failJson(res, 503, 'publication service unavailable');
       return;
     }
-
     if (parsed.pathname === '/api/admin/publish-history') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       if (runtime.publicationHistory) {
         try {
           var r3History = await runtime.publicationHistory.list();
           // 不 mutate list() 返回的对象（避免污染内部缓存）。
           // 用 shallow copy + 计算的 status 字段返回。
-          var r3Out = (r3History || []).map(function(e, hi) {
-            return Object.assign({}, e, { status: hi === 0 ? 'active' : 'archived' });
+          var r3Out = (r3History || []).map(function (e, hi) {
+            return Object.assign({}, e, {
+              status: hi === 0 ? 'active' : 'archived'
+            });
           });
-          respondJson(res, { history: r3Out });
+          respondJson(res, {
+            history: r3Out
+          });
           return;
-        } catch(e) {
+        } catch (e) {
           r1Logger.warn('publish-history list failed: ' + (e.message || e));
           failJson(res, 500, 'history read failed: ' + e.message);
           return;
@@ -4105,24 +4306,36 @@ async function handleRequest(req, res) {
       failJson(res, 503, 'history unavailable');
       return;
     }
-
     if (parsed.pathname.startsWith('/api/admin/publish-history/') && parsed.pathname.endsWith('/preview')) {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var historyId = parsed.pathname.split('/')[4];
-      if (!historyId || !/^[a-zA-Z0-9_-]+$/.test(historyId)) { failJson(res, 400, 'invalid historyId'); return; }
+      if (!historyId || !/^[a-zA-Z0-9_-]+$/.test(historyId)) {
+        failJson(res, 400, 'invalid historyId');
+        return;
+      }
       if (runtime.publicationHistory && runtime.publicationService) {
         try {
           var histList = await runtime.publicationHistory.list();
-          var entry = histList.filter(function(e) { return e.id === historyId || e.snapshotId === historyId; })[0];
-          if (!entry) { failJson(res, 404, 'history entry not found'); return; }
+          var entry = histList.filter(function (e) {
+            return e.id === historyId || e.snapshotId === historyId;
+          })[0];
+          if (!entry) {
+            failJson(res, 404, 'history entry not found');
+            return;
+          }
           var snap = await runtime.publicationService.loadSnapshot(entry.snapshotId);
-          if (!snap) { failJson(res, 404, 'snapshot not found'); return; }
-          
+          if (!snap) {
+            failJson(res, 404, 'snapshot not found');
+            return;
+          }
           var previewData = {};
           // snapshot 的业务数据（items/id/photoId/imageSource/width/height/title）
           // 全部存在 snap.payload 里（见 src/snapshot/snapshot-model.js），
           // 直接读 snap.xxx 永远是 undefined，导致预览永远空白。
-          var snapPayload = (snap && snap.payload) || {};
+          var snapPayload = snap && snap.payload || {};
           var snapMode = snap.mode || snapPayload.mode || entry.type;
           if (snapMode === 'news') {
             previewData = {
@@ -4133,7 +4346,7 @@ async function handleRequest(req, res) {
             previewData = {
               photoId: photoId,
               title: snapPayload.title || snapPayload.imageName || snap.title || snap.imageName || '',
-              thumbnailUrl: photoId ? ('/api/admin/photos/' + encodeURIComponent(photoId) + '/thumbnail') : (snapPayload.imageSource || snap.imageSource || ''),
+              thumbnailUrl: photoId ? '/api/admin/photos/' + encodeURIComponent(photoId) + '/thumbnail' : snapPayload.imageSource || snap.imageSource || '',
               width: snapPayload.width || snap.width || 0,
               height: snapPayload.height || snap.height || 0
             };
@@ -4148,7 +4361,7 @@ async function handleRequest(req, res) {
             canRollback: entry.restorable !== false
           });
           return;
-        } catch(e) {
+        } catch (e) {
           failJson(res, 500, 'preview failed: ' + e.message);
           return;
         }
@@ -4156,27 +4369,54 @@ async function handleRequest(req, res) {
       failJson(res, 503, 'service unavailable');
       return;
     }
-
     if (parsed.pathname === '/api/admin/photos') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var idx = [];
-      try { idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      try {
+        idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8'));
+      } catch (e) {}
       if (!Array.isArray(idx)) idx = [];
-      respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, poolType: e.poolType || '', safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }), uploadAvailable: true });
+      respondJson(res, {
+        photos: idx.map(function (e) {
+          return {
+            id: e.id,
+            title: e.title,
+            source: e.source,
+            width: e.width,
+            height: e.height,
+            theme: e.theme,
+            kind: e.kind,
+            poolType: e.poolType || '',
+            safetyStatus: e.safetyStatus || 'pending',
+            createdAt: e.createdAt
+          };
+        }),
+        uploadAvailable: true
+      });
       return;
     }
-
     if (parsed.pathname === '/api/admin/photos/upload' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       try {
         var fname = req.headers['x-file-name'] ? decodeURIComponent(req.headers['x-file-name']) : 'upload.png';
         var ext = path.extname(fname).toLowerCase();
         if (!ext) ext = '.png';
-        var rawBuf = await readBody(req, 20*1024*1024, true);
-        if (!rawBuf || rawBuf.length === 0) { failJson(res, 400, 'empty file'); return; }
+        var rawBuf = await readBody(req, 20 * 1024 * 1024, true);
+        if (!rawBuf || rawBuf.length === 0) {
+          failJson(res, 400, 'empty file');
+          return;
+        }
         var fid = 'upload-' + Date.now().toString(36);
         var rawDir = path.join(DATA_DIR, 'raw_images');
-        if (!fs.existsSync(rawDir)) fs.mkdirSync(rawDir, { recursive: true });
+        if (!fs.existsSync(rawDir)) fs.mkdirSync(rawDir, {
+          recursive: true
+        });
         var fpath = path.join(rawDir, fid + ext);
         fs.writeFileSync(fpath, rawBuf);
         // 同步处理图片：之前只 spawn 'npm run process'，但 process-images.js 只读 raw_index.json，
@@ -4184,20 +4424,28 @@ async function handleRequest(req, res) {
         // isImageReady 永远 false，手动发布会渲染 NO IMAGE 占位图。
         // 现在直接用 sharp 处理，生成 processedPngPath，让上传图片立即可用。
         var processedDir = path.join(DATA_DIR, 'processed_images');
-        if (!fs.existsSync(processedDir)) fs.mkdirSync(processedDir, { recursive: true });
+        if (!fs.existsSync(processedDir)) fs.mkdirSync(processedDir, {
+          recursive: true
+        });
         var processedPngPath = path.join(processedDir, fid + '.png');
         var uploadSharp;
         try {
           uploadSharp = require('sharp');
-          var upPipe = uploadSharp(fpath)
-            .rotate()
-            .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'cover', position: 'centre' })
-            .modulate({ brightness: 1.05 })
-            .sharpen({ sigma: 0.5, flat: 1, jagged: 2 })
-            .flatten({ background: '#ffffff' });
+          var upPipe = uploadSharp(fpath).rotate().resize(FRAME_WIDTH, FRAME_HEIGHT, {
+            fit: 'cover',
+            position: 'centre'
+          }).modulate({
+            brightness: 1.05
+          }).sharpen({
+            sigma: 0.5,
+            flat: 1,
+            jagged: 2
+          }).flatten({
+            background: '#ffffff'
+          });
           var upBuf = await upPipe.png().toBuffer();
           await fsp.writeFile(processedPngPath, upBuf);
-        } catch(e) {
+        } catch (e) {
           console.error('Upload process failed:', e.message);
           // 即使处理失败也保留 raw 条目，用户可在图片库看到并重试
           // 注意：必须用 failJson 而非 respondJson，后者第二参数被当 data 永远返回 HTTP 200
@@ -4205,7 +4453,9 @@ async function handleRequest(req, res) {
           return;
         }
         var imgIdx = [];
-        try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+        try {
+          imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8'));
+        } catch (e) {}
         if (!Array.isArray(imgIdx)) imgIdx = [];
         // 上传图片默认 poolType='study_frames' + theme='uploaded'，让 isStudySelectable 可选
         imgIdx.push({
@@ -4220,72 +4470,114 @@ async function handleRequest(req, res) {
           theme: 'uploaded',
           kind: 'shot',
           poolType: 'study_frames',
-          safetyStatus: 'approved',  // 上传图片用户主动上传，默认 approved
+          safetyStatus: 'approved',
+          // 上传图片用户主动上传，默认 approved
           width: FRAME_WIDTH,
           height: FRAME_HEIGHT,
           hash: sha1(rawBuf)
         });
-        try { await R1_writeFileAtomic(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2)); } catch(e) { failJson(res, 500, 'index save failed: ' + e.message); return; }
+        try {
+          await R1_writeFileAtomic(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
+        } catch (e) {
+          failJson(res, 500, 'index save failed: ' + e.message);
+          return;
+        }
         // 刷新 runtime.imageIndex 内存，避免 buildPhotoSnapshot 用旧索引
-        try { runtime.imageIndex = await loadImageIndex(); } catch(e) {}
-        respondJson(res, { status: 'ok', photoId: fid });
+        try {
+          runtime.imageIndex = await loadImageIndex();
+        } catch (e) {}
+        respondJson(res, {
+          status: 'ok',
+          photoId: fid
+        });
       } catch (e) {
         console.error('Upload error:', e);
         failJson(res, 500, 'Upload failed: ' + e.message);
       }
       return;
     }
-
     var photoGetMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)$/);
     if (photoGetMatch && req.method === 'GET') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var pId = photoGetMatch[1];
       var imgIdx = [];
-      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      try {
+        imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8'));
+      } catch (e) {}
       if (!Array.isArray(imgIdx)) imgIdx = [];
-      var found = imgIdx.find(function(e) { return e.id === pId; });
-      if (!found) { failJson(res, 404, 'photo not found'); return; }
+      var found = imgIdx.find(function (e) {
+        return e.id === pId;
+      });
+      if (!found) {
+        failJson(res, 404, 'photo not found');
+        return;
+      }
       // 兼容前端 openEditor 直接读 d.title。之前返回 {photo: found} 导致 d.title 永远 undefined
       // 编辑器标题永远 fallback 到 id.slice(0,12)
       respondJson(res, found);
       return;
     }
-
     var photoSaveMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/save-edit$/);
     if (photoSaveMatch && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var pId = photoSaveMatch[1];
       var imgIdx = [];
-      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      try {
+        imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8'));
+      } catch (e) {}
       if (!Array.isArray(imgIdx)) imgIdx = [];
-      var fIdx = imgIdx.findIndex(function(e) { return e.id === pId; });
-      if (fIdx === -1) { failJson(res, 404, 'photo not found'); return; }
+      var fIdx = imgIdx.findIndex(function (e) {
+        return e.id === pId;
+      });
+      if (fIdx === -1) {
+        failJson(res, 404, 'photo not found');
+        return;
+      }
       try {
         var body = JSON.parse(await readBody(req));
         if (body.recipe) {
           imgIdx[fIdx].recipe = body.recipe;
-          try { await R1_writeFileAtomic(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2)); } catch(e) { failJson(res, 500, 'index save failed: ' + e.message); return; }
+          try {
+            await R1_writeFileAtomic(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
+          } catch (e) {
+            failJson(res, 500, 'index save failed: ' + e.message);
+            return;
+          }
           // 刷新 runtime.imageIndex + 失效 cachedFrames 中该图对应的旧帧
-          try { runtime.imageIndex = await loadImageIndex(); } catch(e) {}
+          try {
+            runtime.imageIndex = await loadImageIndex();
+          } catch (e) {}
           if (runtime.cachedFrames && runtime.cachedFrames.size > 0) {
             var seCacheKeys = [];
-            runtime.cachedFrames.forEach(function(v, k) {
-              if ((v && v.payload && v.payload.id === pId) || (v && v.snapshot && v.snapshot.id === pId)) {
+            runtime.cachedFrames.forEach(function (v, k) {
+              if (v && v.payload && v.payload.id === pId || v && v.snapshot && v.snapshot.id === pId) {
                 seCacheKeys.push(k);
               }
             });
-            seCacheKeys.forEach(function(k) { runtime.cachedFrames.delete(k); });
+            seCacheKeys.forEach(function (k) {
+              runtime.cachedFrames.delete(k);
+            });
           }
         }
-        respondJson(res, { status: 'ok' });
+        respondJson(res, {
+          status: 'ok'
+        });
       } catch (e) {
         failJson(res, 400, 'invalid body: ' + e.message);
       }
       return;
     }
-
     if (parsed.pathname === '/api/admin/photo-palette' && req.method === 'GET') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       // Compute palette counts for the currently-selected photo (or the photo
       // referenced by ?id=) so the admin editor shows real per-color pixel
       // counts instead of a hardcoded 5-color stub. Mirrors the logic in
@@ -4296,110 +4588,189 @@ async function handleRequest(req, res) {
         var paletteId = parsed.searchParams.get('id');
         if (paletteId) {
           var pIdx = [];
-          try { pIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+          try {
+            pIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8'));
+          } catch (e) {}
           if (!Array.isArray(pIdx)) pIdx = [];
-          var pEntry = pIdx.find(function(e) { return e.id === paletteId; });
+          var pEntry = pIdx.find(function (e) {
+            return e.id === paletteId;
+          });
           // 相对路径必须基于 ROOT_DIR 解析，否则 cwd 不对时 existsSync 返回 false
           if (pEntry && pEntry.processedPngPath) {
             var palPAbs = path.isAbsolute(pEntry.processedPngPath) ? pEntry.processedPngPath : path.join(ROOT_DIR, pEntry.processedPngPath);
             if (fs.existsSync(palPAbs)) {
-              palettePhoto = { frameId: 'palette:' + paletteId, imagePath: palPAbs, title: pEntry.title || pEntry.id, kind: pEntry.kind || 'shot' };
+              palettePhoto = {
+                frameId: 'palette:' + paletteId,
+                imagePath: palPAbs,
+                title: pEntry.title || pEntry.id,
+                kind: pEntry.kind || 'shot'
+              };
             }
           }
         }
         // 检测是否传了 recipe 参数（b/c/s/g/r/fh/fv/sh/bl）
         // 前端 loadEditorPreview 总是传完整 recipe，但旧代码忽略这些参数，
         // 导致用户调整亮度/对比度后调色板统计不反映调整效果
-        var hasRecipe = parsed.searchParams.has('b') || parsed.searchParams.has('c') ||
-                        parsed.searchParams.has('s') || parsed.searchParams.has('g') ||
-                        parsed.searchParams.has('r') || parsed.searchParams.has('fh') ||
-                        parsed.searchParams.has('fv') || parsed.searchParams.has('sh') ||
-                        parsed.searchParams.has('bl');
+        var hasRecipe = parsed.searchParams.has('b') || parsed.searchParams.has('c') || parsed.searchParams.has('s') || parsed.searchParams.has('g') || parsed.searchParams.has('r') || parsed.searchParams.has('fh') || parsed.searchParams.has('fv') || parsed.searchParams.has('sh') || parsed.searchParams.has('bl');
         if (hasRecipe && pEntry && pEntry.processedPngPath) {
           var rpPAbs = path.isAbsolute(pEntry.processedPngPath) ? pEntry.processedPngPath : path.join(ROOT_DIR, pEntry.processedPngPath);
           if (fs.existsSync(rpPAbs)) {
-          // 走 sharp pipeline 量化统计（和 photo-eink-preview 相同的 pipeline）
-          var rpSrcPath = rpPAbs;
-          var rpB = parseFloat(parsed.searchParams.get('b')) || 1.0;
-          var rpC = parseFloat(parsed.searchParams.get('c')) || 1.0;
-          var rpS = parseFloat(parsed.searchParams.get('s')) || 1.0;
-          var rpG = parseFloat(parsed.searchParams.get('g')) || 1.0;
-          var rpR = parseFloat(parsed.searchParams.get('r')) || 0;
-          var rpFH = parsed.searchParams.get('fh') === '1';
-          var rpFV = parsed.searchParams.get('fv') === '1';
-          var rpSH = parseFloat(parsed.searchParams.get('sh')) || 0;
-          var rpBL = parseFloat(parsed.searchParams.get('bl')) || 0;
-          var rpSharp = require('sharp');
-          var rpPipe = rpSharp(rpSrcPath).rotate(rpR).resize(800, 480, { fit: 'cover', position: 'centre' });
-          if (rpFH) rpPipe = rpPipe.flop();
-          if (rpFV) rpPipe = rpPipe.flip();
-          if (rpC !== 1.0) { rpPipe = rpPipe.linear(rpC, -(0.5 * rpC) + 0.5); }
-          if (rpB !== 1.0 || rpS !== 1.0) { rpPipe = rpPipe.modulate({ brightness: rpB, saturation: rpS }); }
-          if (rpG !== 1.0) rpPipe = rpPipe.gamma(rpG);
-          if (rpSH > 0) rpPipe = rpPipe.sharpen({ sigma: rpSH });
-          if (rpBL > 0) rpPipe = rpPipe.blur(rpBL);
-          var rpRaw = await rpPipe.raw().toBuffer({ resolveWithObject: true });
-          var rpW = rpRaw.info.width, rpH = rpRaw.info.height;
-          var rpCounts = {};
-          for (var rpi = 0; rpi < rpW * rpH; rpi++) {
-            var rpR2 = rpRaw.data[rpi*3], rpG2 = rpRaw.data[rpi*3+1], rpB2 = rpRaw.data[rpi*3+2];
-            var rpCode = epaperPalette.nearestPaletteCode(rpR2, rpG2, rpB2);
-            rpCounts[String(rpCode)] = (rpCounts[String(rpCode)] || 0) + 1;
-          }
-          var rpList = epaperPalette.PALETTE.map(function(c) { return { code: c.code, name: c.name, pixelCount: rpCounts[String(c.code)] || 0 }; });
-          rpList.push({ code: 4, name: 'orange(unsupported)', pixelCount: rpCounts['4'] || 0 });
-          rpList.push({ code: 7, name: 'reserved', pixelCount: rpCounts['7'] || 0 });
-          respondJson(res, {
-            frameId: 'palette:recipe:' + (paletteId || 'auto'),
-            imageName: pEntry.title || pEntry.id || null,
-            width: rpW, height: rpH,
-            totalPixels: rpW * rpH,
-            unsupportedCode4: rpCounts['4'] || 0,
-            palette: rpList,
-          });
-          return;
+            // 走 sharp pipeline 量化统计（和 photo-eink-preview 相同的 pipeline）
+            var rpSrcPath = rpPAbs;
+            var rpB = parseFloat(parsed.searchParams.get('b')) || 1.0;
+            var rpC = parseFloat(parsed.searchParams.get('c')) || 1.0;
+            var rpS = parseFloat(parsed.searchParams.get('s')) || 1.0;
+            var rpG = parseFloat(parsed.searchParams.get('g')) || 1.0;
+            var rpR = parseFloat(parsed.searchParams.get('r')) || 0;
+            var rpFH = parsed.searchParams.get('fh') === '1';
+            var rpFV = parsed.searchParams.get('fv') === '1';
+            var rpSH = parseFloat(parsed.searchParams.get('sh')) || 0;
+            var rpBL = parseFloat(parsed.searchParams.get('bl')) || 0;
+            var rpSharp = require('sharp');
+            var rpPipe = rpSharp(rpSrcPath).rotate(rpR).resize(800, 480, {
+              fit: 'cover',
+              position: 'centre'
+            });
+            if (rpFH) rpPipe = rpPipe.flop();
+            if (rpFV) rpPipe = rpPipe.flip();
+            if (rpC !== 1.0) {
+              rpPipe = rpPipe.linear(rpC, -(0.5 * rpC) + 0.5);
+            }
+            if (rpB !== 1.0 || rpS !== 1.0) {
+              rpPipe = rpPipe.modulate({
+                brightness: rpB,
+                saturation: rpS
+              });
+            }
+            if (rpG !== 1.0) rpPipe = rpPipe.gamma(rpG);
+            if (rpSH > 0) rpPipe = rpPipe.sharpen({
+              sigma: rpSH
+            });
+            if (rpBL > 0) rpPipe = rpPipe.blur(rpBL);
+            var rpRaw = await rpPipe.raw().toBuffer({
+              resolveWithObject: true
+            });
+            var rpW = rpRaw.info.width,
+              rpH = rpRaw.info.height;
+            var rpCounts = {};
+            for (var rpi = 0; rpi < rpW * rpH; rpi++) {
+              var rpR2 = rpRaw.data[rpi * 3],
+                rpG2 = rpRaw.data[rpi * 3 + 1],
+                rpB2 = rpRaw.data[rpi * 3 + 2];
+              var rpCode = epaperPalette.nearestPaletteCode(rpR2, rpG2, rpB2);
+              rpCounts[String(rpCode)] = (rpCounts[String(rpCode)] || 0) + 1;
+            }
+            var rpList = epaperPalette.PALETTE.map(function (c) {
+              return {
+                code: c.code,
+                name: c.name,
+                pixelCount: rpCounts[String(c.code)] || 0
+              };
+            });
+            rpList.push({
+              code: 4,
+              name: 'orange(unsupported)',
+              pixelCount: rpCounts['4'] || 0
+            });
+            rpList.push({
+              code: 7,
+              name: 'reserved',
+              pixelCount: rpCounts['7'] || 0
+            });
+            respondJson(res, {
+              frameId: 'palette:recipe:' + (paletteId || 'auto'),
+              imageName: pEntry.title || pEntry.id || null,
+              width: rpW,
+              height: rpH,
+              totalPixels: rpW * rpH,
+              unsupportedCode4: rpCounts['4'] || 0,
+              palette: rpList
+            });
+            return;
           }
         }
-        if (!palettePhoto) { palettePhoto = await buildPhotoSnapshot(new Date()); }
+        if (!palettePhoto) {
+          palettePhoto = await buildPhotoSnapshot(new Date());
+        }
         var paletteCacheKey = palettePhoto.frameId;
         if (!runtime.cachedFrames.has(paletteCacheKey)) {
-          var pSel = { entry: null, theme: palettePhoto.title || null, kind: palettePhoto.kind || 'shot' };
-          if (palettePhoto.imagePath && fs.existsSync(palettePhoto.imagePath)) { pSel.entry = { processedPngPath: palettePhoto.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT }; }
+          var pSel = {
+            entry: null,
+            theme: palettePhoto.title || null,
+            kind: palettePhoto.kind || 'shot'
+          };
+          if (palettePhoto.imagePath && fs.existsSync(palettePhoto.imagePath)) {
+            pSel.entry = {
+              processedPngPath: palettePhoto.imagePath,
+              width: FRAME_WIDTH,
+              height: FRAME_HEIGHT
+            };
+          }
           var pRawFrame = await renderPhotoFrame(pSel, now);
           var pFrame = buildFrameBuffer(pRawFrame);
           runtime.renderCount++;
-          runtime.cachedFrames.set(paletteCacheKey, { frame: pFrame, payload: palettePhoto, snapshot: palettePhoto });
+          runtime.cachedFrames.set(paletteCacheKey, {
+            frame: pFrame,
+            payload: palettePhoto,
+            snapshot: palettePhoto
+          });
         }
         var pPayload = runtime.cachedFrames.get(paletteCacheKey).frame.slice(10);
         var pCounts = {};
         for (var pi = 0; pi < pPayload.length; pi++) {
-          pCounts[String((pPayload[pi] >> 4) & 0x0F)] = (pCounts[String((pPayload[pi] >> 4) & 0x0F)] || 0) + 1;
+          pCounts[String(pPayload[pi] >> 4 & 0x0F)] = (pCounts[String(pPayload[pi] >> 4 & 0x0F)] || 0) + 1;
           pCounts[String(pPayload[pi] & 0x0F)] = (pCounts[String(pPayload[pi] & 0x0F)] || 0) + 1;
         }
-        var paletteList = epaperPalette.PALETTE.map(function(c) { return { code: c.code, name: c.name, pixelCount: pCounts[String(c.code)] || 0 }; });
-        paletteList.push({ code: 4, name: 'orange(unsupported)', pixelCount: pCounts['4'] || 0 });
-        paletteList.push({ code: 7, name: 'reserved', pixelCount: pCounts['7'] || 0 });
+        var paletteList = epaperPalette.PALETTE.map(function (c) {
+          return {
+            code: c.code,
+            name: c.name,
+            pixelCount: pCounts[String(c.code)] || 0
+          };
+        });
+        paletteList.push({
+          code: 4,
+          name: 'orange(unsupported)',
+          pixelCount: pCounts['4'] || 0
+        });
+        paletteList.push({
+          code: 7,
+          name: 'reserved',
+          pixelCount: pCounts['7'] || 0
+        });
         respondJson(res, {
           frameId: palettePhoto.frameId,
           imageName: palettePhoto.title || palettePhoto.imageName || null,
-          width: FRAME_WIDTH, height: FRAME_HEIGHT,
+          width: FRAME_WIDTH,
+          height: FRAME_HEIGHT,
           totalPixels: FRAME_WIDTH * FRAME_HEIGHT,
           unsupportedCode4: pCounts['4'] || 0,
-          palette: paletteList,
+          palette: paletteList
         });
-      } catch(e) { failJson(res, 500, 'photo-palette failed: ' + e.message); }
+      } catch (e) {
+        failJson(res, 500, 'photo-palette failed: ' + e.message);
+      }
       return;
     }
-
     var delMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)$/);
     if (delMatch && req.method === 'DELETE') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var delId = delMatch[1];
       var imgIdx = [];
-      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      try {
+        imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8'));
+      } catch (e) {}
       if (!Array.isArray(imgIdx)) imgIdx = [];
-      var foundIdx = imgIdx.findIndex(function(e) { return e.id === delId; });
-      if (foundIdx === -1) { failJson(res, 404, 'photo not found'); return; }
+      var foundIdx = imgIdx.findIndex(function (e) {
+        return e.id === delId;
+      });
+      if (foundIdx === -1) {
+        failJson(res, 404, 'photo not found');
+        return;
+      }
       var p = imgIdx[foundIdx];
       imgIdx.splice(foundIdx, 1);
       // 原子写：避免崩溃导致 image_index.json 损坏 → loadImageIndex fallback [] → 整库丢失。
@@ -4407,42 +4778,66 @@ async function handleRequest(req, res) {
       // 导致索引指向已删文件 → broken reference。必须失败时返回 500 且不删文件。
       try {
         await R1_writeFileAtomic(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
-      } catch(e) {
+      } catch (e) {
         failJson(res, 500, 'index save failed: ' + e.message);
         return;
       }
-      if (p.rawPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.rawPath)); } catch(e) {}
-      if (p.processedPngPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.processedPngPath)); } catch(e) {}
+      if (p.rawPath) try {
+        fs.unlinkSync(path.join(ROOT_DIR, p.rawPath));
+      } catch (e) {}
+      if (p.processedPngPath) try {
+        fs.unlinkSync(path.join(ROOT_DIR, p.processedPngPath));
+      } catch (e) {}
       // 字段名是 epfPath（不是 processedEpfPath），否则删除时 epf 文件永远残留
-      if (p.epfPath) try { fs.unlinkSync(path.join(ROOT_DIR, p.epfPath)); } catch(e) {}
+      if (p.epfPath) try {
+        fs.unlinkSync(path.join(ROOT_DIR, p.epfPath));
+      } catch (e) {}
       // 刷新 runtime.imageIndex 内存 + 清理 cachedFrames 中引用该图的帧
-      try { runtime.imageIndex = await loadImageIndex(); } catch(e) {}
+      try {
+        runtime.imageIndex = await loadImageIndex();
+      } catch (e) {}
       if (runtime.cachedFrames && runtime.cachedFrames.size > 0) {
         var delCacheKeys = [];
-        runtime.cachedFrames.forEach(function(v, k) {
-          if ((v && v.payload && v.payload.id === delId) || (v && v.snapshot && v.snapshot.id === delId)) {
+        runtime.cachedFrames.forEach(function (v, k) {
+          if (v && v.payload && v.payload.id === delId || v && v.snapshot && v.snapshot.id === delId) {
             delCacheKeys.push(k);
           }
         });
-        delCacheKeys.forEach(function(k) { runtime.cachedFrames.delete(k); });
+        delCacheKeys.forEach(function (k) {
+          runtime.cachedFrames.delete(k);
+        });
       }
-      respondJson(res, { status: 'ok' });
+      respondJson(res, {
+        status: 'ok'
+      });
       return;
     }
-
     if (parsed.pathname === '/api/admin/photo-preview' || parsed.pathname === '/api/admin/photo-eink-preview') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var isEinkPreview = parsed.pathname === '/api/admin/photo-eink-preview';
       try {
         // 前端 admin.js 用 ?id= 传 photoId（旧代码误读 'photoId'，导致永远 404）
         var prevId = parsed.searchParams.get('id') || parsed.searchParams.get('photoId');
         var imgIdx = [];
-        try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+        try {
+          imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8'));
+        } catch (e) {}
         if (!Array.isArray(imgIdx)) imgIdx = [];
-        var pEntry = imgIdx.find(function(e) { return e.id === prevId; });
-        if (!pEntry) { failJson(res, 404, 'photo not found'); return; }
-        var srcPath = pEntry.rawPath ? path.join(ROOT_DIR, pEntry.rawPath) : (pEntry.processedPngPath ? path.join(ROOT_DIR, pEntry.processedPngPath) : '');
-        if (!fs.existsSync(srcPath)) { failJson(res, 404, 'source file not found'); return; }
+        var pEntry = imgIdx.find(function (e) {
+          return e.id === prevId;
+        });
+        if (!pEntry) {
+          failJson(res, 404, 'photo not found');
+          return;
+        }
+        var srcPath = pEntry.rawPath ? path.join(ROOT_DIR, pEntry.rawPath) : pEntry.processedPngPath ? path.join(ROOT_DIR, pEntry.processedPngPath) : '';
+        if (!fs.existsSync(srcPath)) {
+          failJson(res, 404, 'source file not found');
+          return;
+        }
 
         // 前端发 b/c/s/g/r/fh/fv/sh/bl（brightness/contrast/saturation/gamma/rotate/flipH/flipV/sharpen/blur）
         // 旧代码读 'brightness'/'saturation' 名称不匹配，所有调整参数失效
@@ -4455,9 +4850,11 @@ async function handleRequest(req, res) {
         var pFlipV = parsed.searchParams.get('fv') === '1' || parsed.searchParams.get('flipV') === '1';
         var pSharpen = parseFloat(parsed.searchParams.get('sh') || parsed.searchParams.get('sharpen')) || 0;
         var pBlur = parseFloat(parsed.searchParams.get('bl') || parsed.searchParams.get('blur')) || 0;
-
         var sharp = require('sharp');
-        var pipeline = sharp(srcPath).rotate(pRotate).resize(800, 480, { fit: 'cover', position: 'centre' });
+        var pipeline = sharp(srcPath).rotate(pRotate).resize(800, 480, {
+          fit: 'cover',
+          position: 'centre'
+        });
         if (pFlipH) pipeline = pipeline.flop();
         if (pFlipV) pipeline = pipeline.flip();
         if (pContrast !== 1.0) {
@@ -4467,30 +4864,51 @@ async function handleRequest(req, res) {
           pipeline = pipeline.linear(slope, intercept);
         }
         if (pBrightness !== 1.0 || pSaturation !== 1.0) {
-          pipeline = pipeline.modulate({ brightness: pBrightness, saturation: pSaturation });
+          pipeline = pipeline.modulate({
+            brightness: pBrightness,
+            saturation: pSaturation
+          });
         }
         if (pGamma !== 1.0) pipeline = pipeline.gamma(pGamma);
-        if (pSharpen > 0) pipeline = pipeline.sharpen({ sigma: pSharpen });
+        if (pSharpen > 0) pipeline = pipeline.sharpen({
+          sigma: pSharpen
+        });
         if (pBlur > 0) pipeline = pipeline.blur(pBlur);
-
         if (!isEinkPreview) {
           // 原图预览：直接输出调整后的 PNG
           var outBuf = await pipeline.png().toBuffer();
-          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.writeHead(200, {
+            'Content-Type': 'image/png'
+          });
           res.end(outBuf);
         } else {
           // 六色电子纸效果预览：渲染 → raw 像素 → nearestPaletteCode 量化 → 重建 PNG
-          var rawRgb = await pipeline.raw().toBuffer({ resolveWithObject: true });
-          var qW = rawRgb.info.width, qH = rawRgb.info.height;
+          var rawRgb = await pipeline.raw().toBuffer({
+            resolveWithObject: true
+          });
+          var qW = rawRgb.info.width,
+            qH = rawRgb.info.height;
           var quantized = Buffer.alloc(qW * qH * 3);
           for (var qi = 0; qi < qW * qH; qi++) {
-            var qR = rawRgb.data[qi*3], qG = rawRgb.data[qi*3+1], qB = rawRgb.data[qi*3+2];
+            var qR = rawRgb.data[qi * 3],
+              qG = rawRgb.data[qi * 3 + 1],
+              qB = rawRgb.data[qi * 3 + 2];
             var qCode = epaperPalette.nearestPaletteCode(qR, qG, qB);
             var qPc = epaperPalette.getPaletteColor(qCode);
-            quantized[qi*3] = qPc.rgb[0]; quantized[qi*3+1] = qPc.rgb[1]; quantized[qi*3+2] = qPc.rgb[2];
+            quantized[qi * 3] = qPc.rgb[0];
+            quantized[qi * 3 + 1] = qPc.rgb[1];
+            quantized[qi * 3 + 2] = qPc.rgb[2];
           }
-          var einkBuf = await sharp(quantized, { raw: { width: qW, height: qH, channels: 3 } }).png().toBuffer();
-          res.writeHead(200, { 'Content-Type': 'image/png' });
+          var einkBuf = await sharp(quantized, {
+            raw: {
+              width: qW,
+              height: qH,
+              channels: 3
+            }
+          }).png().toBuffer();
+          res.writeHead(200, {
+            'Content-Type': 'image/png'
+          });
           res.end(einkBuf);
         }
       } catch (err) {
@@ -4503,101 +4921,164 @@ async function handleRequest(req, res) {
     // Serve individual photo thumbnail/image
     var photoMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/thumbnail$/);
     if (photoMatch) {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var photoId = photoMatch[1];
       var photoIdx = [];
-      try { photoIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      try {
+        photoIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8'));
+      } catch (e) {}
       if (!Array.isArray(photoIdx)) photoIdx = [];
       var photoEntry = null;
       for (var pi = 0; pi < photoIdx.length; pi++) {
-        if (photoIdx[pi].id === photoId) { photoEntry = photoIdx[pi]; break; }
+        if (photoIdx[pi].id === photoId) {
+          photoEntry = photoIdx[pi];
+          break;
+        }
       }
-      if (!photoEntry) { res.writeHead(404); res.end('not found'); return; }
+      if (!photoEntry) {
+        res.writeHead(404);
+        res.end('not found');
+        return;
+      }
       var imgPath = photoEntry.processedPngPath || photoEntry.rawPath || '';
-      if (!imgPath) { res.writeHead(404); res.end('no image path'); return; }
+      if (!imgPath) {
+        res.writeHead(404);
+        res.end('no image path');
+        return;
+      }
       // Resolve relative to app root
       var fullImgPath = path.isAbsolute(imgPath) ? imgPath : path.join(ROOT_DIR, imgPath);
-      if (!fs.existsSync(fullImgPath)) { res.writeHead(404); res.end('file not found: ' + fullImgPath); return; }
+      if (!fs.existsSync(fullImgPath)) {
+        res.writeHead(404);
+        res.end('file not found: ' + fullImgPath);
+        return;
+      }
       try {
         var imgBuf = fs.readFileSync(fullImgPath);
         var ext = path.extname(fullImgPath).toLowerCase();
         var ct = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'public, max-age=3600' });
+        res.writeHead(200, {
+          'Content-Type': ct,
+          'Cache-Control': 'public, max-age=3600'
+        });
         res.end(imgBuf);
-      } catch(e) {
-        res.writeHead(500); res.end('read error: ' + e.message);
+      } catch (e) {
+        res.writeHead(500);
+        res.end('read error: ' + e.message);
       }
       return;
     }
-
-
     if (parsed.pathname === '/api/admin/override' && req.method === 'DELETE') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      // V3: clear persisted override via overridePersistence (replaces ad-hoc unlinkSync)
-      if (runtime.overridePersistence) {
-        try { runtime.overridePersistence.clearOverride(); } catch(e) {}
-      } else {
-        try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
       }
-      // Also exit any active operating mode so the schedule can republish
-      if (runtime.operatingModeService) {
-        try { runtime.operatingModeService.exitOneShot(); } catch(e) {}
-        try { runtime.operatingModeService.exitFocusLock(); } catch(e) {}
+      // Call unified restoreAuto
+      if (runtime.adminPublishService) {
+        try {
+          await runtime.adminPublishService.restoreAuto();
+        } catch (e) {
+          r1Logger.warn('Failed to restore auto via service: ' + e.message);
+        }
       }
+      
       runtime.manualOverride = null;
       runtime.overrideExpiresAt = null;
+      
       // R3.6: Re-publish schedule-based content after clearing override
       if (runtime.publicationService && runtime.snapshotStore) {
         try {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'schedule_restore' });
+          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, {
+            publishReason: 'schedule_restore'
+          });
           await runtime.publicationService.publish(snap);
           runtime.lastPublishedAt = new Date().toISOString();
         } catch (e) {
           r1Logger.warn('R3 publish after override clear failed: ' + e.message);
         }
       }
-      respondJson(res, { status: 'ok' });
+      respondJson(res, {
+        status: 'ok'
+      });
       return;
     }
 
     // ── Admin read-only query routes (R10: admin-query-service HTTP exposure) ──
     if (parsed.pathname === '/api/admin/system/status') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
+      if (!runtime.adminQueryService) {
+        failJson(res, 503, 'admin query service unavailable');
+        return;
+      }
       try {
         var sysStatus = await runtime.adminQueryService.getSystemStatus();
         respondJson(res, sysStatus);
-      } catch(e) { failJson(res, 500, 'system status failed: ' + e.message); }
+      } catch (e) {
+        failJson(res, 500, 'system status failed: ' + e.message);
+      }
       return;
     }
-
     if (parsed.pathname === '/api/admin/publications') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
+      if (!runtime.adminQueryService) {
+        failJson(res, 503, 'admin query service unavailable');
+        return;
+      }
       try {
         var pubs = await runtime.adminQueryService.listPublications();
-        respondJson(res, { publications: pubs || [] });
-      } catch(e) { failJson(res, 500, 'publications query failed: ' + e.message); }
+        respondJson(res, {
+          publications: pubs || []
+        });
+      } catch (e) {
+        failJson(res, 500, 'publications query failed: ' + e.message);
+      }
       return;
     }
-
     if (parsed.pathname.indexOf('/api/admin/publications/') === 0) {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
+      if (!runtime.adminQueryService) {
+        failJson(res, 503, 'admin query service unavailable');
+        return;
+      }
       var pubSnapshotId = decodeURIComponent(parsed.pathname.slice('/api/admin/publications/'.length));
-      if (!pubSnapshotId) { failJson(res, 400, 'snapshotId required'); return; }
+      if (!pubSnapshotId) {
+        failJson(res, 400, 'snapshotId required');
+        return;
+      }
       try {
         var pubDetail = await runtime.adminQueryService.getPublication(pubSnapshotId);
-        if (!pubDetail) { failJson(res, 404, 'publication not found: ' + pubSnapshotId); return; }
+        if (!pubDetail) {
+          failJson(res, 404, 'publication not found: ' + pubSnapshotId);
+          return;
+        }
         respondJson(res, pubDetail);
-      } catch(e) { failJson(res, 500, 'publication query failed: ' + e.message); }
+      } catch (e) {
+        failJson(res, 500, 'publication query failed: ' + e.message);
+      }
       return;
     }
-
     if (parsed.pathname === '/api/admin/assets') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
+      if (!runtime.adminQueryService) {
+        failJson(res, 503, 'admin query service unavailable');
+        return;
+      }
       var assetFilter = {};
       var qLibType = parsed.searchParams.get('libraryType');
       var qSafetyStatus = parsed.searchParams.get('safetyStatus');
@@ -4609,58 +5090,102 @@ async function handleRequest(req, res) {
       if (qSha256) assetFilter.sha256 = qSha256;
       try {
         var assets = await runtime.adminQueryService.listAssets(assetFilter);
-        respondJson(res, { assets: assets || [] });
-      } catch(e) { failJson(res, 500, 'assets query failed: ' + e.message); }
+        respondJson(res, {
+          assets: assets || []
+        });
+      } catch (e) {
+        failJson(res, 500, 'assets query failed: ' + e.message);
+      }
       return;
     }
-
     if (parsed.pathname.indexOf('/api/admin/assets/') === 0) {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
+      if (!runtime.adminQueryService) {
+        failJson(res, 503, 'admin query service unavailable');
+        return;
+      }
       var assetId = decodeURIComponent(parsed.pathname.slice('/api/admin/assets/'.length));
-      if (!assetId) { failJson(res, 400, 'assetId required'); return; }
+      if (!assetId) {
+        failJson(res, 400, 'assetId required');
+        return;
+      }
       try {
         var assetDetail = await runtime.adminQueryService.getAsset(assetId);
-        if (!assetDetail) { failJson(res, 404, 'asset not found: ' + assetId); return; }
+        if (!assetDetail) {
+          failJson(res, 404, 'asset not found: ' + assetId);
+          return;
+        }
         respondJson(res, assetDetail);
-      } catch(e) { failJson(res, 500, 'asset query failed: ' + e.message); }
+      } catch (e) {
+        failJson(res, 500, 'asset query failed: ' + e.message);
+      }
       return;
     }
-
     if (parsed.pathname === '/api/admin/features') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       var featureFlagsSource = runtime.featureFlagView || (runtime.adminQueryService && runtime.adminQueryService.getFeatureFlags ? runtime.adminQueryService : null);
-      if (!featureFlagsSource || typeof featureFlagsSource.getFeatureFlags !== 'function') { failJson(res, 503, 'feature flag view unavailable'); return; }
+      if (!featureFlagsSource || typeof featureFlagsSource.getFeatureFlags !== 'function') {
+        failJson(res, 503, 'feature flag view unavailable');
+        return;
+      }
       try {
         var flags = featureFlagsSource.getFeatureFlags();
         respondJson(res, flags);
-      } catch(e) { failJson(res, 500, 'feature flags query failed: ' + e.message); }
+      } catch (e) {
+        failJson(res, 500, 'feature flags query failed: ' + e.message);
+      }
       return;
     }
 
     // ── Library API (R4) — GET / PATCH / DELETE / POST upload all implemented ──
     if (parsed.pathname === '/api/admin/library' && req.method === 'GET') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
+      if (!runtime.assetRepository) {
+        failJson(res, 503, 'asset repository unavailable');
+        return;
+      }
       var libTypeRaw = parsed.searchParams.get('libraryType') || '';
       var libType = String(libTypeRaw).toUpperCase();
       if (libType !== 'LEARNING' && libType !== 'CUSTOM') {
-        failJson(res, 400, 'libraryType must be "learning" or "custom", got: ' + libTypeRaw); return;
+        failJson(res, 400, 'libraryType must be "learning" or "custom", got: ' + libTypeRaw);
+        return;
       }
       try {
-        var libAssets = await runtime.assetRepository.list({ libraryType: libType });
-        respondJson(res, { libraryType: libType, assets: libAssets || [] });
-      } catch(e) { failJson(res, 500, 'library query failed: ' + e.message); }
+        var libAssets = await runtime.assetRepository.list({
+          libraryType: libType
+        });
+        respondJson(res, {
+          libraryType: libType,
+          assets: libAssets || []
+        });
+      } catch (e) {
+        failJson(res, 500, 'library query failed: ' + e.message);
+      }
       return;
     }
-
     if (parsed.pathname === '/api/admin/library/custom/upload' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       // Feature flag gate: customLibraryEnabled must be true (configured in load-config)
       if (!runtime.config || !runtime.config.features || !runtime.config.features.customLibraryEnabled) {
-        failJson(res, 503, 'FEATURE_DISABLED: customLibraryEnabled is false'); return;
+        failJson(res, 503, 'FEATURE_DISABLED: customLibraryEnabled is false');
+        return;
       }
-      if (!runtime.customLibraryService) { failJson(res, 503, 'SAFETY_GATE_REQUIRED: custom library service unavailable'); return; }
+      if (!runtime.customLibraryService) {
+        failJson(res, 503, 'SAFETY_GATE_REQUIRED: custom library service unavailable');
+        return;
+      }
       // V3 streaming upload: accept application/octet-stream only.
       // Metadata (original name / mime / size) is passed via headers — no JSON
       // body, no base64, no client-provided file paths. The request stream is
@@ -4669,21 +5194,27 @@ async function handleRequest(req, res) {
       // chain (decode → classifier → sha256 → dedup → move → audit → repo).
       var contentTypeHdr = String(req.headers['content-type'] || '').toLowerCase();
       if (contentTypeHdr.indexOf('application/octet-stream') !== 0) {
-        failJson(res, 415, 'Content-Type must be application/octet-stream (streaming upload)'); return;
+        failJson(res, 415, 'Content-Type must be application/octet-stream (streaming upload)');
+        return;
       }
       var streamMetadata = {
         originalName: req.headers['x-original-name'] || 'upload.bin',
         mimeType: req.headers['x-mime-type'] || '',
-        expectedSize: parseInt(req.headers['content-length'] || '0', 10) || undefined,
+        expectedSize: parseInt(req.headers['content-length'] || '0', 10) || undefined
       };
-      var streamMaxBytes = (runtime.config.upload && runtime.config.upload.maxUploadBytes) || undefined;
+      var streamMaxBytes = runtime.config.upload && runtime.config.upload.maxUploadBytes || undefined;
       try {
-        var streamResult = await runtime.customLibraryService.processUploadStream(
-          req, streamMetadata, { maxBytes: streamMaxBytes }
-        );
+        var streamResult = await runtime.customLibraryService.processUploadStream(req, streamMetadata, {
+          maxBytes: streamMaxBytes
+        });
         if (streamResult.status === 'ACCEPTED') {
-          res.writeHead(202, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'accepted', assetId: streamResult.assetId }));
+          res.writeHead(202, {
+            'Content-Type': 'application/json'
+          });
+          res.end(JSON.stringify({
+            status: 'accepted',
+            assetId: streamResult.assetId
+          }));
         } else if (streamResult.status === 'REJECTED') {
           // TOO_LARGE / DECODE_FAILED / MIME_MISMATCH / NSFW / CLASSIFIER_UNAVAILABLE etc.
           var rejCode = streamResult.reason || 'unknown';
@@ -4695,55 +5226,82 @@ async function handleRequest(req, res) {
             failJson(res, 400, 'upload rejected: ' + rejCode + (streamResult.error ? ' — ' + streamResult.error : ''));
           }
         } else if (streamResult.status === 'DUPLICATE') {
-          res.writeHead(409, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'duplicate', sha256: streamResult.sha256 }));
+          res.writeHead(409, {
+            'Content-Type': 'application/json'
+          });
+          res.end(JSON.stringify({
+            error: 'duplicate',
+            sha256: streamResult.sha256
+          }));
         } else if (streamResult.status === 'FEATURE_NOT_READY') {
           failJson(res, 503, 'FEATURE_NOT_READY: classifier not ready, fail-closed');
         } else {
           failJson(res, 500, 'upload error: ' + (streamResult.error || streamResult.status || 'unknown'));
         }
-      } catch(e) { failJson(res, 500, 'upload failed: ' + e.message); }
+      } catch (e) {
+        failJson(res, 500, 'upload failed: ' + e.message);
+      }
       return;
     }
-
     if (parsed.pathname === '/api/admin/learning/ingest' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       // Feature flag gate: learningLibraryEnabled must be true (configured in load-config)
       if (!runtime.config || !runtime.config.features || !runtime.config.features.learningLibraryEnabled) {
-        failJson(res, 503, 'FEATURE_DISABLED: learningLibraryEnabled is false'); return;
+        failJson(res, 503, 'FEATURE_DISABLED: learningLibraryEnabled is false');
+        return;
       }
       // Classifier readiness gate: fail-closed — do not ingest if classifier not ready
       if (runtime.safetyClassifierPort && !runtime.safetyClassifierPort.ready) {
-        failJson(res, 503, 'SAFETY_CLASSIFIER_NOT_READY'); return;
+        failJson(res, 503, 'SAFETY_CLASSIFIER_NOT_READY');
+        return;
       }
       // 触发 learning 摄取(自动 fetch sources → validate → dedup → persist)
-      if (!runtime.learningIngestionService) { failJson(res, 503, 'learning ingestion service unavailable'); return; }
+      if (!runtime.learningIngestionService) {
+        failJson(res, 503, 'learning ingestion service unavailable');
+        return;
+      }
       try {
         var ingestResults = await runtime.learningIngestionService.ingestAll();
-        var accepted = 0, rejected = 0, duplicate = 0, errored = 0;
-        (ingestResults || []).forEach(function(r) {
+        var accepted = 0,
+          rejected = 0,
+          duplicate = 0,
+          errored = 0;
+        (ingestResults || []).forEach(function (r) {
           if (!r) return;
-          if (r.status === 'ACCEPTED') accepted++;
-          else if (r.status === 'REJECTED') rejected++;
-          else if (r.status === 'DUPLICATE') duplicate++;
-          else errored++;
+          if (r.status === 'ACCEPTED') accepted++;else if (r.status === 'REJECTED') rejected++;else if (r.status === 'DUPLICATE') duplicate++;else errored++;
         });
         runtime.learningLastIngestAt = new Date().toISOString();
-        respondJson(res, { status: 'ok', total: (ingestResults || []).length, accepted: accepted, rejected: rejected, duplicate: duplicate, errored: errored, results: ingestResults });
-      } catch(e) { failJson(res, 500, 'learning ingest failed: ' + e.message); }
+        respondJson(res, {
+          status: 'ok',
+          total: (ingestResults || []).length,
+          accepted: accepted,
+          rejected: rejected,
+          duplicate: duplicate,
+          errored: errored,
+          results: ingestResults
+        });
+      } catch (e) {
+        failJson(res, 500, 'learning ingest failed: ' + e.message);
+      }
       return;
     }
-
     if (parsed.pathname === '/api/admin/learning/status' && req.method === 'GET') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       // Feature flag gate: learningLibraryEnabled must be true (configured in load-config)
       if (!runtime.config || !runtime.config.features || !runtime.config.features.learningLibraryEnabled) {
-        failJson(res, 503, 'FEATURE_DISABLED: learningLibraryEnabled is false'); return;
+        failJson(res, 503, 'FEATURE_DISABLED: learningLibraryEnabled is false');
+        return;
       }
       // 返回 learning 摄取服务状态 + scheduler status (if available)
       var learningStatus = {
         configured: !!runtime.learningIngestionService,
-        lastIngestAt: runtime.learningLastIngestAt || null,
+        lastIngestAt: runtime.learningLastIngestAt || null
       };
       if (runtime.learningScheduler) {
         learningStatus.scheduler = runtime.learningScheduler.getStatus();
@@ -4751,45 +5309,76 @@ async function handleRequest(req, res) {
       respondJson(res, learningStatus);
       return;
     }
-
     if (parsed.pathname.indexOf('/api/admin/library/') === 0 && req.method === 'PATCH') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
+      if (!runtime.assetRepository) {
+        failJson(res, 503, 'asset repository unavailable');
+        return;
+      }
       var metaAssetId = decodeURIComponent(parsed.pathname.slice('/api/admin/library/'.length));
-      if (!metaAssetId) { failJson(res, 400, 'assetId required'); return; }
+      if (!metaAssetId) {
+        failJson(res, 400, 'assetId required');
+        return;
+      }
       try {
-        var metaBody = JSON.parse(await readBody(req) || '{}');
+        var metaBody = JSON.parse((await readBody(req)) || '{}');
         // Only metadata is patchable; GUARDED_FIELDS enforced by repository
-        var metaPatch = { metadata: metaBody.metadata || metaBody };
+        var metaPatch = {
+          metadata: metaBody.metadata || metaBody
+        };
         await runtime.assetRepository.update(metaAssetId, metaPatch);
         var metaUpdated = await runtime.assetRepository.get(metaAssetId);
-        respondJson(res, { status: 'ok', asset: metaUpdated });
-      } catch(e) { failJson(res, 500, 'metadata update failed: ' + e.message); }
+        respondJson(res, {
+          status: 'ok',
+          asset: metaUpdated
+        });
+      } catch (e) {
+        failJson(res, 500, 'metadata update failed: ' + e.message);
+      }
       return;
     }
-
     if (parsed.pathname.indexOf('/api/admin/library/') === 0 && req.method === 'DELETE') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req)) {
+        failJson(res, 403, 'forbidden');
+        return;
+      }
       // V3 atomic delete: feature flag must be true; no legacy markTombstoned
       // fallback. Without deletePipelineEnabled the route returns 503
       // FEATURE_DISABLED so callers cannot bypass the reference check / audit.
       if (!runtime.config || !runtime.config.features || !runtime.config.features.deletePipelineEnabled) {
-        failJson(res, 503, 'FEATURE_DISABLED: deletePipelineEnabled is false'); return;
+        failJson(res, 503, 'FEATURE_DISABLED: deletePipelineEnabled is false');
+        return;
       }
-      if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
-      if (!runtime.assetDeleteService) { failJson(res, 503, 'asset delete service unavailable'); return; }
+      if (!runtime.assetRepository) {
+        failJson(res, 503, 'asset repository unavailable');
+        return;
+      }
+      if (!runtime.assetDeleteService) {
+        failJson(res, 503, 'asset delete service unavailable');
+        return;
+      }
       var delAssetId = decodeURIComponent(parsed.pathname.slice('/api/admin/library/'.length));
-      if (!delAssetId) { failJson(res, 400, 'assetId required'); return; }
+      if (!delAssetId) {
+        failJson(res, 400, 'assetId required');
+        return;
+      }
       // reason enum (UNSAFE / SUSPICIOUS / POLICY_BLOCKED) — read from body or
       // query (?reason=...). Body takes precedence. Reject invalid reasons
       // with 400 instead of silently defaulting (asset-delete-service validates
       // the enum too, but failing earlier gives a clearer error).
       var delReasonRaw = null;
-      try { var drb = JSON.parse(await readBody(req) || '{}'); if (drb && drb.reason) delReasonRaw = drb.reason; } catch(e) {}
+      try {
+        var drb = JSON.parse((await readBody(req)) || '{}');
+        if (drb && drb.reason) delReasonRaw = drb.reason;
+      } catch (e) {}
       if (!delReasonRaw) delReasonRaw = parsed.searchParams.get('reason') || null;
       var V3_DELETE_REASONS = ['UNSAFE', 'SUSPICIOUS', 'POLICY_BLOCKED'];
       if (!delReasonRaw || V3_DELETE_REASONS.indexOf(String(delReasonRaw).toUpperCase()) < 0) {
-        failJson(res, 400, 'reason required (must be one of UNSAFE, SUSPICIOUS, POLICY_BLOCKED)'); return;
+        failJson(res, 400, 'reason required (must be one of UNSAFE, SUSPICIOUS, POLICY_BLOCKED)');
+        return;
       }
       var delReason = String(delReasonRaw).toUpperCase();
       try {
@@ -4799,35 +5388,53 @@ async function handleRequest(req, res) {
         // Invalidate cached frames referencing this asset (best-effort)
         if (runtime.cachedFrames && runtime.cachedFrames.forEach) {
           var toInvalidate = [];
-          runtime.cachedFrames.forEach(function(val, key) {
+          runtime.cachedFrames.forEach(function (val, key) {
             if (val && val.payload && val.payload.assetId === delAssetId) toInvalidate.push(key);
           });
-          toInvalidate.forEach(function(k) { runtime.cachedFrames.delete(k); });
+          toInvalidate.forEach(function (k) {
+            runtime.cachedFrames.delete(k);
+          });
         }
-        respondJson(res, { status: 'ok', assetId: delAssetId, reason: delReason, pipeline: 'atomic_delete_chain' });
-      } catch(e) {
+        respondJson(res, {
+          status: 'ok',
+          assetId: delAssetId,
+          reason: delReason,
+          pipeline: 'atomic_delete_chain'
+        });
+      } catch (e) {
         var delMsg = e && e.message ? e.message : String(e);
-        if (/INVALID_REASON/.test(delMsg)) { failJson(res, 400, delMsg); }
-        else if (/Asset not found/.test(delMsg)) { failJson(res, 404, delMsg); }
-        else if (/Cannot delete asset|active references/.test(delMsg)) { failJson(res, 409, delMsg); }
-        else { failJson(res, 500, 'asset delete failed: ' + delMsg); }
+        if (/INVALID_REASON/.test(delMsg)) {
+          failJson(res, 400, delMsg);
+        } else if (/Asset not found/.test(delMsg)) {
+          failJson(res, 404, delMsg);
+        } else if (/Cannot delete asset|active references/.test(delMsg)) {
+          failJson(res, 409, delMsg);
+        } else {
+          failJson(res, 500, 'asset delete failed: ' + delMsg);
+        }
       }
       return;
     }
-
     if (parsed.pathname === '/health/live') {
-      respondJson(res, { status: 'ok', pid: process.pid, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000) });
+      respondJson(res, {
+        status: 'ok',
+        pid: process.pid,
+        uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000)
+      });
       return;
     }
-
     if (parsed.pathname === '/health/ready') {
-      var ready = { status: 'ok' };
+      var ready = {
+        status: 'ok'
+      };
       var issues = [];
       if (!runtime.snapshotStore) issues.push('SNAPSHOT_STORE_UNAVAILABLE');
       try {
         var r = fs.existsSync(path.join(DATA_DIR, 'config.json')) || fs.existsSync(path.join(ROOT_DIR, 'config.json'));
         if (!r) issues.push('CONFIG_NOT_FOUND');
-      } catch(e) { issues.push('CONFIG_CHECK_FAILED'); }
+      } catch (e) {
+        issues.push('CONFIG_CHECK_FAILED');
+      }
       if (issues.length > 0) {
         ready.status = 'degraded';
         ready.issues = issues;
@@ -4835,22 +5442,28 @@ async function handleRequest(req, res) {
       respondJson(res, ready);
       return;
     }
-
     if (parsed.pathname === '/api/health.json') {
       var uptime = Math.floor((Date.now() - runtime.serverStartTime) / 1000);
       var hSnap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
       var hNewsCount = 0;
       try {
         var hLgPath = path.join(DATA_DIR, 'last_good_news.json');
-        if (fs.existsSync(hLgPath)) { var hLg = JSON.parse(fs.readFileSync(hLgPath, 'utf8')); if (hLg && hLg.items) hNewsCount = hLg.items.length; }
-      } catch(e) {}
+        if (fs.existsSync(hLgPath)) {
+          var hLg = JSON.parse(fs.readFileSync(hLgPath, 'utf8'));
+          if (hLg && hLg.items) hNewsCount = hLg.items.length;
+        }
+      } catch (e) {}
       var hPhotoCount = 0;
       try {
         var hIdxPath = path.join(DATA_DIR, 'image_index.json');
-        if (fs.existsSync(hIdxPath)) { hPhotoCount = JSON.parse(fs.readFileSync(hIdxPath, 'utf8')).length; }
-      } catch(e) {}
+        if (fs.existsSync(hIdxPath)) {
+          hPhotoCount = JSON.parse(fs.readFileSync(hIdxPath, 'utf8')).length;
+        }
+      } catch (e) {}
       respondJson(res, {
-        status: 'ok', uptimeSeconds: uptime, timezone: TIMEZONE,
+        status: 'ok',
+        uptimeSeconds: uptime,
+        timezone: TIMEZONE,
         currentMode: hSnap ? hSnap.mode : null,
         currentSlot: hSnap ? hSnap.slotKey : null,
         frameId: hSnap ? hSnap.frameId : null,
@@ -4861,7 +5474,7 @@ async function handleRequest(req, res) {
         newsItemCount: hNewsCount,
         photoCount: hPhotoCount,
         mqttEnabled: !!APP_CONFIG.mqtt && APP_CONFIG.mqtt.enabled,
-        translationProvider: (APP_CONFIG.translation && APP_CONFIG.translation.provider) || 'none',
+        translationProvider: APP_CONFIG.translation && APP_CONFIG.translation.provider || 'none',
         stateRequestCount: runtime.stateRequestCount || 0,
         frameRequestCount: runtime.frameRequestCount || 0,
         newsRefreshCount: runtime.newsRefreshCount || 0,
@@ -4875,17 +5488,22 @@ async function handleRequest(req, res) {
       });
       return;
     }
-
-res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.writeHead(404, {
+      'Content-Type': 'text/plain; charset=utf-8'
+    });
     res.end('Not found');
   } catch (error) {
-    const body = Buffer.from(JSON.stringify({ error: error.message }, null, 2));
+    const body = Buffer.from(JSON.stringify({
+      error: error.message
+    }, null, 2));
     r1Logger.error('request failed ' + parsed.pathname + ': ' + (error.stack || error.message));
-    res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+    res.writeHead(500, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': body.length
+    });
     res.end(body);
   }
 }
-
 function renderIndexHtml(state) {
   return `<!doctype html>
 <html lang="zh-CN">
@@ -4920,14 +5538,12 @@ function renderIndexHtml(state) {
 </body>
 </html>`;
 }
-
 if (require.main === module) {
-  main().catch(function(error) {
+  main().catch(function (error) {
     r1Logger.error('top-level crash: ' + (error.stack || error.message));
     process.exit(1);
   });
 }
-
 module.exports = {
   handleRequest: handleRequest,
   main: main,
@@ -4962,8 +5578,5 @@ module.exports = {
   renderNewsSvg,
   wrapText,
   layoutNewsCard,
-  NEWS_LAYOUT,
+  NEWS_LAYOUT
 };
-
-
-

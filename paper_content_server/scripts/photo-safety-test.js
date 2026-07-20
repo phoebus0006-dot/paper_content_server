@@ -4,6 +4,8 @@
 var path = require('path');
 var fs = require('fs');
 var ROOT = path.join(__dirname, '..');
+var TMPDIR = path.join(ROOT, 'data', 'test_tmp_' + Date.now());
+try { fs.mkdirSync(TMPDIR, {recursive: true}); fs.writeFileSync(path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==', 'base64')); } catch(e) {}
 
 var {
   selectStudyPhoto,
@@ -27,7 +29,7 @@ function makeEntry(id, overrides) {
     kind: 'shot',
     hash: 'abc123',
     rawPath: 'data/raw_images/' + (id || 'test') + '.jpg',
-    processedPngPath: ROOT + '/data/processed_images/' + (id || 'test') + '.png',
+    processedPngPath: TMPDIR + '/' + (id || 'test') + '.png',
     epfPath: 'data/processed_images/' + (id || 'test') + '.epf',
     width: 800,
     height: 480,
@@ -58,7 +60,7 @@ function ok(v, msg) { if (!v) throw new Error(msg || 'assertion'); return true; 
 
 // ——— Static entry checks ———
 test('approved+study selectable', function() {
-  var e = makeEntry('valid', { processedPngPath: ROOT + '/data/processed_images/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
+  var e = makeEntry('valid', { processedPngPath: TMPDIR + '/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
   return ok(isStudySelectable(e));
 });
 
@@ -104,13 +106,13 @@ test('pending not isImageApproved', function() {
 
 // ——— selectStudyPhoto 1000-iteration mixed-pool test ———
 test('1000 selections via selectStudyPhoto produce zero non-approved or decorative', function() {
-  var approvedStudy = makeEntry('study1', { theme: 'dialogue', processedPngPath: ROOT + '/data/processed_images/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
-  var approvedStudy2 = makeEntry('study2', { theme: 'wide_shot', processedPngPath: ROOT + '/data/processed_images/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
-  var approvedDeco = makeEntry('deco1', { poolType: 'decorative_photos', theme: 'dialogue', processedPngPath: ROOT + '/data/processed_images/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
+  var approvedStudy = makeEntry('study1', { theme: 'dialogue', processedPngPath: TMPDIR + '/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
+  var approvedStudy2 = makeEntry('study2', { theme: 'wide_shot', processedPngPath: TMPDIR + '/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
+  var approvedDeco = makeEntry('deco1', { poolType: 'decorative_photos', theme: 'dialogue', processedPngPath: TMPDIR + '/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
   var pendingStudy = makeEntry('pending1', { safetyStatus: 'pending', theme: 'night' });
   var rejectedStudy = makeEntry('reject1', { safetyStatus: 'rejected', theme: 'backlight' });
   var missingSafety = makeEntry('nosafety', { safetyStatus: undefined, theme: 'ensemble' });
-  var missingPool = makeEntry('nopool', { poolType: undefined, theme: 'color', processedPngPath: ROOT + '/data/processed_images/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
+  var missingPool = makeEntry('nopool', { poolType: undefined, theme: 'color', processedPngPath: TMPDIR + '/c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png' });
   var quarantinedStudy = makeEntry('quar1', { safetyStatus: 'quarantined', theme: 'suspense' });
 
   var imageIndex = [

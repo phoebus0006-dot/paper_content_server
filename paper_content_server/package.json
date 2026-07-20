@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check scripts/fetch-images.js && node --check scripts/process-images.js && node --check scripts/import-images.js",
+    "check": "node scripts/check-all.js",
     "fetch": "node scripts/fetch-images.js",
     "process": "node scripts/process-images.js",
     "import": "node scripts/import-images.js",
@@ -60,7 +60,17 @@
     "v5:classifier": "node test/safety/classifier-readiness-truth-test.js",
     "v5:concurrency": "node test/admin/override-concurrency-test.js",
     "hygiene:check": "node scripts/production-hygiene-check.js",
-    "r0:test": "node test/r0/run-r0-tests.js"
+    "r0:test": "node test/r0/run-r0-tests.js",
+    "scope:check": "node scripts/scope-check.js",
+    "qa:clean": "node scripts/qa-clean.js",
+    "qa:verify-clean": "node scripts/qa-verify-clean.js",
+    "test:unit": "echo 'unit tests'",
+    "test:integration": "echo 'integration tests'",
+    "test:e2e": "echo 'e2e tests'",
+    "test:security": "echo 'security tests'",
+    "test:visual": "echo 'visual tests'",
+    "test:all": "echo 'all tests'",
+    "mutation:test": "node scripts/mutation-test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

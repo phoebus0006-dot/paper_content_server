@@ -100,13 +100,13 @@ var TAB_TITLES={dashboard:'总览','news-page':'新闻审查','photos-page':'图
 function switchTab(name){
   document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
   var page=$(name);if(page)page.classList.add('active');
-  document.querySelectorAll('.sidebar nav a').forEach(function(a){a.classList.remove('active')});
+  document.querySelectorAll('.top-nav .nav-links a').forEach(function(a){a.classList.remove('active')});
   var link=qs('a[data-tab="'+name+'"]');if(link)link.classList.add('active');
   var titleEl=$('page-title');
   if(titleEl&&TAB_TITLES[name])titleEl.textContent=TAB_TITLES[name];
 }
 
-document.querySelectorAll('.sidebar nav a').forEach(function(a){
+document.querySelectorAll('.top-nav .nav-links a').forEach(function(a){
   a.addEventListener('click',function(e){e.preventDefault();switchTab(a.getAttribute('data-tab'))});
 });
 

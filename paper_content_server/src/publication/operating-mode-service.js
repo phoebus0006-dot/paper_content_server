@@ -7,6 +7,8 @@ var MODE_AUTO = 'AUTO';
 var MODE_LEGACY_ADMIN_OVERRIDE = 'LEGACY_ADMIN_OVERRIDE';
 var MODE_ONE_SHOT_OVERRIDE = 'ONE_SHOT_OVERRIDE';
 var MODE_FOCUS_LOCK = 'FOCUS_LOCK';
+var MODE_MANUAL_NEWS = 'MANUAL_NEWS';
+var MODE_MANUAL_PHOTO = 'MANUAL_PHOTO';
 
 var IMPLEMENTED = 'IMPLEMENTED';
 
@@ -14,6 +16,8 @@ function OperatingModeService(initialMode) {
   var mode = initialMode === MODE_LEGACY_ADMIN_OVERRIDE ? MODE_LEGACY_ADMIN_OVERRIDE
            : initialMode === MODE_ONE_SHOT_OVERRIDE ? MODE_ONE_SHOT_OVERRIDE
            : initialMode === MODE_FOCUS_LOCK ? MODE_FOCUS_LOCK
+           : initialMode === MODE_MANUAL_NEWS ? MODE_MANUAL_NEWS
+           : initialMode === MODE_MANUAL_PHOTO ? MODE_MANUAL_PHOTO
            : MODE_AUTO;
 
   // ONE_SHOT context: { snapshotId, expiresAt (ISO string) }
@@ -27,10 +31,13 @@ function OperatingModeService(initialMode) {
     if (newMode !== MODE_AUTO
         && newMode !== MODE_LEGACY_ADMIN_OVERRIDE
         && newMode !== MODE_ONE_SHOT_OVERRIDE
-        && newMode !== MODE_FOCUS_LOCK) {
+        && newMode !== MODE_FOCUS_LOCK
+        && newMode !== MODE_MANUAL_NEWS
+        && newMode !== MODE_MANUAL_PHOTO) {
       throw new Error('Unsupported mode: ' + newMode + '. Supported: '
         + MODE_AUTO + ', ' + MODE_LEGACY_ADMIN_OVERRIDE + ', '
-        + MODE_ONE_SHOT_OVERRIDE + ', ' + MODE_FOCUS_LOCK);
+        + MODE_ONE_SHOT_OVERRIDE + ', ' + MODE_FOCUS_LOCK + ', ' 
+        + MODE_MANUAL_NEWS + ', ' + MODE_MANUAL_PHOTO);
     }
     mode = newMode;
   }
@@ -109,6 +116,8 @@ function OperatingModeService(initialMode) {
     MODE_LEGACY_ADMIN_OVERRIDE: MODE_LEGACY_ADMIN_OVERRIDE,
     MODE_ONE_SHOT_OVERRIDE: MODE_ONE_SHOT_OVERRIDE,
     MODE_FOCUS_LOCK: MODE_FOCUS_LOCK,
+    MODE_MANUAL_NEWS: MODE_MANUAL_NEWS,
+    MODE_MANUAL_PHOTO: MODE_MANUAL_PHOTO,
     // Legacy capability constants (now implemented)
     ONE_SHOT_ROUTE: IMPLEMENTED,
     BOUNDARY_EXPIRY: IMPLEMENTED,
@@ -122,4 +131,6 @@ module.exports = {
   MODE_LEGACY_ADMIN_OVERRIDE: MODE_LEGACY_ADMIN_OVERRIDE,
   MODE_ONE_SHOT_OVERRIDE: MODE_ONE_SHOT_OVERRIDE,
   MODE_FOCUS_LOCK: MODE_FOCUS_LOCK,
+  MODE_MANUAL_NEWS: MODE_MANUAL_NEWS,
+  MODE_MANUAL_PHOTO: MODE_MANUAL_PHOTO,
 };

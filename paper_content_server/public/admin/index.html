@@ -21,14 +21,14 @@
   </div>
 </div>
 
-<div id="app" class="layout" style="display:none">
-  <!-- Sidebar -->
-  <aside class="sidebar">
+<div id="app" class="layout-topnav" style="display:none">
+  <!-- Top Navigation -->
+  <header class="top-nav">
     <div class="brand">
       <span class="brand-icon">📋</span>
       <span class="brand-name">电子纸</span>
     </div>
-    <nav>
+    <nav class="nav-links">
       <a href="#" data-tab="dashboard" class="active">📊 总览</a>
       <a href="#" data-tab="news-page">📰 新闻审查</a>
       <a href="#" data-tab="photos-page">🖼️ 图片库</a>
@@ -36,14 +36,14 @@
       <a href="#" data-tab="publish-page">📤 发布中心</a>
       <a href="#" data-tab="status-page">⚙️ 运行状态</a>
     </nav>
-    <div class="sidebar-footer">
+    <div class="nav-footer">
       <div class="env-badge" id="env-badge">staging</div>
       <div class="small muted" id="sidebar-sha">--</div>
     </div>
-  </aside>
+  </header>
 
   <!-- Main content -->
-  <main class="main">
+  <main class="main-content">
     <header class="page-header">
       <div class="page-header-left">
         <h2 id="page-title">总览</h2>

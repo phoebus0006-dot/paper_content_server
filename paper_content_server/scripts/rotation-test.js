@@ -97,13 +97,13 @@ function cleanUp() {
 function createTestIndex(mode) {
   var entries = [];
   if (mode === 'mixed') {
-    entries.push({ id:'study-a', url:'builtin://a', title:'Study A', source:'Test', theme:'dialogue', kind:'storyboard', processedPngPath: path.join(ROOT,'data','processed_images','c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'a.epf', width:800, height:480, imageName:'a.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'approved', poolType:'study_frames', hash:'aaa' });
-    entries.push({ id:'study-b', url:'builtin://b', title:'Study B', source:'Test', theme:'wide_shot', kind:'storyboard', processedPngPath: path.join(ROOT,'data','processed_images','c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'b.epf', width:800, height:480, imageName:'b.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'approved', poolType:'study_frames', hash:'bbb' });
-    entries.push({ id:'study-c', url:'builtin://c', title:'Study C', source:'Test', theme:'night', kind:'storyboard', processedPngPath: path.join(ROOT,'data','processed_images','c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'c.epf', width:800, height:480, imageName:'c.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'approved', poolType:'study_frames', hash:'ccc' });
-    entries.push({ id:'deco-d', url:'builtin://d', title:'Deco D', source:'Test', theme:'cinematic', kind:'shot', processedPngPath: path.join(ROOT,'data','processed_images','c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'d.epf', width:800, height:480, imageName:'d.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'approved', poolType:'decorative_photos', hash:'ddd' });
-    entries.push({ id:'pending-e', url:'builtin://e', title:'Pending E', source:'Test', theme:'entrance', kind:'storyboard', processedPngPath: path.join(ROOT,'data','processed_images','c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'e.epf', width:800, height:480, imageName:'e.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'pending', poolType:'study_frames', hash:'eee' });
-    entries.push({ id:'rejected-f', url:'builtin://f', title:'Rejected F', source:'Test', theme:'ensemble', kind:'storyboard', processedPngPath: path.join(ROOT,'data','processed_images','c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'f.epf', width:800, height:480, imageName:'f.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'rejected', poolType:'study_frames', hash:'fff' });
-    entries.push({ id:'nostatus-g', url:'builtin://g', title:'No Status G', source:'Test', theme:'color', kind:'shot', processedPngPath: path.join(ROOT,'data','processed_images','c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'g.epf', width:800, height:480, imageName:'g.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'', poolType:'study_frames', hash:'ggg' });
+    entries.push({ id:'study-a', url:'builtin://a', title:'Study A', source:'Test', theme:'dialogue', kind:'storyboard', processedPngPath: path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'a.epf', width:800, height:480, imageName:'a.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'approved', poolType:'study_frames', hash:'aaa' });
+    entries.push({ id:'study-b', url:'builtin://b', title:'Study B', source:'Test', theme:'wide_shot', kind:'storyboard', processedPngPath: path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'b.epf', width:800, height:480, imageName:'b.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'approved', poolType:'study_frames', hash:'bbb' });
+    entries.push({ id:'study-c', url:'builtin://c', title:'Study C', source:'Test', theme:'night', kind:'storyboard', processedPngPath: path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'c.epf', width:800, height:480, imageName:'c.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'approved', poolType:'study_frames', hash:'ccc' });
+    entries.push({ id:'deco-d', url:'builtin://d', title:'Deco D', source:'Test', theme:'cinematic', kind:'shot', processedPngPath: path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'d.epf', width:800, height:480, imageName:'d.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'approved', poolType:'decorative_photos', hash:'ddd' });
+    entries.push({ id:'pending-e', url:'builtin://e', title:'Pending E', source:'Test', theme:'entrance', kind:'storyboard', processedPngPath: path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'e.epf', width:800, height:480, imageName:'e.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'pending', poolType:'study_frames', hash:'eee' });
+    entries.push({ id:'rejected-f', url:'builtin://f', title:'Rejected F', source:'Test', theme:'ensemble', kind:'storyboard', processedPngPath: path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'f.epf', width:800, height:480, imageName:'f.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'rejected', poolType:'study_frames', hash:'fff' });
+    entries.push({ id:'nostatus-g', url:'builtin://g', title:'No Status G', source:'Test', theme:'color', kind:'shot', processedPngPath: path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), epfPath:'g.epf', width:800, height:480, imageName:'g.png', createdAt:new Date().toISOString(), lastShownAt:null, shownCount:0, safetyStatus:'', poolType:'study_frames', hash:'ggg' });
   }
   return entries;
 }
@@ -112,6 +112,7 @@ async function main() {
   console.log('=== Rotation + Last-Known-Good A/B/C Test ===\n');
   cleanUp();
   fs.mkdirSync(TMPDIR, { recursive: true });
+try { fs.writeFileSync(path.join(TMPDIR, 'c7a7d3bc2f605fb97c4f6996287b3b4e212f8038.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==', 'base64')); } catch(e) {}
 
   function makeEnv(ind, extra) {
     var env = Object.assign({}, process.env, {
@@ -244,7 +245,7 @@ async function main() {
 
   try {
     var newsA = await fetchUrl('/api/news.json', 60000);
-    test('PHASE_A_NEWS_200', newsA.s === 200, 'status=' + newsA.s);
+    test('PHASE_A_NEWS_200', newsA.s === 200, 'status=' + newsA.s + ' err=' + newsA.b.toString());
     var newsAj = JSON.parse(newsA.b.toString());
     test('PHASE_A_NEWS_COUNT_6', newsAj.items && newsAj.items.length === 6, 'count=' + (newsAj.items ? newsAj.items.length : 0));
   } catch(e) {
