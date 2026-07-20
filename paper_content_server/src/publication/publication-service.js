@@ -23,12 +23,18 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
 
   function doPublish(snapshot) {
     var histStatus = 'OK', notifStatus = 'OK';
-    return snapshotStore.save(snapshot).then(function() {
+    var oldActive = null;
+    var activated = false;
+    return snapshotStore.readActive().then(function(active) {
+      oldActive = active ? active.activeSnapshotId : null;
+      return snapshotStore.save(snapshot);
+    }).then(function() {
       return snapshotStore.activate(snapshot.snapshotId);
     }).then(function() {
+      activated = true;
       snapshotCache.set(snapshot.snapshotId, snapshot);
     }).then(function() {
-      // History failure is isolated: does not reject publish, does not undo activation
+      // History failure is isolated: does not reject publish
       return history.append({
         id: Date.now().toString(36),
         type: snapshot.mode,
@@ -48,6 +54,15 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
     }).then(function() {
       logger.info('Published: ' + snapshot.snapshotId + ' (frameId=' + snapshot.frameId + ', hist=' + histStatus + ', notif=' + notifStatus + ')');
       return { snapshotId: snapshot.snapshotId, committed: true, historyStatus: histStatus, notificationStatus: notifStatus };
+    }, function(err) {
+      // Rollback: if activation was committed but subsequent steps failed,
+      // restore old active pointer
+      if (activated && oldActive) {
+        snapshotStore.activate(oldActive).catch(function(re) {
+          logger.error('ROLLBACK FAILED: could not restore active pointer ' + oldActive + ': ' + (re.message || re));
+        });
+      }
+      throw err;
     });
   }
 
@@ -74,7 +89,16 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
 
   function doRollback(snapshotId) {
     var loaded, histStatus = 'OK';
-    return history.list().then(function(entries) {
+    var oldActive = null;
+    var activated = false;
+    return snapshotStore.readActive().then(function(active) {
+      oldActive = active ? active.activeSnapshotId : null;
+      if (oldActive === snapshotId) {
+        throw new Error('Already active: ' + snapshotId);
+      }
+    }).then(function() {
+      return history.list();
+    }).then(function(entries) {
       var entry = entries.filter(function(e) { return e.snapshotId === snapshotId; })[0];
       if (entry && entry.restorable === false) {
         throw new Error('Snapshot is not restorable: ' + snapshotId + ' reason=' + (entry.invalidReason || 'unknown'));
@@ -86,8 +110,8 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
       loaded = snap;
       return snapshotStore.activate(snapshotId);
     }).then(function() {
+      activated = true;
       snapshotCache.set(snapshotId, loaded);
-      // History append failure is isolated — does not undo activation
       return history.append({
         id: Date.now().toString(36),
         type: 'rollback',
@@ -102,6 +126,14 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
     }).then(function() {
       logger.info('Rollback to: ' + snapshotId + ' (frameSha=' + loaded.frameSha256.slice(0, 8) + ', hist=' + histStatus + ')');
       return { snapshotId: snapshotId, committed: true, historyStatus: histStatus };
+    }, function(err) {
+      // Rollback restore: if activate succeeded but something after failed
+      if (activated && oldActive) {
+        snapshotStore.activate(oldActive).catch(function(re) {
+          logger.error('ROLLBACK RESTORE FAILED: could not restore old active pointer ' + oldActive + ': ' + (re.message || re));
+        });
+      }
+      throw err;
     });
   }
 

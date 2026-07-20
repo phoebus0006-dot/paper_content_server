@@ -10,6 +10,9 @@ const sharp = require('sharp');
 const { AdminStateService } = require('./src/admin/admin-state-service');
 const { handleAdminRoutes } = require('./src/admin/admin-routes');
 const { NewsTitleService } = require('./src/news/news-title-service');
+const { SafeImagePath } = require('./src/files/safe-image-path');
+const { ImageRasterizer } = require('./src/images/image-rasterizer-v2');
+const { ImageRecipeService } = require('./src/images/image-recipe-service');
 
 // R1 bridge — legacy adapter wiring
 var R1_loadConfig = require('./src/config/load-config').loadConfig;
@@ -322,6 +325,8 @@ async function main() {
     mqttClient: runtime.mqttClient || null,
   });
   runtime.newsTitleService = new NewsTitleService();
+  runtime.safeImagePath = new SafeImagePath({ rootDir: ROOT_DIR });
+  runtime.imageRasterizer = new ImageRasterizer();
   runtime.featureFlagView = boot.services.featureFlagView || null;
   runtime.assetRepository = boot.services.assetRepository || null;
   runtime.customLibraryService = boot.services.customLibraryService || null;
@@ -3637,17 +3642,17 @@ async function handleRequest(req, res) {
       if (!photoEntry) { res.writeHead(404); res.end('not found'); return; }
       var imgPath = photoEntry.processedPngPath || photoEntry.rawPath || '';
       if (!imgPath) { res.writeHead(404); res.end('no image path'); return; }
-      // Resolve relative to app root
-      var fullImgPath = path.isAbsolute(imgPath) ? imgPath : path.join(ROOT_DIR, imgPath);
-      if (!fs.existsSync(fullImgPath)) { res.writeHead(404); res.end('file not found: ' + fullImgPath); return; }
+      var sip = runtime.safeImagePath;
+      if (!sip || !sip.isSafe(imgPath)) { res.writeHead(403); res.end('forbidden'); return; }
       try {
+        var fullImgPath = sip.resolve(imgPath);
         var imgBuf = fs.readFileSync(fullImgPath);
         var ext = path.extname(fullImgPath).toLowerCase();
         var ct = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'public, max-age=3600' });
+        res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'private, no-store' });
         res.end(imgBuf);
       } catch(e) {
-        res.writeHead(500); res.end('read error: ' + e.message);
+        res.writeHead(500); res.end('read error');
       }
       return;
     }
