@@ -1,24 +1,29 @@
 {
   "originMaster": "0db16754b494a09a90dca3645177c12e4f63f68e",
-  "remoteBranches": [
-    "master",
-    "fix/core-residual-issues",
-    "repair/code-and-repository",
-    "cleanup/repository",
-    "security/*"
-  ],
-  "currentBranch": "fix/core-residual-issues",
-  "timestamp": "2026-07-20T23:00:18.7551214+02:00",
-  "currentHead": "c7617d865c30cc4ff6dc53f1fe78570696201c6c",
-  "openPRs": [
-    {
-      "state": "OPEN",
-      "number": 7,
-      "head": "fix/core-residual-issues"
-    }
-  ],
+  "currentBranch": "fix/core-residual-issues-secure-review",
+  "headSHA": "b49f9f0dbc3b2e4a337a13e6b8d9b850f187de03",
   "workspaceClean": true,
-  "prNumber": 8,
-  "prUrl": "https://github.com/phoebus0006-dot/paper_content_server/pull/8",
-  "prHead": "e19642f01d503e1cb95551a627f24bf4eef3bc3d"
+  "remoteBranches": ["master", "fix/core-residual-issues", "fix/core-residual-issues-secure-review", "repair/code-and-repository", "cleanup/repository"],
+  "pr": {
+    "number": 8,
+    "state": "OPEN",
+    "mergeable": "MERGEABLE",
+    "url": "https://github.com/phoebus0006-dot/paper_content_server/pull/8",
+    "baseSHA": "0db16754b494a09a90dca3645177c12e4f63f68e",
+    "headSHA": "b49f9f0dbc3b2e4a337a13e6b8d9b850f187de03"
+  },
+  "serverIntegrity": {
+    "masterSize": 175231,
+    "masterLines": 4044,
+    "masterSHA256": "ebcfb40b36976ac73b712daddd039f49f471354aeeb8cccecc67903903a3d5ec",
+    "branchSize": 177142,
+    "branchLines": 4083,
+    "branchSHA256": "9fd409feff4129b9f1018a95b75dbbcfcef14e2bbf2e27acd038261635fcbd3b",
+    "sizeChange": 1911,
+    "sizeChangePercent": 1.09,
+    "nodeCheckPassed": true,
+    "patchScriptsDeleted": true,
+    "newModuleFiles": 8
+  },
+  "timestamp": "2026-07-20T22:30:00.000Z"
 }
