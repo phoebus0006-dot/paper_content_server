@@ -33,7 +33,10 @@ Official_7in3e_HAT_Test/
 .codex-trae/
 # ESP32 config with real WiFi credentials
 NewsPhoto_esp32wf/config.h
+# PlatformIO build directories
+NewsPhoto_esp32wf/.pio*/
 # Test temporary data directories
+data/test_tmp_*/
 paper_content_server/test_data_tmp_*/
 paper_content_server/test_restart_*/
 paper_content_server/test_admin_*/
@@ -52,6 +55,8 @@ paper_content_server/test/admin/*-screenshot.png
 paper_content_server/test-news*.json
 # Audit checkpoints
 audit-checkpoint/
+audit/
+cleanup-audit/
 # Security — SSH private keys, credentials
 key_2026
 key_aliyun
@@ -63,6 +68,7 @@ id_rsa*
 config.h
 # Build archives
 *.tar.gz
+deploy.tar
 # Serial port logs
 serial_*.txt
 # Temporary deployment scripts (migrate to paper_content_server/deploy/ if needed)
@@ -73,6 +79,7 @@ artifacts/
 arduino-build/
 # Staging and runtime artifacts
 artifacts-staging-*
+lane-runtime/
 # Serial monitor scripts
 serial_monitor*
 # Audit output directory
@@ -80,3 +87,13 @@ architecture-audit-*/
 # Editor swap files
 \#*
 *~
+
+# Test and runtime pollution
+t.js
+lane-runtime/
+data/test_tmp_*/
+data/raw_images/
+data/processed_images/
+data/import_images/
+data/quarantine_*/
+
