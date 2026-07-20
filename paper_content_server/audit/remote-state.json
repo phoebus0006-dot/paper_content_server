@@ -1,7 +1,7 @@
 {
   "originMaster": "0db16754b494a09a90dca3645177c12e4f63f68e",
   "currentBranch": "fix/core-residual-issues-secure-review",
-  "headSHA": "b49f9f0dbc3b2e4a337a13e6b8d9b850f187de03",
+  "headSHA": "2888ba09781237a1cd618cbcaf3bb298c2bebab7",
   "workspaceClean": true,
   "remoteBranches": ["master", "fix/core-residual-issues", "fix/core-residual-issues-secure-review", "repair/code-and-repository", "cleanup/repository"],
   "pr": {
