@@ -1,0 +1,56 @@
+[
+  {
+    "path": "lane-runtime/paper_content_server/scripts/_fix_ia.js",
+    "sha256": "cb01c2dc03b47a4b6fd500f0072415b956115b31c66eae7ac1f931ae8e7bcb92",
+    "purpose": "Patch script to modify fetch-images.js or similar",
+    "isReferenced": false,
+    "containsUnmergedLogic": true,
+    "unmergedLogicRange": "Various injections",
+    "suggestedAction": "Deleted from git, manual review required for business logic extraction"
+  },
+  {
+    "path": "lane-runtime/paper_content_server/scripts/_fix_ia2.js",
+    "sha256": "db9c40c70a9fc917020329190cfce04f9f0229c1b7bf71d18fd6de2175face60",
+    "purpose": "Patch script to modify fetch-images.js or similar",
+    "isReferenced": false,
+    "containsUnmergedLogic": true,
+    "unmergedLogicRange": "Various injections",
+    "suggestedAction": "Deleted from git, manual review required for business logic extraction"
+  },
+  {
+    "path": "lane-runtime/paper_content_server/scripts/_fix_wm.js",
+    "sha256": "5ccbbae2d2ba2c1e2abdef8d22ef1b53f3b738495ac9d8720e3a86506e917be9",
+    "purpose": "Patch script to modify fetch-images.js or similar",
+    "isReferenced": false,
+    "containsUnmergedLogic": true,
+    "unmergedLogicRange": "Various injections",
+    "suggestedAction": "Deleted from git, manual review required for business logic extraction"
+  },
+  {
+    "path": "paper_content_server/scripts/_fix_ia.js",
+    "sha256": "cb01c2dc03b47a4b6fd500f0072415b956115b31c66eae7ac1f931ae8e7bcb92",
+    "purpose": "Patch script to modify fetch-images.js or similar",
+    "isReferenced": false,
+    "containsUnmergedLogic": true,
+    "unmergedLogicRange": "Various injections",
+    "suggestedAction": "Deleted from git, manual review required for business logic extraction"
+  },
+  {
+    "path": "paper_content_server/scripts/_fix_ia2.js",
+    "sha256": "db9c40c70a9fc917020329190cfce04f9f0229c1b7bf71d18fd6de2175face60",
+    "purpose": "Patch script to modify fetch-images.js or similar",
+    "isReferenced": false,
+    "containsUnmergedLogic": true,
+    "unmergedLogicRange": "Various injections",
+    "suggestedAction": "Deleted from git, manual review required for business logic extraction"
+  },
+  {
+    "path": "paper_content_server/scripts/_fix_wm.js",
+    "sha256": "5ccbbae2d2ba2c1e2abdef8d22ef1b53f3b738495ac9d8720e3a86506e917be9",
+    "purpose": "Patch script to modify fetch-images.js or similar",
+    "isReferenced": false,
+    "containsUnmergedLogic": true,
+    "unmergedLogicRange": "Various injections",
+    "suggestedAction": "Deleted from git, manual review required for business logic extraction"
+  }
+]

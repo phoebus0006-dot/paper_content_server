@@ -1,0 +1,5 @@
+{
+  "baselineCommitSha": "0db16754b494a09a90dca3645177c12e4f63f68e",
+  "currentBranch": "cleanup/repository",
+  "gitStatusShort": "?? NewsPhoto_esp32wf/.pio-old-check-pollution/\n?? NewsPhoto_esp32wf/.pio/\n?? NewsPhoto_esp32wf/FirmwareConfigDefaults.h\n?? NewsPhoto_esp32wf/lib/\n?? NewsPhoto_esp32wf/platformio.ini\n?? NewsPhoto_esp32wf/test/\n?? all_tracked.txt\n?? analyze.js\n?? cleanup-audit/\n?? data/\n?? paper_content_server/deploy.tar\n?? paper_content_server/qa/\n"
+}
