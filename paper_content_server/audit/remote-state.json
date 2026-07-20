@@ -17,5 +17,8 @@
       "head": "fix/core-residual-issues"
     }
   ],
-  "workspaceClean": true
+  "workspaceClean": true,
+  "prNumber": 8,
+  "prUrl": "https://github.com/phoebus0006-dot/paper_content_server/pull/8",
+  "prHead": "e19642f01d503e1cb95551a627f24bf4eef3bc3d"
 }
