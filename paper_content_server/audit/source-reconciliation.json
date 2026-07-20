@@ -1,0 +1,12 @@
+{
+  "scripts/generate-build-info.js": "LOCAL_ONLY",
+  "src/files/safe-image-path.js": "LOCAL_ONLY",
+  "src/admin/admin-state-service.js": "LOCAL_ONLY",
+  "qa/tests/e2e/publication-workflows.test.js": "IDENTICAL",
+  "src/images/image-rasterizer-v2.js": "LOCAL_ONLY",
+  "public/admin/build-info.json": "LOCAL_ONLY",
+  "src/images/image-recipe-service.js": "LOCAL_ONLY",
+  "src/publication/publication-history-adapter.js": "LOCAL_ONLY",
+  "src/admin/admin-routes.js": "LOCAL_ONLY",
+  "src/news/news-title-service.js": "LOCAL_ONLY"
+}

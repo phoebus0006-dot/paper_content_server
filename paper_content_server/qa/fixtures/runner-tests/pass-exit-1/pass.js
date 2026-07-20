@@ -1,0 +1,1 @@
+console.log("PASS"); process.exit(1);

@@ -1,6 +1,12 @@
 // news-editor.js — Edit/rewrite news and evaluate quality
 
-function rewriteTitle(title) { return String(title || '').trim(); }
+function rewriteTitle(title) { 
+  var t = String(title || '').trim();
+  if (t.length > 34) {
+    return t.substring(0, 31) + '...';
+  }
+  return t;
+}
 function rewriteSummary(summary) { return String(summary || '').trim(); }
 
 function evaluateQuality(item) {
