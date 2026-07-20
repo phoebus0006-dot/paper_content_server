@@ -1,0 +1,30 @@
+[
+  {
+    "path": "server.js",
+    "issueIds": ["P0-004"],
+    "functions": ["handleRequest"],
+    "reason": "Add GET /api/admin/state endpoint using AdminStateService.getAdminState()",
+    "reproduction": "audit/findings.json#P0-004"
+  },
+  {
+    "path": "server.js",
+    "issueIds": ["P0-004"],
+    "functions": ["main"],
+    "reason": "Initialize AdminStateService on runtime before server starts",
+    "reproduction": "audit/findings.json#P0-004"
+  },
+  {
+    "path": "src/admin/admin-state-service.js",
+    "issueIds": ["P2-002"],
+    "functions": ["_checkConsistency"],
+    "reason": "Fix consistency check to flag lastPublication vs snapshotId mismatch instead of silently ignoring",
+    "reproduction": "audit/findings.json#P2-002"
+  },
+  {
+    "path": "paper_content_server/.gitignore",
+    "issueIds": ["P0-004"],
+    "functions": ["gitignore rules"],
+    "reason": "Remove **/images/ catch-all gitignore rule that blocked src/images/ source tracking",
+    "reproduction": "audit/findings.json#P0-004"
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "originMaster": "0db16754b494a09a90dca3645177c12e4f63f68e",
+  "remoteBranches": [
+    "master",
+    "fix/core-residual-issues",
+    "repair/code-and-repository",
+    "cleanup/repository",
+    "security/*"
+  ],
+  "currentBranch": "fix/core-residual-issues",
+  "timestamp": "2026-07-20T23:00:18.7551214+02:00",
+  "currentHead": "c7617d865c30cc4ff6dc53f1fe78570696201c6c",
+  "openPRs": [
+    {
+      "state": "OPEN",
+      "number": 7,
+      "head": "fix/core-residual-issues"
+    }
+  ],
+  "workspaceClean": true
+}
