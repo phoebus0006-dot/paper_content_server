@@ -55,7 +55,6 @@ paper_content_server/test/admin/*-screenshot.png
 paper_content_server/test-news*.json
 # Audit checkpoints
 audit-checkpoint/
-audit/
 cleanup-audit/
 # Security — SSH private keys, credentials
 key_2026
