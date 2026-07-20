@@ -11,7 +11,7 @@ var crypto = require('crypto');
 var sharp = require('sharp');
 var ROOT = path.join(__dirname, '..');
 var BASE_SHA = '9990b9f1d2eb7e7955b2be3714f4c79359ab594e';
-var GOLDEN_DIR = path.join(ROOT, 'test', 'fixtures', 'r2', 'golden');
+var GOLDEN_DIR = path.join(ROOT, 'qa', 'fixtures', 'r2', 'golden');
 var W = 800, H = 480;
 
 var TMP = path.join(ROOT, 'tmp_r2_golden_' + Date.now());
