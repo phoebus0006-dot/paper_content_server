@@ -9,6 +9,7 @@ const { URL } = require('url');
 const sharp = require('sharp');
 const { AdminStateService } = require('./src/admin/admin-state-service');
 const { handleAdminRoutes } = require('./src/admin/admin-routes');
+const { NewsTitleService } = require('./src/news/news-title-service');
 
 // R1 bridge — legacy adapter wiring
 var R1_loadConfig = require('./src/config/load-config').loadConfig;
@@ -320,6 +321,7 @@ async function main() {
     publicationHistory: runtime.publicationHistory || null,
     mqttClient: runtime.mqttClient || null,
   });
+  runtime.newsTitleService = new NewsTitleService();
   runtime.featureFlagView = boot.services.featureFlagView || null;
   runtime.assetRepository = boot.services.assetRepository || null;
   runtime.customLibraryService = boot.services.customLibraryService || null;
@@ -3296,22 +3298,40 @@ async function handleRequest(req, res) {
         var db = JSON.parse(await readBody(req));
         var di = db.items || db.selected || [];
         if (di.length !== 6) { failJson(res, 400, 'need exactly 6 items, got ' + di.length); return; }
+        var nts = runtime.newsTitleService;
+        if (!nts) { failJson(res, 503, 'NewsTitleService not available'); return; }
         var su = {}, st = {};
+        var processed = [];
         for (var dk = 0; dk < di.length; dk++) {
           var d = di[dk];
           if (!d.title || !d.title.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': title empty'); return; }
-          if (d.title.length > 24) { failJson(res, 400, 'item ' + (dk+1) + ': title too long (' + d.title.length + ')'); return; }
           if (!d.summary || !d.summary.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': summary empty'); return; }
           if (!d.url || !d.url.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': URL empty'); return; }
           var un = d.url.toLowerCase().replace(/[?#].*$/, '');
           if (su[un]) { failJson(res, 400, 'duplicate URL: ' + d.url); return; }
           su[un] = true;
-          var tn = d.title.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
-          if (st[tn]) { failJson(res, 400, 'duplicate title: ' + d.title); return; }
-          st[tn] = true;
+          var tResult = await nts.normalizeTitle(d.title, d.summary);
+          var tKey = tResult.displayTitle.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
+          if (st[tKey]) { failJson(res, 400, 'duplicate title after normalization: ' + d.title); return; }
+          st[tKey] = true;
+          processed.push({
+            source: d.source || '',
+            category: d.category || '',
+            url: d.url,
+            publishedAt: d.publishedAt || null,
+            rawTitle: d.title,
+            rawSummary: d.summary || '',
+            displayTitle: tResult.displayTitle,
+            displaySummary: tResult.displaySummary || d.summary || '',
+            titleWidthPx: tResult.titleWidthPx || null,
+            titleMaxWidthPx: tResult.titleMaxWidthPx || null,
+            titleStatus: tResult.titleStatus || 'ok',
+            reviewStatus: tResult.titleStatus === 'needs_review' ? 'pending' : 'approved',
+            normalizationVersion: tResult.normalizationVersion || '1.0',
+          });
         }
-        require('fs').writeFileSync(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: di }, null, 2));
-        respondJson(res, { status: 'ok', count: di.length });
+        require('fs').writeFileSync(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: processed }, null, 2));
+        respondJson(res, { status: 'ok', count: processed.length, items: processed });
       } catch(e) { failJson(res, 500, e.message); }
       return;
     }
