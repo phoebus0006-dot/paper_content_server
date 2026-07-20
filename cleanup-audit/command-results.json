@@ -1,0 +1,7 @@
+[
+  {
+    "command": "npm run repo:hygiene",
+    "exitCode": 0,
+    "output": "Hygiene Check PASSED"
+  }
+]
