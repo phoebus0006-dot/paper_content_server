@@ -490,7 +490,7 @@ function loadAppConfig() {
     r1Logger.error('Config validation failed: ' + result.errors.join('; '));
     // Only hard-exit when run as the entry point. When required by tests for
     // utility functions, log and fall through so the module still loads.
-    if (require.main === module) {
+    runtime.adminStateService = new AdminStateService({ operatingModeService: runtime.operatingModeService || null, snapshotStore: runtime.snapshotStore || null, publicationHistory: runtime.publicationHistory || null, mqttClient: runtime.mqttClient || null }); if (require.main === module) {
       process.exit(1);
     }
   }
@@ -3951,7 +3951,7 @@ async function handleRequest(req, res) {
     }
 
 res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Not found');
+     if (parsed.pathname === '/api/admin/state') { if (!adminAuth(req)) { respondJson(res, { error: 'forbidden' }); return; } try { if (typeof runtime.adminStateService.getAdminState === 'function') { const st = await runtime.adminStateService.getAdminState(); respondJson(res, st); } else { respondJson(res, { status: 'unavailable', reason: 'AdminStateService not initialized' }); } } catch(e) { respondJson(res, { status: 'error', error: e.message }); } return; }res.end('Not found');
   } catch (error) {
     const body = Buffer.from(JSON.stringify({ error: error.message }, null, 2));
     r1Logger.error('request failed ' + parsed.pathname + ': ' + (error.stack || error.message));
