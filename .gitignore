@@ -1,82 +1,34 @@
-**/node_modules/
-**/.env
-**/.env.*
-**/data/raw_images/
-**/data/processed_images/
-**/data/import_images/
-**/data/quarantine_*/
-**/data/quarantine_*
-**/images/
-**/*.bin
-**/*.log
-**/backup*/
-**/*.bak*
-**/__pycache__/
-**/.DS_Store
-**/test-*.png
-**/test-*.svg
-testout.txt
-testerr.txt
-srv_final.err
-srv_*.log
-srv_c.log
-codex-*
-git_orig.txt
-# ESP32 hardware config has real WiFi credentials
-E-Paper_ESP32_Driver_Board_Code/
-E-Paper_code/
-ESP32-7in3E6.7z
-ESP32-7in3E6_S3_DuPont/
-ESP32-7in3E6_UNO_Pin_Test/
-ESP32-7in3E6_official/
-Official_7in3e_HAT_Test/
-.codex-trae/
-# ESP32 config with real WiFi credentials
-NewsPhoto_esp32wf/config.h
-# Test temporary data directories
-paper_content_server/test_data_tmp_*/
-paper_content_server/test_restart_*/
-paper_content_server/test_admin_*/
-paper_content_server/test_diag_*/
-paper_content_server/test_restart_tmp_*/
-paper_content_server/test_rotation_data_*/
-paper_content_server/test_data_r1_*/
-paper_content_server/test_cntr_*/
-paper_content_server/test_lg_*/
-paper_content_server/test_night_*/
-paper_content_server/test_shutdown_*/
-paper_content_server/test_v3_*/
-# Test browser screenshots (artifacts, not source)
-paper_content_server/test/admin/*-screenshot.png
-# Stale test news snapshots (unreferenced — historical output of buildNewsSnapshot)
-paper_content_server/test-news*.json
-# Audit checkpoints
-audit-checkpoint/
-# Security — SSH private keys, credentials
-key_2026
-key_aliyun
-nas_key
-*.pem
-*.key
-id_rsa*
-# SSH config
-config.h
-# Build archives
-*.tar.gz
-# Serial port logs
-serial_*.txt
-# Temporary deployment scripts (migrate to paper_content_server/deploy/ if needed)
-.nas-*.sh
-# Runtime screenshots and artifacts
-artifacts/
-# Arduino build output
-arduino-build/
-# Staging and runtime artifacts
-artifacts-staging-*
-# Serial monitor scripts
-serial_monitor*
-# Audit output directory
-architecture-audit-*/
-# Editor swap files
-\#*
-*~
+node_modules/
+.env
+.env.*
+!.env.example
+
+qa/runtime/
+qa/artifacts/
+qa/reports/
+
+test_data_*/
+test_v3_*/
+test_admin_*/
+test_tmp_*/
+
+dist/
+coverage/
+playwright-report/
+test-results/
+
+deploy.tar
+*.log
+*.tmp
+*.corrupt.*
+
+_fix_*.js
+fix-*.js
+patch-*.js
+inject-*.js
+extract-*.js
+
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
