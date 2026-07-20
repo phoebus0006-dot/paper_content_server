@@ -131,7 +131,7 @@ class AdminStateService {
     
     // lastPublication 与 active snapshot 可对应
     if (state.lastPublication && state.active.snapshotId && state.lastPublication.snapshotId !== state.active.snapshotId) {
-        // Warning: This could be normal during transition, but flagged if persistently mismatched
+      this._addInconsistency(state, 'SNAPSHOT_MISMATCH', 'lastPublication.snapshotId', state.active.snapshotId);
     }
   }
 

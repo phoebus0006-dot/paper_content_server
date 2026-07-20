@@ -1,34 +1,32 @@
-# Stage 1: build — clean install from official node:20-slim
-FROM node:20-slim AS builder
+# ---- Build stage ----
+FROM node:20-alpine AS build
 WORKDIR /app
-# Copy only manifests first — enables layer caching and ensures npm ci runs
-# against a clean tree (host node_modules excluded via .dockerignore).
-COPY package.json package-lock.json ./
-# Clean install + fail-fast sharp verification BEFORE copying source.
-# server.js is NOT checked here — it does not exist yet.
-RUN npm ci --omit=dev --no-audit --no-fund && \
-    node -e "require('sharp'); console.log('sharp_loaded')" && \
-    node -e "console.log(JSON.stringify(require('sharp').versions))"
-# Now copy source — .dockerignore excludes node_modules/data/.env/config.h/etc.
-COPY . .
-# server.js syntax check MUST run AFTER COPY . . (file must exist).
-RUN node --check server.js
+COPY package.json package-lock.json* ./
+RUN npm ci --only=production && npm ci --only=dev && npm cache clean --force
 
-# Stage 2: runtime
-FROM node:20-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
+# ---- Test stage ----
+FROM node:20-alpine AS test
 WORKDIR /app
-COPY --from=builder /app /app
-RUN mkdir -p /app/images && \
-    groupadd -r appuser && useradd -r -g appuser appuser && \
-    chown -R appuser:appuser /app
+COPY --from=build /app/node_modules ./node_modules
+COPY . .
+RUN npm run check
+RUN npm run test:unit
+RUN node -e "require('./src/admin/admin-state-service'); require('./src/news/news-title-service'); require('./src/files/safe-image-path'); require('./src/images/image-rasterizer-v2'); require('./src/images/image-recipe-service'); require('./src/publication/publication-history-adapter'); console.log('All modules loaded successfully')"
+
+# ---- Production stage ----
+FROM node:20-alpine AS production
+WORKDIR /app
+RUN apk add --no-cache tini
+COPY --from=build /app/node_modules ./node_modules
+COPY src/ ./src/
+COPY scripts/generate-build-info.js ./scripts/
+COPY public/ ./public/
+COPY server.js package.json ./
+COPY data/ ./data/
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
 USER appuser
-EXPOSE 8787
-# Build metadata — SHA verified via `docker inspect`, not /api/build
-ARG BUILD_GIT_SHA=unknown
-ARG BUILD_GIT_TREE=unknown
-ARG BUILD_DIRTY=unknown
-ENV BUILD_GIT_SHA=$BUILD_GIT_SHA
-ENV BUILD_GIT_TREE=$BUILD_GIT_TREE
-ENV BUILD_DIRTY=$BUILD_DIRTY
+EXPOSE 8080
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "server.js"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/health.json || exit 1
