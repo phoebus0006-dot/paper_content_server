@@ -3,45 +3,50 @@ const fs = require('fs');
 
 class SafeImagePath {
   constructor(options = {}) {
-    this.rootDir = options.rootDir || process.cwd();
+    this.rootDir = path.resolve(options.rootDir || process.cwd());
+    this.realRootDir = fs.realpathSync(this.rootDir);
   }
 
   isSafe(inputPath) {
     if (!inputPath || typeof inputPath !== 'string') return false;
 
-    // Resolve absolute path
-    const resolvedPath = path.isAbsolute(inputPath) ? path.resolve(inputPath) : path.resolve(this.rootDir, inputPath);
+    const resolvedPath = path.isAbsolute(inputPath)
+      ? path.resolve(inputPath)
+      : path.resolve(this.rootDir, inputPath);
 
-    // Prevent directory traversal escape
     if (!resolvedPath.startsWith(this.rootDir + path.sep) && resolvedPath !== this.rootDir) {
       return false;
     }
 
     try {
-      // Must exist
-      const stat = fs.lstatSync(resolvedPath);
+      const realPath = fs.realpathSync(resolvedPath);
 
-      // Must be a regular file (no directories, no symlinks, no FIFOs)
+      if (!realPath.startsWith(this.realRootDir + path.sep) && realPath !== this.realRootDir) {
+        return false;
+      }
+
+      const stat = fs.statSync(realPath);
+
       if (!stat.isFile()) return false;
-      if (stat.isSymbolicLink()) return false;
-      if (stat.isFIFO()) return false;
+      if (stat.isFIFO() || stat.isSocket()) return false;
 
-      // Extensions
-      const ext = path.extname(resolvedPath).toLowerCase();
+      const ext = path.extname(realPath).toLowerCase();
       if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
         return false;
       }
 
       return true;
     } catch (e) {
-      // If it doesn't exist or we can't stat it, it's not safe
       return false;
     }
   }
 
   resolve(inputPath) {
     if (this.isSafe(inputPath)) {
-      return path.isAbsolute(inputPath) ? path.resolve(inputPath) : path.resolve(this.rootDir, inputPath);
+      const resolvedPath = path.isAbsolute(inputPath)
+        ? path.resolve(inputPath)
+        : path.resolve(this.rootDir, inputPath);
+      return fs.realpathSync(resolvedPath);
     }
     throw new Error('Unsafe image path');
   }
