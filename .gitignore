@@ -6,7 +6,8 @@
 **/data/import_images/
 **/data/quarantine_*/
 **/data/quarantine_*
-**/images/
+/images/
+paper_content_server/images/
 **/*.bin
 **/*.log
 **/backup*/
