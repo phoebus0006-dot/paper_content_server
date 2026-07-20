@@ -1,0 +1,30 @@
+name: Repository Hygiene
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  hygiene-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        working-directory: ./paper_content_server
+        run: npm ci
+      - name: Check repository hygiene
+        working-directory: ./paper_content_server
+        run: npm run repo:hygiene
+      - name: Check for uncommitted changes
+        run: |
+          git status --short
+          if [ -n "$(git status --short)" ]; then
+            echo "Hygiene check produced uncommitted changes."
+            exit 1
+          fi
