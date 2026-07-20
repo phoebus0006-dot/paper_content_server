@@ -28,7 +28,7 @@ COPY src ./src
 # The user's repo structure: `src/` exists. `public/` doesn't exist (it's in `src/admin/public` or similar? No, let's just copy everything that is production code).
 # Wait, let's look at `package.json` to see what is needed. Or just copy `src/`.
 # To be safe, I can just copy the necessary folders if they exist.
-COPY scripts/run-*.js ./scripts/
+
 RUN mkdir -p /app/images && \
     groupadd -r appuser && useradd -r -g appuser appuser && \
     chown -R appuser:appuser /app

@@ -67,7 +67,9 @@
     "test:e2e": "node --test qa/tests/e2e/**/*.test.js",
     "test:visual": "node --test qa/tests/visual/**/*.test.js",
     "test:all": "node scripts/run-active-tests.js",
-    "repo:hygiene": "node scripts/repo-hygiene.js"
+    "repo:hygiene": "node scripts/repo-hygiene.js",
+    "qa:verify-clean": "node scripts/verify-clean.js",
+    "mutation:test": "node --test qa/tests/mutation/**/*.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

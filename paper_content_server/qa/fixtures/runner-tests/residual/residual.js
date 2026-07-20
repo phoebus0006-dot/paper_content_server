@@ -1,0 +1,1 @@
+const { spawn } = require("child_process"); spawn("node", ["-e", "setInterval(()=>{},1000)"], { detached: false });
