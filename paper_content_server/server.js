@@ -1,4 +1,13 @@
 const fs = require('fs');
+
+const { AdminStateService } = require('./src/admin/admin-state-service');
+const { NewsTitleService } = require('./src/news/news-title-service');
+const { ImageRecipeService } = require('./src/images/image-recipe-service');
+const { ImageRasterizer } = require('./src/images/image-rasterizer-v2');
+const { SafeImagePath } = require('./src/files/safe-image-path');
+const { PublicationHistoryAdapter } = require('./src/publication/publication-history-adapter');
+const { handleAdminRoutes } = require('./src/admin/admin-routes');
+
 const fsp = fs.promises;
 const http = require('http');
 const os = require('os');
@@ -324,6 +333,20 @@ async function main() {
   runtime.safetyClassifierPort = boot.services.safetyClassifierPort || null;
   runtime.config = boot.config || null;
   runtime.mqttClient = boot.deps.mqttClient || null;
+
+  runtime.safeImagePath = new SafeImagePath({ rootDir: ROOT_DIR });
+  runtime.imageRasterizer = new ImageRasterizer();
+  runtime.imageRecipeService = new ImageRecipeService({ assetRepository: runtime.assetRepository, imageRasterizer: runtime.imageRasterizer });
+  // Pass dummy text rasterizer or real one if we had it
+  runtime.newsTitleService = new NewsTitleService({ textRasterizer: null }); 
+  runtime.publicationHistoryAdapter = new PublicationHistoryAdapter({ rawHistoryFile: path.join(DATA_DIR, 'publish_history.json') });
+  runtime.adminStateService = new AdminStateService({
+    operatingModeService: runtime.operatingModeService,
+    snapshotStore: runtime.snapshotStore,
+    publicationHistory: runtime.publicationHistoryAdapter,
+    mqttClient: runtime.mqttClient
+  });
+
   await runtime.snapshotStore.ensureDirs();
 
   // V6: initialize the safety classifier async lifecycle (load model + smoke

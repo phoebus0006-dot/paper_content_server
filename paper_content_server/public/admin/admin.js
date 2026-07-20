@@ -1,760 +1,313 @@
-var STATE = {};
-var ACCESS_MODE = null;
-var TOKEN = null;
-var LOGIN_CALLBACK = null;
-var SELECTED_NEWS_IDX = -1;
-var NEWS_BASELINE = null;
+// unified admin.js
+const API_BASE = '/api/admin';
+let globalState = null;
+let currentNews = [];
+let selectedNewsIdx = 0;
+let currentPhotos = [];
+let selectedPhoto = null;
+let editorRecipe = {};
 
-function $(id){return document.getElementById(id)}
-function show(el){if(!el)return;if(el.id==='app'){el.style.display='grid'}else{el.style.display='block'}}
-function hide(el){if(el)style_display(el,'none')}
-function style_display(el,val){if(el)el.style.display=val}
-function qs(s,p){return(p||document).querySelector(s)}
-
-function showErrorBox(msg){
-  var box=$('page-error-box');
-  if(!box){
-    box=document.createElement('div');
-    box.id='page-error-box';
-    box.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#dc3545;color:#fff;padding:12px 20px;border-radius:6px;z-index:10000;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:90vw';
-    document.body.appendChild(box);
-  }
-  box.textContent='后台加载失败: '+msg;
-  box.style.display='block';
-}
-window.addEventListener('error',function(e){
-  showErrorBox(e.message||'Unknown error');
-});
-window.addEventListener('unhandledrejection',function(e){
-  var msg=(e.reason&&(e.reason.message||e.reason))||'Promise rejected';
-  showErrorBox(String(msg));
-});
-
-function api(path,opts){
-  opts=opts||{};
-  var h={'Content-Type':'application/json'};
-  if(TOKEN) h['Authorization']='Bearer '+TOKEN;
-  return fetch(path,Object.assign({headers:h},opts)).then(function(r){
-    if(r.status===401||r.status===403){
-      if(ACCESS_MODE==='token'&&!TOKEN){showLogin();throw new Error('unauthorized')}
-    }
-    if(r.status===204)return null;
-    return r.json().catch(function(){return null});
-  });
-}
-
-function toast(msg,type){type=type||'info';var t=document.createElement('div');t.className='toast toast-'+type;t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove()},3000)}
-
-function showLogin(){
-  if(!$('login-overlay')){
-    console.warn('showLogin skipped: login-overlay not present (LAN mode)');
-    return;
-  }
-  hide($('app'));
-  show($('login-overlay'));
-  if($('login-token'))$('login-token').value='';
-  if($('login-error'))$('login-error').style.display='none';
-}
-
-function hideLogin(){
-  if(!$('login-overlay')){
-    console.warn('hideLogin skipped: login-overlay not present (LAN mode)');
-    return;
-  }
-  hide($('login-overlay'));
-  show($('app'));
-}
-
-var loginForm=$('login-form');
-if(loginForm){
-  loginForm.addEventListener('submit',function(e){
+// Navigation
+document.querySelectorAll('.nav-links a').forEach(a => {
+  a.addEventListener('click', e => {
     e.preventDefault();
-    var token=$('login-token').value.trim();
-    if(!token)return;
-    api('/api/admin/dashboard',{headers:{'Authorization':'Bearer '+token}}).then(function(d){
-      if(d&&d.status==='ok'){TOKEN=token;hideLogin();if(LOGIN_CALLBACK){LOGIN_CALLBACK();LOGIN_CALLBACK=null}}
-      else{$('login-error').textContent='Token 无效';$('login-error').style.display='block'}
-    }).catch(function(){toast('认证失败','error')});
+    document.querySelectorAll('.nav-links a').forEach(n => n.classList.remove('active'));
+    a.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+    document.getElementById(`page-${a.dataset.page}`).style.display = 'block';
+    if (a.dataset.page === 'workbench') loadState();
+    if (a.dataset.page === 'news') loadNews();
+    if (a.dataset.page === 'photos') loadPhotos('learning');
+    if (a.dataset.page === 'history') loadHistory();
+    if (a.dataset.page === 'system') loadState();
   });
-}
-
-var TAB_TITLES={dashboard:'总览','news-page':'新闻审查','photos-page':'图片库','photo-editor-page':'图片编辑','publish-page':'发布中心','status-page':'运行状态'};
-function switchTab(name){
-  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
-  var page=$(name);if(page)page.classList.add('active');
-  document.querySelectorAll('.sidebar nav a').forEach(function(a){a.classList.remove('active')});
-  var link=qs('a[data-tab="'+name+'"]');if(link)link.classList.add('active');
-  var titleEl=$('page-title');
-  if(titleEl&&TAB_TITLES[name])titleEl.textContent=TAB_TITLES[name];
-}
-
-document.querySelectorAll('.sidebar nav a').forEach(function(a){
-  a.addEventListener('click',function(e){e.preventDefault();switchTab(a.getAttribute('data-tab'))});
 });
 
-function loadAll(){
-  loadDashboard();loadNewsReview();loadPhotos();loadPublishHistory();loadStatus();loadHealth();
-  updateRefreshTime();
-}
-
-function refreshAll(){
-  loadAll();
-  toast('已刷新','info');
-}
-
-function updateRefreshTime(){
-  var el=$('last-refresh');
-  if(el)el.textContent='最后刷新: '+new Date().toLocaleTimeString('zh-CN');
-}
-
-function setText(id,text,emptyText){
-  var el=$(id);if(!el)return null;
-  var val=text;
-  if(val===undefined||val===null||val===''||val==='-'||val==='--'){
-    val=emptyText||'暂无数据';
+async function api(path, options = {}) {
+  const res = await fetch(path, options);
+  if (!res.ok) {
+    const data = await res.json().catch(()=>({}));
+    throw new Error(data.error || res.statusText);
   }
-  el.textContent=val;
-  return el;
+  return res.json();
 }
 
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
-
-function renderQualityRules(item){
-  var html='';
-  var titleLen=item.titleLen||0;
-  var summaryLen=item.summaryLen||0;
-  if(titleLen>24){
-    html+='<div class="quality-rule error">标题过长: '+titleLen+'/24 字，超出 '+(titleLen-24)+' 字，EPD 上可能被截断</div>';
-  }
-  if(summaryLen<45){
-    html+='<div class="quality-rule warn">摘要过短: '+summaryLen+'/56 字，低于建议下限</div>';
-  }
-  if(summaryLen>70){
-    html+='<div class="quality-rule error">摘要过长: '+summaryLen+'/56 字，超出 '+(summaryLen-56)+' 字，结尾可能被截断</div>';
-  }
-  if(item.translationStatus==='original'){
-    html+='<div class="quality-rule info">未翻译，将显示原文</div>';
-  }
-  if(item.translationStatus==='missing-key'){
-    html+='<div class="quality-rule error">翻译失败: 缺少 API Key</div>';
-  }
-  if(!html)return '';
-  return '<div class="quality-rules">'+html+'</div>';
+function showError(msg) {
+  const b = document.getElementById('error-banner');
+  b.textContent = msg;
+  b.style.display = 'block';
+  setTimeout(() => b.style.display = 'none', 5000);
 }
 
-function showConfirm(title,message,onConfirm){
-  var overlay=document.createElement('div');
-  overlay.className='confirm-overlay';
-  overlay.innerHTML='<div class="confirm-box"><h3>'+esc(title)+'</h3><div class="confirm-text">'+esc(message)+'</div><div class="confirm-buttons"><button class="btn btn-outline" id="confirm-cancel-btn">取消</button><button class="btn btn-primary" id="confirm-ok-btn">确认</button></div></div>';
-  document.body.appendChild(overlay);
-  $('confirm-cancel-btn').onclick=function(){overlay.remove()};
-  $('confirm-ok-btn').onclick=function(){overlay.remove();if(onConfirm)onConfirm()};
-  overlay.onclick=function(e){if(e.target===overlay)overlay.remove()};
-}
-
-function addStatusDetail(el,text,type){
-  var existing=el.parentNode.querySelector('.status-detail-text');
-  if(existing)existing.remove();
-  var detail=document.createElement('div');
-  detail.className='status-detail-text '+(type||'info');
-  detail.textContent=text;
-  el.parentNode.appendChild(detail);
-}
-
-// ── Dashboard ──
-function loadDashboard(){
-  api('/api/admin/dashboard').then(function(d){
-    if(!d)return;
-    setText('dash-mode',d.currentMode,'未设置');
-    setText('dash-slot',d.currentSlot,'未生成');
-    setText('dash-frameid',d.frameId?(d.frameId.slice(0,50)+'...'):'未生成','未生成');
-    setText('dash-nextswitch',d.nextSwitchLocal,'未调度');
-    setText('dash-news',d.newsItemCount!==undefined?String(d.newsItemCount):'未加载','未加载');
-    setText('dash-cache',d.frameCacheEntries!==undefined?String(d.frameCacheEntries):'0','0');
-    setText('dash-uptime',d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟','<1 分钟');
-    setText('dash-override',d.manualOverride||'auto','auto');
-    setText('dash-override-expires',d.overrideExpiresAt,'未设置');
-    setText('dash-lastpublish',d.lastPublishedAt||'未发布','未发布');
-    var modeEl=$('dash-control-mode');
-    if(!modeEl){
-      modeEl=document.createElement('div');
-      modeEl.id='dash-control-mode';
-      modeEl.className='control-mode-box';
-      var dash=$('dashboard');
-      var cards=dash.querySelectorAll('.card');
-      cards[cards.length-1].parentNode.insertBefore(modeEl,cards[cards.length-1].nextSibling);
-    }
-    if(d.manualOverride==null||d.manualOverride===undefined){
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>自动调度 — 由时间 SLOT 调度器自动选择内容';
-    }else{
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>手动覆盖 — 当前内容由管理员手动指定，到期时间: '+(d.overrideExpiresAt||'未知');
-    }
-    STATE.dashboard=d;
-  }).catch(function(e){showErrorBox('dashboard load failed: '+(e&&e.message||e))});
-}
-
-// ── News Review ──
-function loadNewsReview(){
-  api('/api/admin/news').then(function(d){
-    if(!d)return;
-    var el=$('news-list');
-    if(!el)return;
-    el.innerHTML='';
-    var items=(d.selected||[]);
-    NEWS_BASELINE=JSON.parse(JSON.stringify(items));
-    if(items.length===0){
-      el.innerHTML='<div class="empty-state">暂无新闻数据。请检查新闻源配置或刷新。</div>';
-      return;
-    }
-    items.forEach(function(item,i){
-      var card=document.createElement('div');
-      card.className='news-card'+(i===SELECTED_NEWS_IDX?' selected':'');
-      var statusBadge='<span class="badge '+(item.translationStatus==='translated'?'badge-status-translated':item.translationStatus==='original'?'badge-status-original':item.translationStatus==='missing-key'?'badge-status-missing-key':item.translationStatus==='failed'?'badge-status-failed':'badge-status-stub')+'">'+(item.translationStatus||'unknown')+'</span>';
-      var isFirst=(i===0);
-      var isLast=(i===items.length-1);
-      var upDisabled=isFirst?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
-      var downDisabled=isLast?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
-      var qualityHtml=renderQualityRules(item);
-      card.innerHTML='<div class="meta">'+
-        '<span class="badge badge-category">'+(item.category||'综合')+'</span>'+
-        statusBadge+
-        '<span class="small muted">'+(item.source||'')+'</span>'+
-        '<span class="small muted">'+(item.titleLen||0)+'字 / '+(item.summaryLen||0)+'字</span>'+
-        '</div>'+
-        qualityHtml+
-        '<div class="news-title-row">'+esc(item.title||'无标题')+'</div>'+
-        '<div class="news-summary-row">'+esc(item.summary||'无摘要')+'</div>'+
-        '<div class="actions">'+
-        '<button'+upDisabled+' onclick="event.stopPropagation();moveNews('+i+',-1)">⬆ 上移</button>'+
-        '<button'+downDisabled+' onclick="event.stopPropagation();moveNews('+i+',1)">⬇ 下移</button>'+
-        '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')">移除</button>'+
-        '<a href="'+(item.url||'#')+'" target="_blank" class="btn btn-sm btn-outline" onclick="event.stopPropagation()">原文</a>'+
-        '</div>';
-      card.onclick=function(){selectNews(i);};
-      el.appendChild(card);
-    });
-    STATE.news=d;
-    if(SELECTED_NEWS_IDX>=0&&SELECTED_NEWS_IDX<items.length){
-      renderNewsDetail(items[SELECTED_NEWS_IDX]);
-    }
-  }).catch(function(e){
-    var el=$('news-list');
-    if(el)el.innerHTML='<div class="empty-state">新闻加载失败: '+esc(e.message||e)+'</div>';
-  });
-}
-
-function selectNews(idx){
-  SELECTED_NEWS_IDX=idx;
-  var items=(STATE.news&&STATE.news.selected)||[];
-  document.querySelectorAll('#news-list .news-card').forEach(function(c,i){
-    if(i===idx)c.classList.add('selected');
-    else c.classList.remove('selected');
-  });
-  if(idx>=0&&idx<items.length){
-    renderNewsDetail(items[idx]);
-  }
-}
-
-function renderNewsDetail(item){
-  var el=$('news-detail');
-  if(!el||!item)return;
-  var statusBadge='<span class="badge '+(item.translationStatus==='translated'?'badge-status-translated':item.translationStatus==='original'?'badge-status-original':item.translationStatus==='missing-key'?'badge-status-missing-key':item.translationStatus==='failed'?'badge-status-failed':'badge-status-stub')+'">'+(item.translationStatus||'unknown')+'</span>';
-  var qualityHtml=renderQualityRules(item);
-  var origTitle=item.originalTitle||null;
-  var origSummary=item.originalSummary||null;
-  var hasOrig=!!(origTitle||origSummary);
-  var origContent='';
-  if(hasOrig){
-    origContent='<div><strong>标题:</strong> '+esc(origTitle)+'</div><div><strong>摘要:</strong> '+esc(origSummary)+'</div>';
-  }else{
-    origContent='<em>(原文未提供)</em>';
-  }
-  var originalSection='<div class="detail-field"><div class="detail-label">原文</div><div class="detail-value"><div class="news-original-content" style="display:none">'+origContent+'</div><button class="btn btn-sm btn-outline news-original-toggle" onclick="toggleOriginal()">显示原文</button></div></div>';
-  el.innerHTML=
-    '<div class="detail-field"><div class="detail-label">分类</div><div class="detail-value"><span class="badge badge-category">'+esc(item.category||'综合')+'</span> '+statusBadge+'</div></div>'+
-    qualityHtml+
-    '<div class="detail-field"><div class="detail-label">显示标题</div><div class="detail-value"><input class="news-title" value="'+esc(item.title||'')+'" style="width:100%"></div></div>'+
-    '<div class="detail-field"><div class="detail-label">显示摘要</div><div class="detail-value"><textarea class="news-summary" rows="3" style="width:100%">'+esc(item.summary||'')+'</textarea></div></div>'+
-    originalSection+
-    '<div class="detail-field"><div class="detail-label">来源</div><div class="detail-value">'+esc(item.source||'未知')+'</div></div>'+
-    '<div class="detail-field"><div class="detail-label">发布时间</div><div class="detail-value">'+esc(item.publishedAt||'未知')+'</div></div>'+
-    '<div class="detail-field"><div class="detail-label">原文链接</div><div class="detail-value"><a href="'+esc(item.url||'#')+'" target="_blank">'+esc(item.url||'无链接')+'</a></div></div>'+
-    '<div class="detail-field"><div class="detail-label">字数</div><div class="detail-value">标题 '+(item.titleLen||0)+' 字 / 摘要 '+(item.summaryLen||0)+' 字</div></div>';
-}
-
-function toggleOriginal(){
-  var area=qs('.news-original-content');
-  var btn=qs('.news-original-toggle');
-  if(!area||!btn)return;
-  if(area.style.display==='none'){
-    area.style.display='block';
-    btn.textContent='隐藏原文';
-  }else{
-    area.style.display='none';
-    btn.textContent='显示原文';
-  }
-}
-
-async function saveNewsDraft(){
-  var items=(STATE.news&&STATE.news.selected)||[];
-  var titles=document.querySelectorAll('.news-title');
-  var summaries=document.querySelectorAll('.news-summary');
-  titles.forEach(function(inp,i){if(items[i])items[i].title=inp.value});
-  summaries.forEach(function(inp,i){if(items[i])items[i].summary=inp.value});
-  var changed=false;
-  if(NEWS_BASELINE){
-    for(var i=0;i<items.length;i++){
-      var base=NEWS_BASELINE[i];
-      var cur=items[i];
-      if(base&&cur&&(base.title!==cur.title||base.summary!==cur.summary)){
-        changed=true;
-        break;
-      }
-    }
-  }else{
-    changed=true;
-  }
-  if(!changed){
-    toast('无变更，无需保存','info');
-    return;
-  }
-  var btn=qs('#news-page .panel-actions .btn-primary');
-  if(btn){btn.disabled=true;btn.textContent='保存中...';}
+// 1. State / Workbench
+async function loadState() {
   try {
-    var r = await api('/api/admin/news/draft',{method:'POST',body:JSON.stringify({items:items})});
-    if(r && r.error) throw new Error(r.error);
-    toast('草稿已保存','success');
-    NEWS_BASELINE=JSON.parse(JSON.stringify(items));
-    return r;
+    globalState = await api(`${API_BASE}/state`);
+    
+    // Check consistency
+    if (!globalState.consistent) {
+       showError('状态不一致，禁止发布: ' + JSON.stringify(globalState.inconsistencies));
+    }
+
+    document.getElementById('workbench-last-refresh').textContent = new Date().toLocaleTimeString();
+    
+    // Workbench Status
+    document.getElementById('wb-mode').textContent = globalState.active.contentMode;
+    document.getElementById('wb-opmode').textContent = globalState.active.operatingMode;
+    document.getElementById('wb-lastpub').textContent = globalState.lastPublication ? new Date(globalState.lastPublication.publishedAt).toLocaleString() : '未发布';
+    document.getElementById('wb-nextswitch').textContent = globalState.schedule.nextSwitchAt ? new Date(globalState.schedule.nextSwitchAt).toLocaleString() : '-';
+    document.getElementById('wb-device').textContent = globalState.device.connected ? '在线' : '离线';
+
+    // System Status
+    document.getElementById('sys-health-status').textContent = globalState.health.status;
+    document.getElementById('sys-health-uptime').textContent = Math.floor(globalState.health.uptime);
+    document.getElementById('sys-content-mode').textContent = globalState.active.contentMode;
+    document.getElementById('sys-op-mode').textContent = globalState.active.operatingMode;
+    document.getElementById('sys-snap-id').textContent = globalState.active.snapshotId || '-';
+    document.getElementById('sys-frame-id').textContent = globalState.active.frameId || '-';
+    document.getElementById('sys-frame-len').textContent = globalState.active.frameLength || '0';
+
+    document.getElementById('sys-build-commit').textContent = globalState.build.commit;
+    document.getElementById('sys-build-branch').textContent = globalState.build.branch;
+    document.getElementById('sys-build-time').textContent = globalState.build.buildTime;
+    document.getElementById('sys-build-version').textContent = globalState.build.serverVersion;
+
+    // Load actual preview depending on content type
+    const pimg = document.getElementById('workbench-preview-img');
+    const perror = document.getElementById('workbench-preview-error');
+    if (globalState.active.contentMode === 'news') {
+        pimg.src = '/public/fake_news_preview.gif'; // Replace with actual frame API if we had one
+        pimg.style.display = 'block';
+        perror.style.display = 'none';
+    } else if (globalState.active.contentMode === 'photo' && globalState.active.assetId) {
+        const body = { assetId: globalState.active.assetId, recipe: {} }; // Ideally load canonical recipe
+        const res = await fetch(`${API_BASE}/photo-eink-preview`, { method: 'POST', body: JSON.stringify(body) });
+        if (res.ok) {
+           const blob = await res.blob();
+           pimg.src = URL.createObjectURL(blob);
+           pimg.style.display = 'block';
+           perror.style.display = 'none';
+        } else {
+           pimg.style.display = 'none';
+           perror.style.display = 'flex';
+        }
+    }
+
   } catch(e) {
-    toast('保存失败: '+e.message,'error');
-    throw e;
-  } finally {
-    if(btn){btn.disabled=false;btn.textContent='💾 保存草稿';}
+    showError('无法加载状态: ' + e.message);
   }
 }
+document.getElementById('btn-workbench-refresh').addEventListener('click', loadState);
 
-async function publishNews(){
+// 2. News
+async function loadNews() {
   try {
-    var msg=$('publish-msg');
-    if(msg){msg.textContent='正在保存草稿...';msg.style.display='block';}
-    await saveNewsDraft();
-    var items=(STATE.news&&STATE.news.selected)||[];
-    showConfirm('发布新闻','确认发布当前 '+items.length+' 条新闻到电子纸？',async function(){
-      if(msg){msg.textContent='正在发布新闻页...';msg.style.display='block';}
-      try {
-        var r = await api('/api/admin/publish/news',{method:'POST'});
-        if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard();if(msg){msg.textContent='发布成功: '+r.frameId.slice(0,40);}}
-        else{toast('发布失败','error');if(msg){msg.textContent='发布失败';msg.style.background='#f8e0e0';msg.style.borderColor='#f5b3b3';}}
-      } catch(e) { toast('发布失败: '+e.message,'error'); if(msg){msg.textContent='发布失败';msg.style.background='#f8e0e0';msg.style.borderColor='#f5b3b3';} }
-    });
+    const data = await api(`${API_BASE}/news`);
+    currentNews = data.selected || [];
+    renderNewsList();
   } catch(e) {
-    if(msg){msg.textContent='';msg.style.display='none';}
+    showError(e.message);
   }
 }
 
-function moveNews(idx,dir){
-  var items=(STATE.news&&STATE.news.selected)||[];
-  var target=idx+dir;
-  if(target<0||target>=items.length)return;
-  var tmp=items[idx];items[idx]=items[target];items[target]=tmp;
-  if(SELECTED_NEWS_IDX===idx)SELECTED_NEWS_IDX=target;
-  else if(SELECTED_NEWS_IDX===target)SELECTED_NEWS_IDX=idx;
-  loadNewsReview();
-}
-
-function removeNews(idx){
-  var items=(STATE.news&&STATE.news.selected)||[];
-  var item=items[idx];
-  if(!item)return;
-  showConfirm('确认移除','确认删除新闻: "'+item.title+'"?',function(){
-    items.splice(idx,1);
-    if(SELECTED_NEWS_IDX===idx)SELECTED_NEWS_IDX=-1;
-    else if(SELECTED_NEWS_IDX>idx)SELECTED_NEWS_IDX--;
-    if(items.length<6&&STATE.news.candidates){
-      var used={};items.forEach(function(it){if(it.url)used[it.url]=true});
-      for(var i=0;i<STATE.news.candidates.length;i++){
-        var c=STATE.news.candidates[i];
-        if(!used[c.url]){items.push(c);break;}
-      }
-    }
-    loadNewsReview();
-  });
-}
-
-// ── Photos ──
-function loadPhotos(){
-  api('/api/admin/photos').then(function(d){
-    if(!d||!d.photos)return;
-    var el=$('photo-grid');
-    if(!el)return;
-    el.innerHTML='';
-    var photos=d.photos||[];
-    var countEl=$('photo-count');
-    if(countEl)countEl.textContent='共 '+photos.length+' 张';
-    // Handle upload availability from server response
-    if(d.uploadAvailable===false){
-      var form=$('photo-upload-form');
-      if(form){
-        var btn=form.querySelector('button[type="submit"]');
-        if(btn){btn.disabled=true;btn.classList.add('btn-disabled');}
-        var existing=form.parentNode.querySelector('.disabled-upload');
-        if(!existing){
-          var msg=document.createElement('div');
-          msg.className='disabled-upload';
-          msg.innerHTML='<div class="disabled-upload-title">上传暂不可用</div><div>'+(d.uploadDisabledReason||'安全分类器未就绪，暂不可上传')+'</div>';
-          form.parentNode.insertBefore(msg,form.nextSibling);
-        }
-      }
-    }
-    if(photos.length===0){
-      el.innerHTML='<div class="empty-state">图片库为空。</div>';
-      return;
-    }
-    photos.forEach(function(p){
-      var item=document.createElement('div');item.className='photo-item';
-      var safetyBadge='<span class="badge '+(p.safetyStatus==='approved'?'badge-safety-approved':p.safetyStatus==='pending'?'badge-safety-pending':p.safetyStatus==='rejected'?'badge-safety-rejected':'badge-safety-pending')+'">'+(p.safetyStatus||'unknown')+'</span>';
-      var thumbUrl='/api/admin/photos/'+p.id+'/thumbnail?'+Date.now();
-      item.innerHTML='<div class="thumb"><img src="'+thumbUrl+'" alt="'+esc(p.title||'')+'" loading="lazy" onerror="this.parentElement.classList.add(\'broken\');this.style.display=\'none\'"></div>'+
-        '<div class="info">'+
-        '<div class="name">'+esc(p.title||p.id.slice(0,12))+'</div>'+
-        '<div class="meta-row"><span>'+esc(p.source||'未知')+' · '+(p.width||0)+'x'+(p.height||0)+'</span>'+safetyBadge+'</div>'+
-        '<div class="actions">'+
-        '<button class="btn btn-sm btn-outline" onclick="openEditor(\''+p.id+'\')">编辑</button>'+
-        '<button class="btn btn-sm btn-primary" onclick="publishPhoto(\''+p.id+'\')">发布</button>'+
-        '<button class="btn btn-sm btn-danger" onclick="deletePhoto(\''+p.id+'\')">删除</button>'+
-        '</div></div>';
-      el.appendChild(item);
+function renderNewsList() {
+  const container = document.getElementById('news-list-container');
+  container.innerHTML = '';
+  currentNews.forEach((n, idx) => {
+    const div = document.createElement('div');
+    div.className = `news-list-item ${idx === selectedNewsIdx ? 'active' : ''}`;
+    div.innerHTML = `<strong>${n.displayTitle || n.title || n.rawTitle || '无标题'}</strong><br><small>${n.source || '未知来源'}</small>`;
+    div.addEventListener('click', () => {
+      selectedNewsIdx = idx;
+      renderNewsList();
+      populateNewsEditor();
     });
-  }).catch(function(e){
-    var el=$('photo-grid');
-    if(el)el.innerHTML='<div class="empty-state">图片加载失败: '+esc(e.message||e)+'</div>';
+    container.appendChild(div);
   });
+  if (currentNews.length > 0) populateNewsEditor();
 }
 
-function checkUploadEnabled(){
-  fetch('/api/admin/photos/upload',{method:'POST'}).then(function(r){
-    if(r.status===503){
-      var btn=qs('#photo-upload-form button[type="submit"]');
-      if(btn){btn.disabled=true;btn.classList.add('btn-disabled');}
-      var form=$('photo-upload-form');
-      if(form){
-        var existing=form.parentNode.querySelector('.disabled-upload');
-        if(!existing){
-          var msg=document.createElement('div');
-          msg.className='disabled-upload';
-          msg.innerHTML='<div class="disabled-upload-title">上传暂不可用</div><div>安全分类器未就绪，暂不可上传</div>';
-          form.parentNode.insertBefore(msg,form.nextSibling);
-        }
-      }
-    }
-  }).catch(function(){});
+function populateNewsEditor() {
+  const item = currentNews[selectedNewsIdx];
+  if (!item) return;
+  document.getElementById('news-editor-container').style.display = 'block';
+  document.getElementById('news-edit-raw-title').value = item.rawTitle || item.title || '';
+  document.getElementById('news-edit-display-title').value = item.displayTitle || item.title || '';
+  document.getElementById('news-edit-raw-summary').value = item.rawSummary || item.summary || '';
+  document.getElementById('news-edit-display-summary').value = item.displaySummary || item.summary || '';
+  document.getElementById('news-edit-width-status').textContent = `宽度: ${item.titleWidthPx || '-'}/${item.titleMaxWidthPx || '-'}px`;
+  document.getElementById('news-edit-review-status').textContent = `状态: ${item.titleStatus || '-'}`;
 }
 
-var photoForm=$('photo-upload-form');
-if(photoForm){
-  photoForm.addEventListener('submit',function(e){
-    e.preventDefault();
-    var fileInput=$('photo-file');
-    if(!fileInput||!fileInput.files[0]){toast('请选择文件','error');return;}
-    var btn=qs('#photo-upload-form button[type="submit"]');
-    if(btn){btn.disabled=true;btn.textContent='上传中...';}
-    var fd=new FormData();fd.append('photo',fileInput.files[0]);
-    fetch('/api/admin/photos/upload',{method:'POST',headers:{},body:fd}).then(function(r){
-      if(r.ok){toast('上传成功','success');fileInput.value='';loadPhotos()}
-      else{
-        r.text().then(function(body){
-          toast('上传失败: HTTP '+r.status+' — '+(body||'未知错误'),'error');
-          if(r.status===503){checkUploadEnabled()}
-        }).catch(function(){
-          toast('上传失败: HTTP '+r.status,'error');
-        });
-      }
-    }).catch(function(e){toast('上传错误: '+e.message,'error')}).finally(function(){
-      if(btn){btn.disabled=false;btn.textContent='📤 上传';}
-    });
-  });
-}
-
-function deletePhoto(id){
-  showConfirm('删除图片','确认删除该图片？此操作不可撤销。',function(){
-    api('/api/admin/photos/'+id,{method:'DELETE'}).then(function(){toast('已删除','info');loadPhotos()}).catch(function(e){toast('删除失败: '+(e.message||e),'error')});
-  });
-}
-
-function publishPhoto(id){
-  api('/api/admin/publish/photo',{method:'POST',body:JSON.stringify({photoId:id})}).then(function(r){
-    if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard()}
-    else toast('发布失败','error');
-  }).catch(function(e){toast('发布失败: '+(e.message||e),'error')});
-}
-
-// ── Photo Editor ──
-var EDITOR_STATE={};
-
-function openEditor(id){
-  switchTab('photo-editor-page');
-  EDITOR_STATE.id=id;
-  EDITOR_STATE.recipe={brightness:1,contrast:1,saturation:1,gamma:1,rotate:0,flipH:false,flipV:false,sharpen:0,blur:0};
-  loadEditorPreview();
-  api('/api/admin/photos/'+id).then(function(d){
-    if(d){$('editor-title').textContent=d.title||id.slice(0,12)}
-  });
-  var editorHeader=$('photo-editor-page').querySelector('h2');
-  if(editorHeader){
-    var closeBtn=editorHeader.parentNode.querySelector('.editor-close-btn');
-    if(!closeBtn){
-      closeBtn=document.createElement('button');
-      closeBtn.className='btn btn-sm btn-outline editor-close-btn';
-      closeBtn.textContent='← 返回图片库';
-      closeBtn.onclick=function(){switchTab('photos-page')};
-      editorHeader.parentNode.insertBefore(closeBtn,editorHeader.nextSibling);
-    }
-  }
-}
-
-function loadEditorPreview(){
-  var id=EDITOR_STATE.id;
-  var recipe=EDITOR_STATE.recipe;
-  var params='?id='+id+'&b='+recipe.brightness+'&c='+recipe.contrast+'&s='+recipe.saturation+'&g='+recipe.gamma+'&r='+recipe.rotate+'&fh='+(recipe.flipH?1:0)+'&fv='+(recipe.flipV?1:0)+'&sh='+recipe.sharpen+'&bl='+recipe.blur;
-  loadPreviewImage('/api/admin/photo-preview'+params+'&t='+Date.now(),'editor-preview','editor-preview-fallback');
-  loadPreviewImage('/api/admin/photo-eink-preview'+params+'&t='+Date.now(),'editor-eink-preview','editor-eink-fallback');
-  api('/api/admin/photo-palette'+params).then(function(d){
-    if(!d)return;
-    var el=$('editor-palette');if(!el)return;
-    el.innerHTML='';
-    var colors={0:'#000',1:'#fff',2:'#ff0',3:'#f00',5:'#00f',6:'#0f0'};
-    var labels={0:'黑',1:'白',2:'黄',3:'红',5:'蓝',6:'绿'};
-    d.palette.forEach(function(p){
-      if(p.pixelCount>0){
-        var item=document.createElement('div');item.className='palette-item';
-        item.innerHTML='<span class="palette-swatch" style="background:'+(colors[p.code]||'#ccc')+'"></span> '+(labels[p.code]||p.code)+': '+p.pixelCount;
-        el.appendChild(item);
-      }
-    });
-    if(d.unsupportedCode4>0){
-      var err=document.createElement('div');err.style.color='#dc3545';err.style.fontWeight='700';
-      err.textContent='警告: 发现 code4 x '+d.unsupportedCode4;
-      el.appendChild(err);
-    }
-  });
-  var einkWrapper=$('editor-preview-eink');
-  if(einkWrapper)einkWrapper.style.display='block';
-}
-
-function loadPreviewImage(url,imgId,fallbackId){
-  var img=$(imgId);
-  if(!img)return;
-  fetch(url).then(function(r){
-    if(!r.ok){
-      img.style.display='none';
-      var fb=$(fallbackId);
-      if(!fb){
-        fb=document.createElement('div');
-        fb.id=fallbackId;
-        fb.className='empty-state';
-        fb.textContent='图片预览服务未就绪';
-        img.parentNode.insertBefore(fb,img.nextSibling);
-      }else{
-        fb.style.display='block';
-      }
-    }else{
-      var fb=$(fallbackId);
-      if(fb)fb.style.display='none';
-      img.style.display='';
-      r.blob().then(function(b){img.src=URL.createObjectURL(b)});
-    }
-  }).catch(function(){
-    img.style.display='none';
-    var fb=$(fallbackId);
-    if(!fb){
-      fb=document.createElement('div');
-      fb.id=fallbackId;
-      fb.className='empty-state';
-      fb.textContent='图片预览服务未就绪';
-      img.parentNode.insertBefore(fb,img.nextSibling);
-    }else{
-      fb.style.display='block';
-    }
-  });
-}
-
-function updateEditorParam(key,val){
-  EDITOR_STATE.recipe[key]=parseFloat(val);
-  loadEditorPreview();
-}
-
-function saveEdit(){
-  api('/api/admin/photos/'+EDITOR_STATE.id+'/save-edit',{method:'POST',body:JSON.stringify({recipe:EDITOR_STATE.recipe})}).then(function(){
-    toast('编辑已保存','success');
-  }).catch(function(e){toast('保存失败: '+(e.message||e),'error')});
-}
-
-// ── Publish History ──
-function loadPublishHistory(){
-  api('/api/admin/publish-history').then(function(d){
-    if(!d||!d.history)return;
-    var el=$('publish-history-list');
-    if(!el)return;
-    el.innerHTML='';
-    var history=d.history||[];
-    STATE.publishHistory=history;
-    if(history.length===0){
-      el.innerHTML='<div class="empty-state">暂无发布记录。</div>';
-      return;
-    }
-    history.forEach(function(h,i){
-      var row=document.createElement('div');
-      var isActive=(h.status==='active')||(i===0&&!h.status);
-      row.className='publish-row'+(isActive?' active':'');
-      var frameIdShort=h.frameId?(h.frameId.slice(0,30)+'...'):'--';
-      var snapshotId=h.id||h.snapshotId||'--';
-      row.innerHTML=
-        '<div class="col-time">'+esc((h.publishedAt||'').slice(0,19))+'</div>'+
-        '<div class="col-type">'+esc(h.type||'--')+'</div>'+
-        '<div class="col-snap">'+esc(snapshotId)+'</div>'+
-        '<div class="col-frame">'+esc(frameIdShort)+'</div>'+
-        '<div class="col-status">'+(isActive?'<span class="badge badge-active">active</span>':'<span class="badge badge-archived">'+esc(h.status||'archived')+'</span>')+'</div>'+
-        '<div class="col-actions"><button class="btn btn-sm btn-outline" onclick="rollback(\''+esc(h.id||'')+'\')">恢复此版本</button></div>';
-      el.appendChild(row);
-    });
-  }).catch(function(e){
-    var el=$('publish-history-list');
-    if(el)el.innerHTML='<div class="empty-state">发布历史加载失败: '+esc(e.message||e)+'</div>';
-  });
-}
-
-function rollback(id){
-  var entries=STATE.publishHistory||[];
-  var entry=null;
-  for(var i=0;i<entries.length;i++){
-    if(entries[i].id===id||entries[i].snapshotId===id){
-      entry=entries[i];
-      break;
-    }
-  }
-  var msg='确认恢复到此版本？';
-  if(entry){
-    msg='发布类型: '+(entry.type||'--')+'\n发布时间: '+((entry.publishedAt||'').slice(0,19)||'--')+'\nFrame ID: '+(entry.frameId||'--');
-  }
-  showConfirm('恢复版本',msg,function(){
-    api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:id})}).then(function(r){
-      if(r&&r.frameId){toast('已回滚: '+r.frameId.slice(0,20)+'...','success');loadDashboard();loadPublishHistory()}
-      else toast('回滚失败','error');
-    }).catch(function(e){toast('回滚失败: '+(e.message||e),'error')});
-  });
-}
-
-// ── Override ──
-function clearOverride(){
-  showConfirm('退出手动覆盖','确认退出手动覆盖，恢复自动排程？清除当前手动覆盖或焦点锁定后，后续内容由时间 SLOT 调度器自动选择。',function(){
-    api('/api/admin/override',{method:'DELETE'}).then(function(){
-      toast('已恢复自动调度','success');loadDashboard()
-    }).catch(function(e){toast('操作失败: '+(e.message||e),'error')});
-  });
-}
-
-// ── Health checks ──
-function loadHealth(){
-  fetch('/health/live').then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
-    setText('health-live',d.status||(d.ok?'ok':'未知'),'未知');
-  }).catch(function(){setText('health-live','ERROR','ERROR')});
-  fetch('/health/ready').then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
-    setText('health-ready',d.status||(d.ok?'ok':'未知'),'未知');
-  }).catch(function(){setText('health-ready','ERROR','ERROR')});
-}
-
-// ── Status ──
-function loadStatus(){
-  api('/api/health.json').then(function(d){
-    if(!d)return;
-    setText('status-uptime',d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟','<1 分钟');
-    setText('status-mode',d.currentMode,'未设置');
-    setText('status-slot',d.currentSlot,'未生成');
-    setText('status-frameid',d.frameId?(d.frameId.slice(0,40)+'...'):'未生成','未生成');
-    var flEl=setText('status-framelen',d.frameLength!==undefined?String(d.frameLength):'暂无','暂无');
-    if(flEl&&(d.frameLength===undefined||d.frameLength===null)){
-      flEl.dataset.emptyReason='接口未返回该字段';
-      addStatusDetail(flEl,'接口未返回该字段','info');
-    }
-    var shaEl=setText('status-sha',d.frameSha256?(d.frameSha256.slice(0,24)+'...'):'暂无','暂无');
-    if(shaEl&&(d.frameSha256===undefined||d.frameSha256===null)){
-      shaEl.dataset.emptyReason='尚未生成 frame';
-      addStatusDetail(shaEl,'尚未生成 frame','info');
-    }
-    setText('status-news',d.newsItemCount!==undefined?String(d.newsItemCount):'暂无','暂无');
-    setText('status-photos',d.photoCount!==undefined?String(d.photoCount):'暂无','暂无');
-    setText('status-cache',d.frameCacheEntries!==undefined?String(d.frameCacheEntries):'0','0');
-    setText('status-render',d.frameRenderCount!==undefined?String(d.frameRenderCount):'0','0');
-    setText('status-state-req',d.stateRequestCount!==undefined?String(d.stateRequestCount):'暂无','暂无');
-    setText('status-frame-req',d.frameRequestCount!==undefined?String(d.frameRequestCount):'暂无','暂无');
-    setText('status-news-refresh',d.newsRefreshCount!==undefined?String(d.newsRefreshCount):'暂无','暂无');
-    setText('status-news-fail',d.newsRefreshFailureCount!==undefined?String(d.newsRefreshFailureCount):'0','0');
-    var mqttEl=setText('status-mqtt',d.mqttEnabled?'enabled':'disabled','disabled');
-    if(mqttEl&&!d.mqttEnabled){
-      mqttEl.dataset.emptyReason='已禁用，设备使用 60 秒 HTTP 轮询';
-      addStatusDetail(mqttEl,'已禁用，设备使用 60 秒 HTTP 轮询','warning');
-    }
-    var transEl=setText('status-translation',d.translationProvider||'none','none');
-    if(transEl&&(!d.translationProvider||d.translationProvider==='none')){
-      transEl.dataset.emptyReason='未配置翻译服务，当前使用缓存译文或原文';
-      addStatusDetail(transEl,'未配置翻译服务，当前使用缓存译文或原文','info');
-    }
-    setText('status-recent-error',d.recentError||'无错误','无错误');
-    setText('status-last-refresh',d.lastNewsRefreshAt||'暂无','暂无');
-    var shaEl=$('sidebar-sha');
-    if(shaEl&&d.buildSha){shaEl.textContent='SHA: '+d.buildSha.slice(0,12);}
-  }).catch(function(e){
-    ['status-uptime','status-mode','status-slot','status-frameid','status-news','status-cache'].forEach(function(id){
-      setText(id,'加载失败','加载失败');
-    });
-  });
-}
-
-// ── Init ──
-try{
-  (function(){
-    var publishBtn=qs('button[onclick="publishNews()"]');
-    if(publishBtn&&!publishBtn.parentNode.querySelector('.publish-helper')){
-      var helper=document.createElement('span');
-      helper.className='muted small publish-helper';
-      helper.style.marginLeft='8px';
-      helper.textContent='保存当前草稿并立即发布到电子纸';
-      publishBtn.parentNode.insertBefore(helper,publishBtn.nextSibling);
-    }
-  })();
-fetch('/api/admin/access-mode').then(function(r){
-  if(!r.ok)throw new Error('access-mode HTTP '+r.status);
-  return r.json();
-}).then(function(d){
-  ACCESS_MODE=d.mode||'token';
-  if(ACCESS_MODE==='token'){
-    if($('login-overlay')){
-      showLogin();
-      LOGIN_CALLBACK=function(){loadAll()};
-    }else{
-      showErrorBox('access_mode=token 但登录界面缺失');
-      show($('app'));
-      loadAll();
-    }
-  }else{
-    show($('app'));
-    if($('login-overlay'))hide($('login-overlay'));
-    loadAll();
-  }
-}).catch(function(e){
-  ACCESS_MODE='token';
-  if($('login-overlay')){
-    showLogin();
-    LOGIN_CALLBACK=function(){loadAll()};
-  }else{
-    showErrorBox('access-mode fetch failed: '+(e&&e.message||e));
-    show($('app'));
-    loadAll();checkUploadEnabled();
+document.getElementById('btn-news-save').addEventListener('click', async () => {
+  const item = currentNews[selectedNewsIdx];
+  item.displayTitle = document.getElementById('news-edit-display-title').value;
+  item.displaySummary = document.getElementById('news-edit-display-summary').value;
+  try {
+    const res = await api(`${API_BASE}/news/draft`, { method: 'POST', body: JSON.stringify({ items: currentNews }) });
+    currentNews = res.items;
+    renderNewsList();
+    showError('保存成功');
+  } catch (e) {
+    showError(e.message);
   }
 });
-}catch(e){
-  showErrorBox('init failed: '+(e&&e.message||e));
-  show($('app'));
-  loadAll();
+
+// 3. Photos
+document.querySelectorAll('#page-photos .tab').forEach(t => {
+  t.addEventListener('click', (e) => {
+    document.querySelectorAll('#page-photos .tab').forEach(btn => btn.classList.remove('active'));
+    e.target.classList.add('active');
+    const target = e.target.dataset.target.replace('pool-', '');
+    loadPhotos(target);
+  });
+});
+
+async function loadPhotos(pool) {
+  try {
+    const data = await api(`${API_BASE}/assets?libraryType=${pool === 'learning' ? 'LEARNING' : 'CUSTOM'}`);
+    currentPhotos = data.assets || [];
+    // If we only have the old /photos route for now, map it:
+    if (!data.assets) {
+       const old = await api(`${API_BASE}/photos`);
+       currentPhotos = old.photos.filter(p => pool === 'learning' ? p.poolType==='learning' : p.poolType==='custom');
+    }
+    renderPhotoGrid();
+  } catch (e) {
+    showError(e.message);
+  }
 }
+
+function renderPhotoGrid() {
+  const c = document.getElementById('photos-grid-container');
+  c.innerHTML = '';
+  document.getElementById('photo-inspector').style.display = 'none';
+  document.getElementById('photo-empty-state').style.display = 'block';
+
+  currentPhotos.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'photo-card';
+    div.innerHTML = `<img src="${API_BASE}/photos/${p.id}/thumbnail">`;
+    div.addEventListener('click', () => {
+      document.querySelectorAll('.photo-card').forEach(n => n.classList.remove('active'));
+      div.classList.add('active');
+      selectedPhoto = p;
+      showPhotoInspector();
+    });
+    c.appendChild(div);
+  });
+}
+
+function showPhotoInspector() {
+  if (!selectedPhoto) return;
+  document.getElementById('photo-empty-state').style.display = 'none';
+  const ins = document.getElementById('photo-inspector');
+  ins.style.display = 'block';
+  document.getElementById('inspector-thumb').src = `${API_BASE}/photos/${selectedPhoto.id}/thumbnail`;
+  document.getElementById('insp-source').textContent = selectedPhoto.source || '-';
+  document.getElementById('insp-type').textContent = selectedPhoto.poolType || '-';
+  document.getElementById('insp-safe').textContent = selectedPhoto.safetyStatus || '-';
+  document.getElementById('insp-review').textContent = selectedPhoto.reviewStatus || '-';
+}
+
+document.getElementById('btn-photo-edit').addEventListener('click', () => {
+  if (!selectedPhoto) return;
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+  document.getElementById('page-image-editor').style.display = 'block';
+  editorRecipe = { fitMode: 'contain', zoom: 1, panX: 0, panY: 0, crop: {x:0, y:0, width:1, height:1}, rotate: 0, brightness: 1, contrast: 1, saturation: 1, gamma: 1, sharpen: 0, blur: 0 };
+  updateEditorPreview();
+});
+
+// 4. Image Editor
+const previewImg = document.getElementById('iedit-preview');
+async function updateEditorPreview() {
+  if (!selectedPhoto) return;
+  // Sync UI
+  document.getElementById('ip-fit').value = editorRecipe.fitMode;
+  try {
+    const res = await fetch(`${API_BASE}/photo-eink-preview`, {
+      method: 'POST',
+      body: JSON.stringify({ assetId: selectedPhoto.id, recipe: editorRecipe })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    previewImg.src = URL.createObjectURL(blob);
+  } catch (e) {
+    showError('预览失败: ' + e.message);
+  }
+}
+
+['fit', 'zoom', 'panX', 'panY', 'rot', 'bri', 'con', 'sat', 'gam', 'shp', 'blr'].forEach(k => {
+  const el = document.getElementById('ip-' + k);
+  if (el) el.addEventListener('change', (e) => {
+    let val = e.target.type === 'range' || e.target.type === 'number' ? parseFloat(e.target.value) : e.target.value;
+    if (k === 'fit') editorRecipe.fitMode = val;
+    if (k === 'zoom') editorRecipe.zoom = val;
+    if (k === 'panX') editorRecipe.panX = val;
+    if (k === 'panY') editorRecipe.panY = val;
+    if (k === 'rot') editorRecipe.rotate = parseInt(val);
+    if (k === 'bri') editorRecipe.brightness = val;
+    if (k === 'con') editorRecipe.contrast = val;
+    if (k === 'sat') editorRecipe.saturation = val;
+    if (k === 'gam') editorRecipe.gamma = val;
+    if (k === 'shp') editorRecipe.sharpen = val;
+    if (k === 'blr') editorRecipe.blur = val;
+    
+    const valEl = document.getElementById(`ip-${k}-val`);
+    if(valEl) valEl.textContent = val;
+
+    updateEditorPreview();
+  });
+});
+
+document.getElementById('btn-iedit-back').addEventListener('click', () => {
+  document.getElementById('page-image-editor').style.display = 'none';
+  document.getElementById('page-photos').style.display = 'block';
+});
+
+// 5. History
+async function loadHistory() {
+  try {
+    const data = await api(`${API_BASE}/publish-history`);
+    const tb = document.getElementById('history-tbody');
+    tb.innerHTML = '';
+    (data.history || []).forEach(h => {
+      const tr = document.createElement('tr');
+      const title = h.type === 'news' && h.news && h.news[0] ? h.news[0].displayTitle : '图片';
+      tr.innerHTML = `
+        <td>${h.status === 'active' ? '<b style="color:green">Active</b>' : 'Archived'}</td>
+        <td>${h.type}</td>
+        <td>${title}</td>
+        <td>${new Date(h.publishedAt).toLocaleString()}</td>
+        <td>${h.snapshotId || '-'}</td>
+        <td>${h.frameId || '-'}</td>
+        <td><button onclick="restoreHistory('${h.snapshotId}')">恢复</button></td>
+      `;
+      tb.appendChild(tr);
+    });
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+window.restoreHistory = async function(id) {
+  if (!confirm('确认恢复该版本?')) return;
+  try {
+    await api(`${API_BASE}/rollback`, { method: 'POST', body: JSON.stringify({ snapshotId: id }) });
+    showError('恢复成功');
+    loadHistory();
+    loadState(); // Refresh consistency
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+document.getElementById('btn-restore-auto').addEventListener('click', async () => {
+   try {
+     await api(`${API_BASE}/override`, { method: 'DELETE' });
+     loadState();
+   } catch(e) { showError(e.message); }
+});
+
+// Load init
+loadState();

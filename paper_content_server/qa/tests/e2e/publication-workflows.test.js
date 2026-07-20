@@ -1,30 +1,59 @@
 const test = require('node:test');
 const assert = require('assert');
+const { chromium } = require('playwright');
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
 
-test('e2e: 新闻手工发布 (Manual news publication workflow)', async () => {
-  // Simulate complete e2e flow
-  const newsPayload = { title: "E2E News", content: "Details..." };
-  
-  // 1. Submit News
-  const submitResult = { status: 200, frameId: 'news:123' };
-  assert.strictEqual(submitResult.status, 200);
-  assert.ok(submitResult.frameId.startsWith('news:'));
-  
-  // 2. Poll for readback
-  const readbackResult = { status: 200, frameId: 'news:123', activeSnapshot: 'snap-123' };
-  assert.strictEqual(readbackResult.frameId, submitResult.frameId);
-});
+test('E2E: Admin Backend Workflows', async (t) => {
+  const runId = Date.now().toString(36);
+  const dataDir = path.join(__dirname, `../../../qa/runtime/${runId}/data`);
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'admin_config.json'), JSON.stringify({ mode: 'lan', allowedCIDRs: ['127.0.0.1/32'] }));
 
-test('e2e: 图片手工发布 (Manual photo publication workflow)', async () => {
-  // Simulate complete e2e flow for photo
-  const photoPayload = { assetId: "asset-456", recipeHash: "hash-abc" };
+  const port = Math.floor(Math.random() * 10000) + 10000;
   
-  // 1. Submit Photo
-  const submitResult = { status: 200, frameId: 'photo:456' };
-  assert.strictEqual(submitResult.status, 200);
-  assert.ok(submitResult.frameId.startsWith('photo:'));
-  
-  // 2. Poll for readback
-  const readbackResult = { status: 200, frameId: 'photo:456', activeSnapshot: 'snap-456' };
-  assert.strictEqual(readbackResult.frameId, submitResult.frameId);
+  const serverProc = spawn('node', ['server.js'], {
+    cwd: path.join(__dirname, '../../../'),
+    env: { 
+      ...process.env, 
+      PORT: port, 
+      DATA_DIR: dataDir, 
+      NODE_ENV: 'test', 
+      ROOT_DIR: path.join(__dirname, '../../../'),
+      ADMIN_ACCESS_MODE: 'lan',
+      ADMIN_ALLOWED_CIDRS: '127.0.0.1/32'
+    }
+  });
+
+  serverProc.stdout.on('data', d => console.log('SERVER STDOUT:', d.toString()));
+  serverProc.stderr.on('data', d => console.error('SERVER STDERR:', d.toString()));
+
+  await new Promise(resolve => setTimeout(resolve, 3000));
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  try {
+    const res = await page.goto(`http://localhost:${port}/admin`, { waitUntil: 'load' });
+    assert.ok(res.ok());
+    await page.waitForSelector('#wb-opmode');
+    
+    const opMode = await page.locator('#wb-opmode').textContent();
+    assert.ok(opMode);
+
+    await page.click('[data-page="news"]');
+    await page.waitForSelector('#news-list-container');
+    
+    await page.click('[data-page="photos"]');
+    await page.waitForSelector('#photos-grid-container');
+
+    await page.click('[data-page="history"]');
+    await page.waitForSelector('.data-table');
+  } finally {
+    await browser.close();
+    serverProc.kill('SIGKILL');
+    fs.rmSync(path.join(__dirname, `../../../qa/runtime/${runId}`), { recursive: true, force: true });
+  }
 });

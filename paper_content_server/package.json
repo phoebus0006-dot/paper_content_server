@@ -4,7 +4,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js",
+    "start": "node scripts/generate-build-info.js && node server.js",
     "check": "node --check server.js",
     "fetch": "node scripts/fetch-images.js",
     "process": "node scripts/process-images.js",
