@@ -3,74 +3,77 @@
 const NEWS_TITLE_MAX_CODEPOINTS = 24;
 const NEWS_SUMMARY_MAX_CODEPOINTS = 56;
 
-// Estimate pixel width using standard typographic approximations for a typical sans-serif font
+const { measureTextWidth } = require('../render/text-rasterizer');
+
 function measureTextWidthPixels(text, fontSize) {
-  let width = 0;
-  for (const char of text) {
-    const code = char.codePointAt(0);
-    if (code > 255) {
-      width += fontSize; // CJK is full width
-    } else if (/[A-Z]/.test(char)) {
-      width += fontSize * 0.7; // Uppercase Latin
-    } else if (/[a-z]/.test(char)) {
-      if (/[fijlt]/.test(char)) width += fontSize * 0.3; // Narrow lowercase
-      else if (/[mw]/.test(char)) width += fontSize * 0.8; // Wide lowercase
-      else width += fontSize * 0.55;
-    } else if (/[0-9]/.test(char)) {
-      width += fontSize * 0.55;
-    } else if (/[.,!?;:|]/.test(char)) {
-      width += fontSize * 0.3;
-    } else {
-      width += fontSize * 0.5; // Default for space, etc.
-    }
-  }
-  return width;
+  return measureTextWidth(text, fontSize);
 }
 
-function cleanRule1(title) {
-  let res = title;
+function generateCandidates(rawTitle) {
+  let candidates = [rawTitle];
+  let title = rawTitle;
+  
+  // 1. Remove redundancy (live, updates, source suffixes)
   const toRemove = [
-    /最新消息[:：]?\s*/g,
-    /据报道[:：]?\s*/g,
-    /外媒称[:：]?\s*/g
+    /^【[^】]+】/g,          // e.g. 【最新】
+    /^最新消息[:：]?\s*/g,
+    /^直播[:：]?\s*/g,
+    /^更新[:：]?\s*/g,
+    /[-_—]\s*[^-_—]+网$/g,   // e.g. - 新华网
+    /[-_—]\s*[^-_—]+报$/g    // e.g. - 某某报
   ];
+  
+  let cleaned = title;
   for (const regex of toRemove) {
-    res = res.replace(regex, '');
+    cleaned = cleaned.replace(regex, '');
   }
-  return res.trim();
+  cleaned = cleaned.trim();
+  if (cleaned !== title) candidates.push(cleaned);
+
+  // 2. Try splitting by punctuation, taking the first meaningful clause if it contains subject/action
+  // But we must be careful not to lose numbers, negatives, etc.
+  const parts = cleaned.split(/[，。！？、：；,\.\!\?\:\;\|]/).map(s => s.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    candidates.push(parts[0]);
+    candidates.push(parts.slice(0, 2).join(' ')); // Try first two parts combined briefly
+  }
+  
+  // 3. Remove uninformative adjectives/adverbs (basic heuristic)
+  let concise = cleaned
+    .replace(/了不起的/g, '')
+    .replace(/令人震惊的/g, '')
+    .replace(/全面/g, '')
+    .replace(/正式/g, '');
+  if (concise !== cleaned) candidates.push(concise);
+
+  return [...new Set(candidates)];
 }
 
 function summarizeTitle(rawTitle, maxWidthPixels, fontSize) {
-  let title = cleanRule1(rawTitle);
-  let currentWidth = measureTextWidthPixels(title, fontSize);
-
-  if (currentWidth <= maxWidthPixels) {
-    return {
-      status: 'ok',
-      suggestedTitle: title
-    };
-  }
-
-  // Semantic truncation: split by punctuation and prioritize main clause.
-  const parts = title.split(/[，。！？、：；,\.\!\?\:\;]/).filter(Boolean);
+  let candidates = generateCandidates(rawTitle);
   
-  if (parts.length > 1) {
-    let candidate = parts[0];
-    if (measureTextWidthPixels(candidate, fontSize) <= maxWidthPixels) {
+  // Sort candidates by length descending (prefer longer, more informative titles)
+  candidates.sort((a, b) => b.length - a.length);
+  
+  for (const candidate of candidates) {
+    let width = measureTextWidthPixels(candidate, fontSize);
+    if (width <= maxWidthPixels) {
       return {
-        status: 'needs_review',
-        reason: 'SEMANTIC_TRUNCATED',
+        status: 'ok',
+        titleStatus: 'fit',
         rawTitle: rawTitle,
-        suggestedTitle: candidate + '...'
+        displayTitle: candidate,
+        titleWidthPx: width,
+        titleMaxWidthPx: maxWidthPixels
       };
     }
   }
 
-  // If even the first part is too long, or there are no parts, we forcefully truncate 
-  // but mark it with "..." and status needs_review
+  // If no candidate fits, we must force truncate and flag as TITLE_MEANING_RISK
+  // We don't just slice(0, 24) or randomly append ... as a success.
   let safeTitle = '';
   let safeWidth = measureTextWidthPixels('...', fontSize);
-  for (const char of title) {
+  for (const char of candidates[candidates.length - 1] || rawTitle) {
     const cw = measureTextWidthPixels(char, fontSize);
     if (safeWidth + cw <= maxWidthPixels) {
       safeTitle += char;
@@ -82,9 +85,12 @@ function summarizeTitle(rawTitle, maxWidthPixels, fontSize) {
 
   return {
     status: 'needs_review',
-    reason: 'FORCE_TRUNCATED',
+    reason: 'TITLE_MEANING_RISK',
+    titleStatus: 'needs_review',
     rawTitle: rawTitle,
-    suggestedTitle: safeTitle + '...'
+    displayTitle: safeTitle + '...',
+    titleWidthPx: safeWidth, // Approximate
+    titleMaxWidthPx: maxWidthPixels
   };
 }
 

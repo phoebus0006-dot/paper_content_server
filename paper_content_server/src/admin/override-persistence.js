@@ -89,6 +89,11 @@ function createOverridePersistence(stateFile, logger) {
       quarantineCorruptFile('SCHEMA_VERSION_MISMATCH');
       return null;
     }
+    
+    // Attach mtime for ONE_SHOT TTL fallback check
+    var stat = fs.statSync(stateFile);
+    parsed._mtime = stat.mtime.toISOString();
+    
     return parsed;
   }
 
@@ -102,15 +107,34 @@ function createOverridePersistence(stateFile, logger) {
     }
   }
 
-  // async 验证:资产仍安全、可选、文件存在
-  async function validateOverrideAsync(state, assetRepository) {
-    if (!state || !state.assetId) return { valid: false, reason: 'NO_ASSET_ID' };
+  // async 验证:资产仍安全、可选、文件存在, 或者快照存在 (MANUAL_NEWS/MANUAL_PHOTO)
+  async function validateOverrideAsync(state, assetRepository, snapshotStore) {
+    if (!state) return { valid: false, reason: 'NO_STATE' };
+    
+    if (state.mode === 'MANUAL_NEWS' || state.mode === 'MANUAL_PHOTO') {
+       if (!state.snapshotId) return { valid: false, reason: 'NO_SNAPSHOT_ID' };
+       if (!snapshotStore) return { valid: false, reason: 'NO_SNAPSHOT_STORE' };
+       
+       try {
+         var snap = await snapshotStore.load(state.snapshotId);
+         if (!snap) return { valid: false, reason: 'SNAPSHOT_NOT_FOUND' };
+         return { valid: true, snapshot: snap };
+       } catch (e) {
+         return { valid: false, reason: 'SNAPSHOT_LOAD_FAILED', details: e.message };
+       }
+    }
+
+    if (!state.assetId) return { valid: false, reason: 'NO_ASSET_ID' };
 
     var asset = await assetRepository.get(state.assetId);
     if (!asset) return { valid: false, reason: 'ASSET_NOT_FOUND' };
 
-    if (asset.safetyStatus !== 'SAFE') {
+    if (asset.safetyStatus !== 'SAFE' && asset.safetyStatus !== 'APPROVED') {
       return { valid: false, reason: 'ASSET_NOT_SAFE', current: asset.safetyStatus };
+    }
+
+    if (asset.reviewStatus !== 'APPROVED') {
+      return { valid: false, reason: 'ASSET_NOT_APPROVED', current: asset.reviewStatus };
     }
 
     if (asset.lifecycleStatus !== 'SELECTABLE') {
@@ -121,8 +145,15 @@ function createOverridePersistence(stateFile, logger) {
       return { valid: false, reason: 'NO_LOCAL_PATH' };
     }
 
-    if (!fs.existsSync(asset.localPath)) {
-      return { valid: false, reason: 'LOCAL_FILE_MISSING', path: asset.localPath };
+    var path = require('path');
+    var DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
+    var resolvedPath = path.resolve(DATA_DIR, asset.localPath);
+    if (!resolvedPath.startsWith(path.resolve(DATA_DIR))) {
+      return { valid: false, reason: 'PATH_TRAVERSAL_DETECTED' };
+    }
+
+    if (!fs.existsSync(resolvedPath)) {
+      return { valid: false, reason: 'LOCAL_FILE_MISSING', path: resolvedPath };
     }
 
     if (state.libraryType && asset.libraryType !== state.libraryType) {

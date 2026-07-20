@@ -64,12 +64,12 @@
     "scope:check": "node scripts/scope-check.js",
     "qa:clean": "node scripts/qa-clean.js",
     "qa:verify-clean": "node scripts/qa-verify-clean.js",
-    "test:unit": "echo 'unit tests'",
-    "test:integration": "echo 'integration tests'",
-    "test:e2e": "echo 'e2e tests'",
-    "test:security": "echo 'security tests'",
-    "test:visual": "echo 'visual tests'",
-    "test:all": "echo 'all tests'",
+    "test:unit": "node scripts/test-runner.js unit",
+    "test:integration": "node scripts/test-runner.js integration",
+    "test:e2e": "node scripts/test-runner.js e2e",
+    "test:security": "node scripts/test-runner.js security",
+    "test:visual": "node scripts/test-runner.js visual",
+    "test:all": "node scripts/test-runner.js all",
     "mutation:test": "node scripts/mutation-test.js"
   },
   "dependencies": {

@@ -21,3 +21,14 @@ fonts/
 *.tmp
 serial_*.txt
 .DS_Store
+qa/runtime/
+qa/reports/
+qa/screenshots/
+test_data_*/
+test_v3_*/
+audit/
+dist/
+deploy.tar
+_fix_*.js
+*.tmp
+*.corrupt.*

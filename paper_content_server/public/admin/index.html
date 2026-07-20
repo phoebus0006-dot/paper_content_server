@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>电子纸管理后台</title>
-<link rel="stylesheet" href="/admin/admin.css?v=2">
+<link rel="stylesheet" href="/admin/admin.css?v=3">
 </head>
 <body>
 
-<!-- Login overlay (stripped by server in LAN mode; only present in token mode) -->
-<div id="login-overlay" class="login-overlay" style="display:none">
-  <div class="login-box">
-    <h2>电子纸管理后台</h2>
-    <p class="muted small">输入 ADMIN_TOKEN 登录</p>
-    <form id="login-form">
+<!-- Login overlay -->
+<div id="login-overlay" class="overlay" style="display:none">
+  <div class="modal">
+    <h2 class="modal-title">电子纸管理后台</h2>
+    <p class="muted small" style="margin-bottom:16px">输入 ADMIN_TOKEN 登录</p>
+    <form id="login-form" class="flex-col">
       <input type="password" id="login-token" placeholder="输入管理令牌" required>
-      <div id="login-error" class="error">令牌无效</div>
+      <div id="login-error" class="small" style="color:var(--danger);display:none">令牌无效</div>
       <button type="submit" class="btn btn-primary btn-block">登录</button>
     </form>
   </div>
@@ -25,16 +25,15 @@
   <!-- Top Navigation -->
   <header class="top-nav">
     <div class="brand">
-      <span class="brand-icon">📋</span>
-      <span class="brand-name">电子纸</span>
+      <svg class="icon icon-lg" aria-hidden="true"><use href="/admin/icons.svg#icon-dashboard"></use></svg>
+      <span class="brand-name">电子纸后台</span>
     </div>
     <nav class="nav-links">
-      <a href="#" data-tab="dashboard" class="active">📊 总览</a>
-      <a href="#" data-tab="news-page">📰 新闻审查</a>
-      <a href="#" data-tab="photos-page">🖼️ 图片库</a>
-      <a href="#" data-tab="photo-editor-page" style="display:none">✏️ 图片编辑</a>
-      <a href="#" data-tab="publish-page">📤 发布中心</a>
-      <a href="#" data-tab="status-page">⚙️ 运行状态</a>
+      <a href="#" data-tab="dashboard" class="active"><svg class="icon" aria-hidden="true"><use href="/admin/icons.svg#icon-dashboard"></use></svg> 工作台</a>
+      <a href="#" data-tab="news-page"><svg class="icon" aria-hidden="true"><use href="/admin/icons.svg#icon-news"></use></svg> 新闻</a>
+      <a href="#" data-tab="photos-page"><svg class="icon" aria-hidden="true"><use href="/admin/icons.svg#icon-image"></use></svg> 图片</a>
+      <a href="#" data-tab="history-page"><svg class="icon" aria-hidden="true"><use href="/admin/icons.svg#icon-history"></use></svg> 发布记录</a>
+      <a href="#" data-tab="system-page"><svg class="icon" aria-hidden="true"><use href="/admin/icons.svg#icon-system"></use></svg> 系统</a>
     </nav>
     <div class="nav-footer">
       <div class="env-badge" id="env-badge">staging</div>
@@ -42,420 +41,215 @@
     </div>
   </header>
 
-  <!-- Main content -->
   <main class="main-content">
     <header class="page-header">
       <div class="page-header-left">
-        <h2 id="page-title">总览</h2>
-        <span class="muted small" id="last-refresh">未刷新</span>
+        <h2 id="page-title">工作台</h2>
+        <div class="muted small" id="last-refresh">未刷新</div>
       </div>
       <div class="page-header-right">
-        <button class="btn btn-outline btn-sm" onclick="refreshAll()">🔄 刷新</button>
+        <button class="btn" onclick="refreshAll()"><svg class="icon" aria-hidden="true"><use href="/admin/icons.svg#icon-refresh"></use></svg> 刷新</button>
       </div>
     </header>
 
     <!-- ───────── Dashboard ───────── -->
     <section id="dashboard" class="page active">
-      <!-- Row 1: Key metrics -->
-      <div class="card">
-        <h3 class="card-title">关键指标</h3>
-        <div class="stat-grid stat-grid-6">
-          <div class="stat-item">
-            <div class="stat-label">当前模式</div>
-            <div class="stat-value" id="dash-mode">加载中…</div>
+      <div class="dashboard-layout">
+        <div class="dashboard-preview">
+          <div class="epaper-frame" style="margin-bottom:12px;">
+             <!-- Placeholder or fetched preview image -->
+             <img id="dash-preview-img" src="" alt="内容加载中" onerror="this.style.display='none'">
           </div>
-          <div class="stat-item">
-            <div class="stat-label">当前 Slot</div>
-            <div class="stat-value" id="dash-slot">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">新闻数量</div>
-            <div class="stat-value" id="dash-news">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">当前 frameId</div>
-            <div class="stat-value stat-mono stat-truncate" id="dash-frameid">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">Frame 缓存</div>
-            <div class="stat-value" id="dash-cache">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">运行时间</div>
-            <div class="stat-value" id="dash-uptime">加载中…</div>
+          <div class="flex-row">
+             <button class="btn" onclick="triggerNewsSync()" id="btn-sync-news"><svg class="icon"><use href="/admin/icons.svg#icon-refresh"></use></svg> 拉取新闻</button>
+             <button class="btn" onclick="triggerPhotoSync()" id="btn-sync-photos"><svg class="icon"><use href="/admin/icons.svg#icon-refresh"></use></svg> 拉取图片</button>
+             <button class="btn" onclick="clearOverride()"><svg class="icon"><use href="/admin/icons.svg#icon-auto"></use></svg> 恢复自动</button>
           </div>
         </div>
-      </div>
-
-      <!-- Row 2: System summary -->
-      <div class="card">
-        <h3 class="card-title">系统摘要</h3>
-        <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">手动覆盖</div>
-            <div class="stat-value" id="dash-override">加载中…</div>
+        <div class="status-sidebar">
+          <div class="panel">
+            <div class="panel-title"><svg class="icon"><use href="/admin/icons.svg#icon-info"></use></svg> 当前状态</div>
+            <ul class="status-list">
+              <li class="status-item"><span class="status-label">模式</span><span class="status-value" id="dash-mode">加载中…</span></li>
+              <li class="status-item"><span class="status-label">Slot</span><span class="status-value" id="dash-slot">加载中…</span></li>
+              <li class="status-item"><span class="status-label">最近发布</span><span class="status-value" id="dash-lastpublish">加载中…</span></li>
+              <li class="status-item"><span class="status-label">下次切换</span><span class="status-value" id="dash-nextswitch">加载中…</span></li>
+              <li class="status-item"><span class="status-label">运行时间</span><span class="status-value" id="dash-uptime">加载中…</span></li>
+            </ul>
           </div>
-          <div class="stat-item">
-            <div class="stat-label">覆盖过期</div>
-            <div class="stat-value" id="dash-override-expires">--</div>
+          <div class="panel">
+            <div class="panel-title"><svg class="icon"><use href="/admin/icons.svg#icon-info"></use></svg> 数据统计</div>
+            <ul class="status-list">
+              <li class="status-item"><span class="status-label">新闻数量</span><span class="status-value" id="dash-news">加载中…</span></li>
+              <li class="status-item"><span class="status-label">Frame 缓存</span><span class="status-value" id="dash-cache">加载中…</span></li>
+            </ul>
           </div>
-          <div class="stat-item">
-            <div class="stat-label">最近发布时间</div>
-            <div class="stat-value" id="dash-lastpublish">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">下次切换</div>
-            <div class="stat-value" id="dash-nextswitch">--</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Row 3: Control mode info -->
-      <div class="card">
-        <h3 class="card-title">控制方式说明</h3>
-        <div id="control-mode-info" class="control-mode-box">加载中…</div>
-      </div>
-
-      <!-- Row 4: Quick actions -->
-      <div class="card">
-        <h3 class="card-title">快捷操作</h3>
-        <div class="actions">
-          <button class="btn btn-primary" onclick="showNewsSelector()">📰 立即发布所选新闻</button>
-          <button class="btn btn-primary" onclick="showPhotoSelector()">🖼️ 立即发布所选图片</button>
-          <button class="btn btn-outline" onclick="clearOverride()">🔁 退出手动覆盖，恢复自动排程</button>
-          <button class="btn btn-outline" onclick="switchTab('photos-page')">🖼️ 前往图片库</button>
-          <button class="btn btn-outline" onclick="refreshAll()">🔄 刷新状态</button>
-        </div>
-        <div id="publish-msg" class="msg-area" style="display:none"></div>
-        <div id="confirm-dialog-area" style="margin-top:8px"></div>
-      </div>
-
-      <!-- Row 5: Content Sync Pipeline -->
-      <div class="card">
-        <h3 class="card-title">内容拉取链路状态</h3>
-        <div class="grid-2col" style="margin-bottom: 12px;">
-          <div class="status-box">
-            <span class="label">新闻最近拉取:</span>
-            <span class="value" id="news-sync-status">加载中…</span>
-          </div>
-          <div class="status-box">
-            <span class="label">图片库最近拉取:</span>
-            <span class="value" id="photo-sync-status">加载中…</span>
+          <div class="panel">
+            <div class="panel-title"><svg class="icon"><use href="/admin/icons.svg#icon-info"></use></svg> 控制说明</div>
+            <div id="control-mode-info" class="small muted">加载中…</div>
           </div>
         </div>
-        <div class="actions">
-          <button class="btn btn-outline" onclick="triggerNewsSync()" id="btn-sync-news">📥 立即拉取新闻</button>
-          <button class="btn btn-outline" onclick="triggerPhotoSync()" id="btn-sync-photos">📥 立即拉取图片</button>
-        </div>
-        <div id="sync-msg" class="msg-area" style="display:none"></div>
       </div>
     </section>
 
     <!-- ───────── News Review ───────── -->
     <section id="news-page" class="page">
       <div class="news-layout">
-        <!-- Left: News list -->
-        <div class="news-list-panel">
-          <div class="panel-header">
-            <h3 class="card-title">新闻列表</h3>
-            <div class="panel-actions">
-              <button class="btn btn-sm btn-outline" onclick="loadNewsReview()">🔄 刷新</button>
-              <button class="btn btn-sm btn-primary" onclick="saveNewsDraft()">💾 保存草稿</button>
+        <div class="news-col" id="news-queue">
+          <div class="news-col-header">
+            <span style="font-weight:500">新闻列表</span>
+            <div class="actions">
+              <button class="btn btn-sm" onclick="loadNewsReview()"><svg class="icon"><use href="/admin/icons.svg#icon-refresh"></use></svg></button>
             </div>
           </div>
-          <div id="news-list" class="news-list">
+          <div class="news-list" id="news-list">
             <div class="empty-state">加载中…</div>
           </div>
         </div>
-        <!-- Right: News detail -->
-        <div class="news-detail-panel">
-          <div class="panel-header">
-            <h3 class="card-title">新闻详情</h3>
+        <div class="news-col" id="news-edit">
+          <div class="news-col-header">
+            <span style="font-weight:500">编辑</span>
+            <button class="btn btn-sm btn-primary" onclick="saveNewsDraft()"><svg class="icon"><use href="/admin/icons.svg#icon-save"></use></svg> 保存</button>
           </div>
-          <div id="news-detail" class="news-detail">
-            <div class="empty-state">从左侧列表选择一条新闻查看详情</div>
+          <div class="news-edit-area" id="news-detail">
+            <div class="empty-state">从左侧列表选择一条新闻</div>
           </div>
-          <!-- Quality rules -->
-          <div id="quality-rules-section" style="margin-top:12px">
-            <h4 style="font-size:13px;color:#666;margin-bottom:6px">质量规则检查</h4>
-            <div id="quality-rules"></div>
+        </div>
+        <div class="news-col" id="news-preview">
+          <div class="news-col-header">
+            <span style="font-weight:500">操作</span>
+            <button class="btn btn-sm btn-primary" onclick="publishNews()"><svg class="icon"><use href="/admin/icons.svg#icon-publish"></use></svg> 发布新闻组</button>
           </div>
-          <!-- Toggle original button -->
-          <div style="margin-top:12px">
-            <button class="btn btn-sm btn-outline" onclick="toggleOriginal()" id="btn-toggle-original">📄 显示原文</button>
-          </div>
-          <!-- Original text (hidden by default) -->
-          <div id="original-text" class="card" style="display:none;margin-top:12px">
-            <div class="detail-field"><div class="detail-label">原文标题</div><div class="detail-value" id="orig-title"></div></div>
-            <div class="detail-field"><div class="detail-label">原文摘要</div><div class="detail-value" id="orig-summary"></div></div>
+          <div class="news-preview-area">
+             <div class="small muted">质量检查:</div>
+             <div id="quality-rules" style="margin-top:8px"></div>
+             
+             <div style="margin-top:20px" class="small muted">原始信息:</div>
+             <div class="preview-box" id="original-text">
+                <div id="orig-title" style="font-weight:600;margin-bottom:8px"></div>
+                <div id="orig-summary"></div>
+             </div>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ───────── Photos / Image Library ───────── -->
-    <section id="photos-page" class="page">
-      <div class="card">
-        <h3 class="card-title">上传图片</h3>
-        <form id="photo-upload-form" class="upload-form">
-          <input type="file" id="photo-file" accept="image/jpeg,image/png,image/webp">
-          <button type="submit" class="btn btn-primary btn-sm">📤 上传</button>
-        </form>
-        <div id="upload-disabled-info" class="disabled-upload" style="display:none"></div>
-        <div class="muted small" style="margin-top:6px">支持 JPEG / PNG / WebP,推荐 800×480 比例</div>
+    <section id="photos-page" class="page" style="position:relative">
+      <div class="photos-layout">
+        <div class="photos-sidebar">
+          <div class="panel-title">操作</div>
+          <form id="photo-upload-form" class="flex-col">
+            <input type="file" id="photo-file" accept="image/jpeg,image/png,image/webp">
+            <button type="submit" class="btn btn-primary btn-block"><svg class="icon"><use href="/admin/icons.svg#icon-upload"></use></svg> 上传图片</button>
+          </form>
+          <div id="upload-disabled-info" style="margin-top:12px;display:none" class="small muted"></div>
+        </div>
+        <div class="photos-main">
+          <div class="panel-title">图片库 (<span id="photo-count">--</span>)</div>
+          <div id="photo-grid" class="photo-grid">
+            <div class="empty-state" style="grid-column: 1 / -1">加载中…</div>
+          </div>
+        </div>
+        <div class="photos-inspector" id="photo-inspector">
+           <div class="empty-state">选择图片查看详情</div>
+        </div>
       </div>
-      <div class="card">
-        <div class="panel-header">
-          <h3 class="card-title">图片库</h3>
-          <span class="muted small" id="photo-count">--</span>
+      
+      <!-- Photo Editor Workspace Overlay -->
+      <div id="photo-editor-workspace" class="editor-workspace">
+        <div class="editor-toolbar">
+          <div><button class="btn" onclick="closeEditor()"><svg class="icon"><use href="/admin/icons.svg#icon-back"></use></svg> 返回图片库</button></div>
+          <div class="panel-title" id="editor-title" style="margin-bottom:0">图片编辑</div>
+          <div class="flex-row">
+             <button class="btn btn-primary" onclick="saveEdit()"><svg class="icon"><use href="/admin/icons.svg#icon-save"></use></svg> 保存参数</button>
+             <button class="btn btn-primary" onclick="publishPhoto(EDITOR_STATE.id)"><svg class="icon"><use href="/admin/icons.svg#icon-publish"></use></svg> 发布此图</button>
+          </div>
         </div>
-        <div id="photo-grid" class="photo-grid">
-          <div class="empty-state">加载中…</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ───────── Photo Editor (hidden by default) ───────── -->
-    <section id="photo-editor-page" class="page">
-      <h2 id="editor-title">图片编辑</h2>
-      <div class="editor-layout">
-        <div class="preview">
-          <div class="preview-container"><img id="editor-preview" alt="预览"></div>
-          <h3 style="margin-top:12px">六色效果</h3>
-          <div class="preview-container"><img id="editor-eink-preview" alt="电子纸预览"></div>
-          <h3 style="margin-top:12px">颜色统计</h3>
-          <div id="editor-palette" class="palette-bar"></div>
-        </div>
-        <div class="controls">
-          <h3>调整</h3>
-          <label>亮度</label>
-          <input type="range" id="editor-brightness" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('brightness',this.value)">
-          <span class="value" id="val-brightness">1.0</span>
-          <label>对比度</label>
-          <input type="range" id="editor-contrast" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('contrast',this.value)">
-          <span class="value" id="val-contrast">1.0</span>
-          <label>饱和度</label>
-          <input type="range" id="editor-saturation" min="0" max="2" step="0.05" value="1" oninput="updateEditorParam('saturation',this.value)">
-          <span class="value" id="val-saturation">1.0</span>
-          <label>Gamma</label>
-          <input type="range" id="editor-gamma" min="0.5" max="2" step="0.05" value="1" oninput="updateEditorParam('gamma',this.value)">
-          <span class="value" id="val-gamma">1.0</span>
-          <label>旋转</label>
-          <select id="editor-rotate" onchange="updateEditorParam('rotate',this.value)">
-            <option value="0">0°</option>
-            <option value="90">90°</option>
-            <option value="180">180°</option>
-            <option value="270">270°</option>
-          </select>
-          <label>水平翻转</label>
-          <input type="checkbox" id="editor-flipH" onchange="updateEditorParam('flipH',this.checked)">
-          <label>垂直翻转</label>
-          <input type="checkbox" id="editor-flipV" onchange="updateEditorParam('flipV',this.checked)">
-          <label>锐化</label>
-          <input type="range" id="editor-sharpen" min="0" max="2" step="0.1" value="0" oninput="updateEditorParam('sharpen',this.value)">
-          <span class="value" id="val-sharpen">0.0</span>
-          <label>模糊</label>
-          <input type="range" id="editor-blur" min="0" max="2" step="0.1" value="0" oninput="updateEditorParam('blur',this.value)">
-          <span class="value" id="val-blur">0.0</span>
-          <div class="actions" style="margin-top:12px">
-            <button class="btn btn-primary" onclick="saveEdit()">💾 保存编辑</button>
-            <button class="btn btn-success" onclick="publishPhoto(EDITOR_STATE.id)">📤 发布到电子纸</button>
+        <div class="editor-body">
+          <div class="editor-canvas">
+            <div class="epaper-frame"><img id="editor-eink-preview" alt="电子纸预览"></div>
+            <div class="epaper-frame" style="margin-top:20px;height:240px;width:400px"><img id="editor-preview" alt="原图预览"></div>
+            <div id="editor-palette" style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap"></div>
+          </div>
+          <div class="editor-params">
+             <div class="param-group">
+               <h4>调整 (Brightness / Contrast)</h4>
+               <div class="param-row"><span class="param-label">亮度</span><input class="param-input" type="range" id="editor-brightness" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('brightness',this.value)"><span class="param-val" id="val-brightness">1.0</span></div>
+               <div class="param-row"><span class="param-label">对比度</span><input class="param-input" type="range" id="editor-contrast" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('contrast',this.value)"><span class="param-val" id="val-contrast">1.0</span></div>
+               <div class="param-row"><span class="param-label">饱和度</span><input class="param-input" type="range" id="editor-saturation" min="0" max="2" step="0.05" value="1" oninput="updateEditorParam('saturation',this.value)"><span class="param-val" id="val-saturation">1.0</span></div>
+               <div class="param-row"><span class="param-label">Gamma</span><input class="param-input" type="range" id="editor-gamma" min="0.5" max="2" step="0.05" value="1" oninput="updateEditorParam('gamma',this.value)"><span class="param-val" id="val-gamma">1.0</span></div>
+             </div>
+             <div class="param-group">
+               <h4>变换 (Transform)</h4>
+               <div class="param-row"><span class="param-label">旋转</span><select class="param-input" id="editor-rotate" onchange="updateEditorParam('rotate',this.value)"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></div>
+               <div class="param-row"><span class="param-label">水平翻转</span><input type="checkbox" id="editor-flipH" onchange="updateEditorParam('flipH',this.checked)"></div>
+               <div class="param-row"><span class="param-label">垂直翻转</span><input type="checkbox" id="editor-flipV" onchange="updateEditorParam('flipV',this.checked)"></div>
+             </div>
+             <div class="param-group">
+               <h4>滤镜 (Filters)</h4>
+               <div class="param-row"><span class="param-label">锐化</span><input class="param-input" type="range" id="editor-sharpen" min="0" max="2" step="0.1" value="0" oninput="updateEditorParam('sharpen',this.value)"><span class="param-val" id="val-sharpen">0.0</span></div>
+               <div class="param-row"><span class="param-label">模糊</span><input class="param-input" type="range" id="editor-blur" min="0" max="2" step="0.1" value="0" oninput="updateEditorParam('blur',this.value)"><span class="param-val" id="val-blur">0.0</span></div>
+             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ───────── Publish Center ───────── -->
-    <section id="publish-page" class="page">
-      <div class="card">
-        <h3 class="card-title">定向发布</h3>
-        <p class="muted small mb-3">强制屏幕显示指定内容。若该内容无时效性，将一直显示，直到手动恢复自动排程。</p>
-        <div style="display:flex;gap:12px">
-          <button class="btn btn-primary" onclick="showNewsSelector()">📰 发布新闻</button>
-          <button class="btn btn-primary" onclick="showPhotoSelector()">🖼️ 发布全屏图片</button>
-        </div>
-      </div>
-      <div class="card">
-        <p class="small muted">这里记录每次新闻或图片发布生成的版本。"恢复此版本"会把所选历史版本重新设为当前显示版本，不会修改原始新闻或图片。</p>
-      </div>
-      <div class="card" id="rollback-preview" style="display:none">
-        <h3 class="card-title">版本恢复预览</h3>
-        <div id="rollback-preview-content"></div>
-        <div class="actions" style="margin-top:10px">
-          <button class="btn btn-danger" onclick="confirmRollback()">确认恢复</button>
-          <button class="btn btn-outline" onclick="closeRollbackPreview()">取消</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="panel-header">
-          <h3 class="card-title">发布记录</h3>
-          <button class="btn btn-sm btn-outline" onclick="loadPublishHistory()">🔄 刷新</button>
-        </div>
-        <div id="publish-history-list"><div class="empty-state">加载中…</div></div>
+    <!-- ───────── Publish History ───────── -->
+    <section id="history-page" class="page">
+      <div class="panel">
+         <div class="panel-title">历史记录</div>
+         <div id="rollback-preview" style="display:none;margin-bottom:16px;background:var(--bg-color);padding:16px;border-radius:4px;">
+            <div id="rollback-preview-content"></div>
+            <div class="actions" style="margin-top:12px">
+               <button class="btn btn-danger" onclick="confirmRollback()"><svg class="icon"><use href="/admin/icons.svg#icon-undo"></use></svg> 确认恢复</button>
+               <button class="btn" onclick="closeRollbackPreview()">取消</button>
+            </div>
+         </div>
+         <div id="publish-history-list"></div>
       </div>
     </section>
 
-    <!-- ───────── Runtime Status ───────── -->
-    <section id="status-page" class="page">
-      <div class="card">
-        <h3 class="card-title">健康检查</h3>
-        <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">/health/live</div>
-            <div class="stat-value" id="health-live">加载中…</div>
-            <div class="status-hint small muted" id="hint-health-live" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">/health/ready</div>
-            <div class="stat-value" id="health-ready">加载中…</div>
-            <div class="status-hint small muted" id="hint-health-ready" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">运行时间</div>
-            <div class="stat-value" id="status-uptime">加载中…</div>
-            <div class="status-hint small muted" id="hint-uptime" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">模式</div>
-            <div class="stat-value" id="status-mode">加载中…</div>
-            <div class="status-hint small muted" id="hint-mode" style="margin-top:2px;font-size:11px"></div>
-          </div>
-        </div>
+    <!-- ───────── System Status ───────── -->
+    <section id="system-page" class="page">
+      <div class="panel">
+         <div class="panel-title">健康检查</div>
+         <table>
+            <tr><th style="width:200px">指标</th><th>状态</th></tr>
+            <tr><td>/health/live</td><td id="health-live">--</td></tr>
+            <tr><td>/health/ready</td><td id="health-ready">--</td></tr>
+         </table>
       </div>
-      <div class="card">
-        <h3 class="card-title">Frame 状态</h3>
-        <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">当前 frameId</div>
-            <div class="stat-value stat-mono stat-truncate" id="status-frameid">加载中…</div>
-            <div class="status-hint small muted" id="hint-frameid" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">frameLength</div>
-            <div class="stat-value" id="status-framelen">--</div>
-            <div class="status-hint small muted" id="hint-framelen" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">frameSha256</div>
-            <div class="stat-value stat-mono stat-truncate" id="status-sha">--</div>
-            <div class="status-hint small muted" id="hint-sha" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">当前 Slot</div>
-            <div class="stat-value" id="status-slot">加载中…</div>
-            <div class="status-hint small muted" id="hint-slot" style="margin-top:2px;font-size:11px"></div>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <h3 class="card-title">内容与缓存</h3>
-        <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">新闻数量</div>
-            <div class="stat-value" id="status-news">加载中…</div>
-            <div class="status-hint small muted" id="hint-news" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">图片数量</div>
-            <div class="stat-value" id="status-photos">--</div>
-            <div class="status-hint small muted" id="hint-photos" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">Frame 缓存</div>
-            <div class="stat-value" id="status-cache">加载中…</div>
-            <div class="status-hint small muted" id="hint-cache" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">渲染次数</div>
-            <div class="stat-value" id="status-render">--</div>
-            <div class="status-hint small muted" id="hint-render" style="margin-top:2px;font-size:11px"></div>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <h3 class="card-title">请求统计</h3>
-        <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">/api/state 请求</div>
-            <div class="stat-value" id="status-state-req">--</div>
-            <div class="status-hint small muted" id="hint-state-req" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">/api/frame 请求</div>
-            <div class="stat-value" id="status-frame-req">--</div>
-            <div class="status-hint small muted" id="hint-frame-req" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">新闻刷新次数</div>
-            <div class="stat-value" id="status-news-refresh">--</div>
-            <div class="status-hint small muted" id="hint-news-refresh" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">新闻刷新失败</div>
-            <div class="stat-value" id="status-news-fail">--</div>
-            <div class="status-hint small muted" id="hint-news-fail" style="margin-top:2px;font-size:11px"></div>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <h3 class="card-title">服务配置</h3>
-        <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">MQTT 状态</div>
-            <div class="stat-value" id="status-mqtt">--</div>
-            <div class="status-hint small muted" id="hint-mqtt" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">Translation Provider</div>
-            <div class="stat-value" id="status-translation">--</div>
-            <div class="status-hint small muted" id="hint-translation" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">最近错误</div>
-            <div class="stat-value" id="status-recent-error">无</div>
-            <div class="status-hint small muted" id="hint-recent-error" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">最近刷新时间</div>
-            <div class="stat-value" id="status-last-refresh">--</div>
-            <div class="status-hint small muted" id="hint-last-refresh" style="margin-top:2px;font-size:11px"></div>
-          </div>
-        </div>
+      <div class="panel">
+         <div class="panel-title">系统状态详情</div>
+         <table>
+            <tr><th style="width:200px">指标</th><th>数值</th></tr>
+            <tr><td>模式</td><td id="status-mode">--</td></tr>
+            <tr><td>Slot</td><td id="status-slot">--</td></tr>
+            <tr><td>运行时间</td><td id="status-uptime">--</td></tr>
+            <tr><td>当前 frameId</td><td id="status-frameid">--</td></tr>
+            <tr><td>frameLength</td><td id="status-framelen">--</td></tr>
+            <tr><td>frameSha256</td><td id="status-sha">--</td></tr>
+            <tr><td>新闻数量</td><td id="status-news">--</td></tr>
+            <tr><td>图片数量</td><td id="status-photos">--</td></tr>
+            <tr><td>Frame 缓存</td><td id="status-cache">--</td></tr>
+            <tr><td>渲染次数</td><td id="status-render">--</td></tr>
+            <tr><td>/api/state 请求</td><td id="status-state-req">--</td></tr>
+            <tr><td>/api/frame 请求</td><td id="status-frame-req">--</td></tr>
+            <tr><td>MQTT 状态</td><td id="status-mqtt">--</td></tr>
+            <tr><td>翻译 Provider</td><td id="status-translation">--</td></tr>
+            <tr><td>最近错误</td><td id="status-recent-error">--</td></tr>
+            <tr><td>内容拉取 (新闻)</td><td id="news-sync-status">--</td></tr>
+            <tr><td>内容拉取 (图片)</td><td id="photo-sync-status">--</td></tr>
+         </table>
       </div>
     </section>
-
   </main>
 </div>
 
-<!-- Photo Selector Modal -->
-<div id="photo-selector-modal" class="login-overlay" style="display:none;z-index:200;">
-  <div class="card" style="width: 800px; max-width: 90vw; max-height: 85vh; overflow-y: auto;">
-    <h3 class="card-title">选择图片进行发布</h3>
-    <div id="photo-selector-grid" class="photo-grid" style="margin-bottom: 16px;">
-      <div class="empty-state">加载中…</div>
-    </div>
-    <div class="actions" style="justify-content: flex-end; display: flex; gap: 12px;">
-      <button class="btn btn-outline" onclick="hidePhotoSelector()">取消</button>
-      <button class="btn btn-primary" id="btn-confirm-photo-publish" disabled onclick="confirmPhotoPublish()">确定发布</button>
-    </div>
-  </div>
-</div>
+<!-- Confirm Dialog Container (created dynamically) -->
 
-<!-- News Selector Modal -->
-<div id="news-selector-modal" class="login-overlay" style="display:none;z-index:200;">
-  <div class="card" style="width: 600px; max-width: 90vw; max-height: 85vh; overflow-y: auto;">
-    <h3 class="card-title">发布当前新闻草稿</h3>
-    <p class="small muted mb-3" style="margin-bottom: 12px;">将当前在“新闻审查”页中已保存的最新草稿，生成一个快照并强制推送到电子纸上显示。</p>
-    <div id="news-selector-content" style="margin-bottom: 16px; background: #f8f8fa; padding: 12px; border-radius: 6px;">
-      <div class="empty-state">加载中…</div>
-    </div>
-    <div class="actions" style="justify-content: flex-end; display: flex; gap: 12px;">
-      <button class="btn btn-outline" onclick="hideNewsSelector()">取消</button>
-      <button class="btn btn-primary" id="btn-confirm-news-publish" disabled onclick="confirmNewsPublish()">立即发布</button>
-    </div>
-  </div>
-</div>
-
-<script src="/admin/admin.js?v=2"></script>
+<script src="/admin/admin.js?v=3"></script>
 </body>
 </html>

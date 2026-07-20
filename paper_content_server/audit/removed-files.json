@@ -1,0 +1,22 @@
+[
+  {
+    "path": "fix_boot.py",
+    "hash": "c24236cb0a6ab56db81e6cd475df4d204dd6cdab590b3b63be4f0e47136ebb62"
+  },
+  {
+    "path": "fix_control_mode.py",
+    "hash": "217045488f8f67abe60fad5bf7b546864c7f1f80acd8e49e2b336e47680a45a9"
+  },
+  {
+    "path": "fix_fetch.py",
+    "hash": "7f32757ac38870dce010044afa19907ea97ddf43ff347ada0f664d562fa313b1"
+  },
+  {
+    "path": "fix_restore.py",
+    "hash": "ac6767a6f7216048ccd5edf532fdbecc4951491d2ee2d0f7ce3cfe5cba7f9853"
+  },
+  {
+    "path": "fix_server.py",
+    "hash": "6876c12455221ada04bc4010cbe5ed55a2afc03b81cf3d6244fc2ddb23cd47f8"
+  }
+]

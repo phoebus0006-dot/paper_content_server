@@ -1,0 +1,1244 @@
+[
+  {
+    "path": "test/admin/admin-browser-p0-test.js",
+    "sha": "136ce0e451bb76d30071ef092d232b1c4816212b3bed7cea5ecd0acc7083e3cb",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/admin-cidr-policy-unit-test.js",
+    "sha": "5e1141163b1c392e05307672ce370792166040efc6e8d65597081e9ed4025fd5",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/admin-cross-origin-test.js",
+    "sha": "ea0e12cf5b2a856f527e5f614562d0bf2f3159308a01bddee6adb841f494aac4",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/admin-csrf-policy-unit-test.js",
+    "sha": "6d6ef57a80f2cc7e96feef40519e6753d6906980cccd71f666cc8acc6bb1f124",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/admin-lan-direct-access-test.js",
+    "sha": "bf84ab961bf7f23f558317275140b546729c29725fd7451ff57a4913a68c0d84",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/admin-network-cidr-test.js",
+    "sha": "1b14c28188f5228dca9959c229ca56cf0c30c25d75184001a5259804ab5bf85d",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/admin-redesign-browser-test.js",
+    "sha": "0bb5c05d2082ca5b82d3ba68e3bacfbca56156d7f30dd8765e0ef6fd619d3a80",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/admin-token-mode-compatibility-test.js",
+    "sha": "4377ba93bb638664eda06f4e547f48a07358a071268284f934b6fdb804eec83d",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/admin-ui-no-login-test.js",
+    "sha": "c88c9d329d2bff53e5d55db65438d3235031e4c019a3a3eb47694ec8e400aa72",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/asset-selection-service-test.js",
+    "sha": "753fb699b13384b20ccc0b373fd0b17893955e8a05f52f0688dc4c7891964c2b",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/compose-services-translation-test.js",
+    "sha": "ee618e822c47550e4995a915a2ebe4075d7815d70c19edbb5d592348533ab5f3",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/override-concurrency-test.js",
+    "sha": "c2dbfc99d85822422c601c9399f5c9b7a31725742d5800429fdc153b18e8a4c3",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/admin/override-persistence-test.js",
+    "sha": "325de16afbed99daca10ecc4c5fa872e595161ca99af4a8be2ebbaba0f5c55e5",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/app/graceful-shutdown-test.js",
+    "sha": "85a7a3854476452c8f6be693443ea47e0bd7b62d63f4617bda8e44eb5b9ea8ac",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/assets/asset-delete-service-test.js",
+    "sha": "55b3de98b6ed1300478252efaf8cba01a84e87c8c1b6de5c6d7ea0946a3f0e86",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/composition/delete-service-composition-test.js",
+    "sha": "67c6de58dc161dff25ba34b6ceac41830d91331db06e85c90baa25c9b06ddde4",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/composition/render-shadow-composition-test.js",
+    "sha": "dbcd8eb633ac100bd59fea88ae072ef9e89f285b572a06d1b1c4eaadb53c82cb",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/config/admin-config-validation-test.js",
+    "sha": "8ff758cf8bfab1e8bc77ef7189f543b0b20b0ed3edebd8bded359f453058f651",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/config/feature-flag-truth-test.js",
+    "sha": "b4b14ab8b397626042a2e5d4ad41ec75a6cf1954ca518593d4d88801c167755f",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/config/learning-config-propagation-test.js",
+    "sha": "8180a5187b57887d6823e1cc1361de53ac31688b57baf3548f85176c32b82d00",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/config/server-no-direct-env-test.js",
+    "sha": "81170e789c01c7b52bbe45b7213d48667bf5a1c3edf84ac9e525df8cd1881d29",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/config/translation-config-validation-test.js",
+    "sha": "82980c9bb278f8513d4dcc1e1f303d8ac6db729ff4cba12fd40ee8ef29400e4d",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/content-pipeline/concurrency-lock.test.js",
+    "sha": "a5cb434f4ada4ae8cc0962bedf39e0e140645cd5d89132f401cae22d7541337c",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/content-pipeline/news-sync.test.js",
+    "sha": "c0d13e7a9cde09e2218d865c2fa849b149ea2c69c6379e0b0cb4f76ed3f6aa60",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/content-pipeline/photo-sync.test.js",
+    "sha": "350fdb934f7d8fd1ad66a0104d904b0fc0b170ac327c1142b0af9f420b06f6b2",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/A-schedule-contract.js",
+    "sha": "ace8d841013da131b0b717e2fb0c8c4d0ecfd8373356ac47d0e08c321edbaf67",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/B-epf1-contract.js",
+    "sha": "7d2aa8bc2a2a0065b1c8e0b5c7c2dbf6a3170af6a2cdce275fbd68a5b4d5afa5",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/C-state-frame-contract.js",
+    "sha": "57154286febc4dd1e9495f5ef3d642be947ea3bfb480146d9d20a78910528ff6",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/D-schedule-night-contract.js",
+    "sha": "3981848826ab2686197c6cb0b8e96f1aece53b9119bd94183c19335c60120823",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/E-news-contract.js",
+    "sha": "134ad90b4b11044d15f3ba350f1f68f6762fdcb910dd54cadf99d1351e8ad8fa",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/F-news-render-contract.js",
+    "sha": "03612e205653523afe7d314d0c070f19db818eab24e5798df615a8339aae8ef1",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/G-photo-contract.js",
+    "sha": "987c3948836a49b8e342aab027974f1cabbec310ec1e8456f5e0d5026ad0023e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/H-safety-contract.js",
+    "sha": "dfa8ad03f66dcea1256e07750cfa0a786beec12a5f94fc1726d7cc152903c921",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/I-news-lastgood-contract.js",
+    "sha": "aa555032e683cee5f8c76d4c92aa3c1d0a8423cd754e911a96bfa3631c6307bd",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/J-admin-contract.js",
+    "sha": "25ed1915e7edfa4a94925da2f60ee499fc402ea149619ce1cef162b533bb51d5",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/K-operating-modes-contract.js",
+    "sha": "105e1a10ce8dc65e957a4f01e09fae21456c7600aafd669190cb2011bc8f002e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/contracts/run-contracts.js",
+    "sha": "be1545cb7b8034c296904df89d2cf4033babf56cb916ec8c9eaac27638a6d437",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/custom-library/classifier-chain-test.js",
+    "sha": "b7d6ae99ddd25fa8a652382a60053dbf6b314a0feadd9dd9f2d79ecef3aa66ba",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/custom-library/custom-upload-security-test.js",
+    "sha": "c413ef4793d3519b2f8177b570b4e9416951021b7dcd8c59fb1e7d2d95fbb254",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/custom-library/streaming-upload-test.js",
+    "sha": "c87e115079e2ca03c987ae3de1ce9d06ba61d665a39497226465818f02e0f5d6",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/features/feature-readiness-test.js",
+    "sha": "367c8ef01c2c971a4fffc7c55fd8d425c4d2e399d3f32bc3b6b4c6415f73b79a",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/learning/learning-downloader-harden-test.js",
+    "sha": "5c7e1f48bc993f94e8029b5c1830869887e023a14660b4551f8c5ce430b086da",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/learning/learning-ingestion-production-test.js",
+    "sha": "0158cc887a078a329eccb18893ec36ff1c9f27602665cffdd68f5d4826686763",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/learning/learning-policy-test.js",
+    "sha": "2adfe8df3085aa6664f5cc9a143f122f6593080bb5bdf319fe7694eaec0cb2f7",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/learning/learning-scheduler-test.js",
+    "sha": "1e5eb7209745c2a6a8a262ce5b8204c1544f53fc80ce3d534b9b7e33d12f1bda",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/learning/wikimedia-source-adapter-test.js",
+    "sha": "1ef0b35337feb3ffb21b595e2c4afc62424d940d65ff0dccc07e7b2cdc794750",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/mqtt/mqtt-client-port-test.js",
+    "sha": "e8850666a09ab22bf3bcec809933f041897c7a9b20b3ae4e789685da617c5130",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r0/r0-static-contract-test.js",
+    "sha": "357acc26adc174b787a2c5741d4a5b48f339ed179d2b2235d73644ada38ad572",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r0/run-r0-tests.js",
+    "sha": "051b0558c7208a160901e061ab60db054685cfdb4f44284f1ff14bb864d483ed",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r1/app-shell-test.js",
+    "sha": "32781de34e31c7e65c8c6c6bdf78bf0321b38a3c2b4dacd9a32102a3b9d9a710",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r1/atomic-file-test.js",
+    "sha": "b82f1e74d6108c9e046d36c95d0f594eca51dd2da7d14afac9a2ac535e143042",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r1/clock-test.js",
+    "sha": "c619c3a18e0d4709d0660188df8757549e16555459484b400ebdcc85a515b6ec",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r1/config-parity-test.js",
+    "sha": "096e868fd67998c9eba0a5e373ebf2b145fccc4fb61b391152ef80e07c9e2c30",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r1/dependency-boundary-test.js",
+    "sha": "310a91776ed57d243467ba69c3029c0804777e136967cbdc2899c79dd6a51f79",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r1/http-client-test.js",
+    "sha": "de8693b70846e23924ad71ac5f681ad54f5c96886ddb6c7bff8f422481eadd86",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r1/json-store-test.js",
+    "sha": "73e405cd3f58d90aa1aebda19fc1ab5751f7521bc73215a1fa669df2ca6876e5",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r1/logger-test.js",
+    "sha": "a4ad5029aa5792b3b27cc20722cfabc8238d1952dff9b240a3d7edce162d3d6e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r10/admin-asset-query-test.js",
+    "sha": "05e5238ba0aac8a85d819a4cbe0ab76c43798f63973296f1b91b4327d601f00e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r10/admin-feature-flags-test.js",
+    "sha": "55f93e7b8eb91972423fce262583445ecb80d747298f29e14d4546ebf2fa5c69",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r10/admin-publication-query-test.js",
+    "sha": "279a09e809621c540953256d13c8ece5c5dd401a26ddf201cbe46f0b933864f5",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r10/admin-read-only-http-test.js",
+    "sha": "dd4048192de64fb0d9131211b397b546d92b82beee6d758919381da1c24bea6a",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r10/admin-secret-redaction-test.js",
+    "sha": "5e096225b2ee40a616761a73adbec2d58b85dd3698fdf2e964a516f3a10896ab",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r10/admin-system-status-test.js",
+    "sha": "4b6ee13eb22f64110d01df59d5e3a087f967ae6234e4825e333a3936e3a2512e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r10/dependency-boundary-test.js",
+    "sha": "dfc2b20025d931cfec80e5a588c42d8cb4dfca0d8d03789cd99eb48dbf11f5ea",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r10/run-r10-tests.js",
+    "sha": "8fe20197a5062cda1ede22408cc43dc30711fed71e22da58ee9498e3b6684119",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r11/build-manifest-test.js",
+    "sha": "fccc9485442a60bdfaa1323c24f51b1b46f30af97e5a8666f22c31ad8d242973",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r11/clean-build-artifacts-test.js",
+    "sha": "36eecaaba20b91ca2ef1ed14d7578cba1130d21b4bd5203bcddebcc4bcda128d",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r11/dockerfile-manifest-failclosed-test.js",
+    "sha": "b5bff05f6b37eb029ddfdea4382dd72f6224f90efca87c9e3e9f9945d8987023",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r11/dockerfile-multistage-test.js",
+    "sha": "671db949adf94bf9a0946ffc47a9865b2cf3d166d1781e8630bf6728319cdf2d",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r11/frame-validator-cli-test.js",
+    "sha": "5fa76669558c515ad6d7bcf054913d9cfec8f915f5515a8386c71a6d1e14b0b5",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r11/nas-verify-script-test.js",
+    "sha": "a1e0fd7768abdcbeeb15ff97b70883e75173280ac06b9f2f41d9f6e1f32397b9",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r11/run-r11-tests.js",
+    "sha": "34dd5f1244074b4160434f25d9dbdb5269712b18a07c84e2049298c78bc9931a",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r11/workflow-location-test.js",
+    "sha": "8a6a307f66b2bee503a4b5b63c7dc282d3ab3c9fd0fb9289fb1eeb813f0ea157",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r11/workflow-working-directory-test.js",
+    "sha": "d17c413edcb90f8ea7696d8a53aba4cffa494688d02cb3508f00b9ea165f8643",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r12/mqtt-frame-sha256-test.js",
+    "sha": "6aa4a598d47e80bee8fb64a013921febe602103bef310c013589bdf208633f40",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r12/run-r12-tests.js",
+    "sha": "76d790cebd811d712b975c864ca367d5785039e19bf301c43a91f56d8217b3f4",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r2/dependency-boundary-test.js",
+    "sha": "3e16d3e667b293ce1c7513433e1ca73aadb5aa99b0a24819e978592796763200",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r2/epf1-test.js",
+    "sha": "d5192a1d2d8bfe6ef97a5f251eebdd73de8b959ef393b67baf48f77b47fbdc6a",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r2/frame-validator-test.js",
+    "sha": "7295be863901ce50289bf6dbc210016e4f901300df373d696cf2b104fe0668d4",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r2/image-frame-parity-test.js",
+    "sha": "e6d1ccc17ddca2a78e3105773c2fac0bcb49b5b6fec348aa24a034e6a356e4c7",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r2/palette-test.js",
+    "sha": "654b692d5b6698963ae4577ac506547dbd6d92de982a120fa8f092b7a804a555",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r2/quantizer-test.js",
+    "sha": "7b1bc9212879642f9c762bf1b1fe095ec7288190768053dd8988829cac30d1d1",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r2/run-r2-tests.js",
+    "sha": "137b87ac70bfa89789c7dda2761453661f3472096d5895bce2558ff916ee2c9c",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/admin-publication-integration-test.js",
+    "sha": "1f1aed8356b7e1461311fbaf7f70da7a307d5060a258789df774b22747e307ff",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/dependency-boundary-test.js",
+    "sha": "0d2ca2f5ec506942a85e7718a882db85a9fa44afe0912b30b780a8d3a073a9db",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/full-frame-integrity-test.js",
+    "sha": "63e803cc1f5d6289aa8ff846709bccb83fb26bce95df31c4b4a9dd4a99bd1a34",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/history-failure-test.js",
+    "sha": "f732d4a645b81c0bff5924773127540b59516bdc3450d119fd6e8b39c1940f59",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/notification-port-test.js",
+    "sha": "8529d1aebfd978b81655cd939ca8779921b8e5a364fc34b15c1022471b43e0f2",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/operating-mode-service-test.js",
+    "sha": "1b70660481a1a9af2db187c53074e8000a2ad29cf947ea389808cd9aedfd45eb",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/pin-store-test.js",
+    "sha": "4e4074db04e48fca4c100c78554426492e5cc2d3c48ca878c7af9e3d1b07f535",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/publication-atomicity-test.js",
+    "sha": "825c13456816189bbc3c4302aea0c258434c39f6eb86e67d113e4c326de6165d",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/publication-concurrency-test.js",
+    "sha": "404fae94995dc1453b8b44cfa5a4e5571af4696336333a6cd64e427991313b18",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/publication-history-test.js",
+    "sha": "c45891e5b38ae2fd9e847590fa58799ab5e3fc03ef80f02336cfb70c4f94ee65",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/publication-lock-test.js",
+    "sha": "e8a96b2d72f64cbf0b629d2857cbcc119f05beaec4a238a05b6f63b819222a77",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/publication-service-test.js",
+    "sha": "561a3ae5eaf9dbd0fb8ad7f5d93ae82203815c98765f64b3a29da60b849246b7",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/restart-recovery-test.js",
+    "sha": "a9aaac75f3fbff8507a30cb4ebc70774ba57c9ec7945b8a48e07445d63287e08",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/rollback-history-failure-test.js",
+    "sha": "3bc8128acfd04ea1234e695e5223f2d3b92229436fcc54584d84ac5c706e4890",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/rollback-integration-test.js",
+    "sha": "0ae080aa4356bdfab76fbfa10f666973a516962344a7a4aba12c52d8afdda5f8",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/run-r3-tests.js",
+    "sha": "b9a94de54098b4971719214b764c475cb8633b9ccd4427a257472fe044c2c0dc",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/snapshot-cache-test.js",
+    "sha": "afd5405015832e95f8c6831ff8405df74f4250f6e13922aa9411ca3621e018ba",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/snapshot-corruption-test.js",
+    "sha": "9152b212df8b2a0104962050004d3d892e4481ff78ebb5dfd3b101856e33bae6",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/snapshot-model-test.js",
+    "sha": "9f8b2522dc749302f9b6af77e8afd04bd45a56550ab294e4448711153b78b0c6",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/snapshot-store-test.js",
+    "sha": "9106db4ab40cd7dfda9ae6fe9cebbe50472eab2000f0f336b11bbcd449d1a836",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r3/state-frame-snapshot-test.js",
+    "sha": "96284d38e459258b6d4a0a9b1aa2ec8226127340a3d0d5de3eb49d4d392a9ef4",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/active-asset-delete-test.js",
+    "sha": "9db4e48e733c59287b71b8899064a03395534296069c39680af360aec5114239",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/active-replacement-integration-test.js",
+    "sha": "16ff6aae065d93267976ece24f8e270157d603333ade98491856783b694a107e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/active-replacement-runtime-test.js",
+    "sha": "c3cf25c28b70fa2ceb06b57ed6b01070d38597d144106edeacd42b07e7ae0230",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/asset-model-test.js",
+    "sha": "e7c0745dda54e9f52c061738d48c0dca80d2485a9ed65b009b72fedfb43732bc",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/asset-reference-index-test.js",
+    "sha": "2ea45a4b8d857ffe0e0da62b1e05b22b8f27bd8546c8126ffd010dea10fdf66b",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/asset-repository-test.js",
+    "sha": "0a5946131d936eda7055f8375fcb364ff32d0ad84d9b628c18d5e7a478644a73",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/async-cleanup-order-test.js",
+    "sha": "d1b26a033f32e8c5163a4e29b0dcd8ef32ab15eaa2b4a2a4da5426ff0cef5818",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/cleanup-error-blocks-unlink-test.js",
+    "sha": "be6de7c4c27a7a2104f6f3658584835fa95e4d3ce8c725bb60744d4e448775f5",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/delete-dry-run-test.js",
+    "sha": "8239b57c603561d77a7570f335e24ade00cf2b7f09183ac5686972cf3f6cd68e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/delete-failure-atomicity-test.js",
+    "sha": "9858b4c40916bb302138525f0ff041a53c0295d7ce9f6de2ea57486bf3e1ab2f",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/delete-idempotency-test.js",
+    "sha": "ea0bbe096c4ac6d1c2bed4e0851ed3c15305e872e5bbb70abd2518972b27ca3e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/delete-pipeline-test.js",
+    "sha": "e9b29f0da8db02e0519f1d68a3fa68cdcb8972a047c22e32c90a4f373182fcc1",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/dependency-boundary-test.js",
+    "sha": "5fe4ab38d00ac70f42ab08153632e1b5ae5d736e42675f6a400e29fcf615c40f",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/failure-audit-test.js",
+    "sha": "e0d767c34eef242731103fb10a7ab0849c7be53a98a9ab52319cc85c236fc1bb",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/history-reference-filter-test.js",
+    "sha": "dbe7cc6307262953923edb1beef616a96b3e0b778b4238af4f18ecf945f04b42",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/history-reference-identity-test.js",
+    "sha": "1ef99cc1df23135c34cb29969dd794c47fec6e2d07a8b0d90f8b64ecbe65a081",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/legacy-asset-adapter-test.js",
+    "sha": "2ce3f6744049991d47d59b75ea8672251722dc2b08b25c9f1b93b9b7b3080dce",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/r4-history-type-filter-test.js",
+    "sha": "f2874b5f00453b99fb1d461028913c7e063b33de5f431dc97732ca7701878314",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/r4-original-symlink-test.js",
+    "sha": "2f507dd68b064312c711977e148caab2465de73dda01f3c33979d630abd4ad9e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/r4-path-relative-test.js",
+    "sha": "51f5ac5d0d034fbf6f0eba2679ac78adc28f5d7c86395fc0c7d6673fdb0def27",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/r4-replacement-short-circuit-test.js",
+    "sha": "dd2d051f6dfe5ef49f0bfa3426a279c8a7c9fb3dcec65f6e50b27a59d249b6cb",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/real-delete-integration-test.js",
+    "sha": "3ef569f5c7a71323ad073a532bc9d0b1d64915e8c393e0ff0b05adf46623bca7",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/real-delete-runtime-test.js",
+    "sha": "2eae64ea74b585664be16a50a023eaa1665043bc21dbca4e7caa766dee460247",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/reference-accuracy-test.js",
+    "sha": "5abb09a0c3c06972e653ecf253623305d1bae1a806d74eed15ed5c5451de0d15",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/reference-cleaner-integration-test.js",
+    "sha": "1bc1f12f0c2290717e5356f316e4b8a584a76bf2d567edfb057637f00ccc36b6",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/reference-error-semantics-test.js",
+    "sha": "ed9ce57c40ee33c7a046f6eda02d577dc33a0d0c2e7b5e8cf06a3929f41c019f",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/rollback-error-boundary-test.js",
+    "sha": "e30267ac20183012ef6f899b321a5c61d996f0101936f6eba0ad1f40bd87da6f",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/rollback-invalidation-test.js",
+    "sha": "798e7cd8763832f5791d0f3c3a00d4453aff567accb8b3d75ed4fb2e90ff4db6",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/rollback-rejection-integration-test.js",
+    "sha": "f6ec9b33d50afb91ee3e0ee1e16e0b715a9fee2fd1bd83523a4c59be6cac8032",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/run-r4-tests.js",
+    "sha": "337cc82ddb4e0cebe4b349d728e95c886ee9ea292b5c83b4566ab71723ff2ebf",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/stable-asset-identity-test.js",
+    "sha": "45048a84b4f97dee71f6c3e85af4dad28606b7bf6ec27231256c227b3e88d463",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/tombstone-test.js",
+    "sha": "f732192e2d91baa4965b8ac728b3bb419e4e6b3d4ab61c99219665afa0e42320",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r4/unsafe-delete-path-test.js",
+    "sha": "1b7e4cb85606cc0918a9958348c32695780bb7f4095ddd94f83b6c89792f1d85",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/article-identity-test.js",
+    "sha": "09010f8809c492c5152d6288adde7ee5d15157b5c2eed842667f233117dabb27",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/dependency-boundary-test.js",
+    "sha": "e79510b2517128643175179eef12d048dd114eb68aa1bab8871d8e7ae9eed43b",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/last-good-store-test.js",
+    "sha": "6b66f9d81b88bdec85450f3cd6c673f9aeabafab7b10eee4a835391b93275e37",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/news-deduplicator-test.js",
+    "sha": "da73501ba948b6540db63297959fd93331228c3822013de467223426e6d6a6ff",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/news-http-integration-test.js",
+    "sha": "f3361ba12ea21722217c69b1451a2f240c635276903157ce9f601342ecca658e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/news-normalizer-test.js",
+    "sha": "e8dfa27bfb0d19ae29347a744ca0b4852c8359e4ab66c36f13c69676d76bb8f0",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/news-pipeline-parity-test.js",
+    "sha": "d18e7c56e4c75c39cb6c82d6975a57324a20c61364b1ce9fe9a23ed63d56156c",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/news-production-parity-test.js",
+    "sha": "64992f3619f58c9390aba3b892f8019e1217b84cb07198c6fe87b419e2bf179d",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/news-production-wiring-test.js",
+    "sha": "b8817afd484add94cb3767d867c80ee265c713ed29a43918c110e98f261bc8e3",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/run-r5-tests.js",
+    "sha": "a936ff877507aa4a4d0bf0933f3fbe2e17c2f52d27cae5a84b9a6f3f03665faf",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r5/translation-gate-integration-test.js",
+    "sha": "8b3ed01fdf3f7712bbb6f268ccd3191bb8123ce4d0e6ba2da85e2c27b68ec018",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/dependency-boundary-test.js",
+    "sha": "eea877a50dd4f448b731f330c6f6a467da6f332f5960594096cf70ee6343f1c8",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/mqtt-config-test.js",
+    "sha": "65691962ec283384745fc1bdea6d4b6db6a971fd37c1969b6fd8104b9fb39889",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/mqtt-message-test.js",
+    "sha": "dcd9bfbb91af155eaec5f18af1ee9892bc3c67a42930f46385e388e117b188ac",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/mqtt-publication-integration-test.js",
+    "sha": "b59214f7472d02ff9b400ba0a28cbc5bb7f5bf6aab28e6330f1359b251e2eb78",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/mqtt-publisher-test.js",
+    "sha": "286d6b1300157efd6cd60c539cb4cf65e931d7fd52013864da48ea2b713ced25",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/mqtt-real-broker-test.js",
+    "sha": "6f6c15ac0900f365990405d4ffb01d21d69f1847020667f3772e008d17a4a213",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/mqtt-real-client-test.js",
+    "sha": "cb407290534968246e4c6bb409002c661d50dc547035b97b7fadaa0c820c3dde",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/mqtt-reconnect-test.js",
+    "sha": "d21a31795f9d60eccdf0f7c449c42639913628c6509e49591b38678f366decda",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/mqtt-shared-fixture-test.js",
+    "sha": "5752f379f26bc90cd4ed6bd60c94ade432cc001e2073bcee454fd5a5df2282f1",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/mqtt-topic-test.js",
+    "sha": "551dd3dbf2271e129aae22ec6f78ca0b405de6ffaf857234fa8e61a4e865e7d4",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/notification-adapter-test.js",
+    "sha": "a073d7498e9a576c8e8fcbbfc7cadb37b258c64af41ce6bf37910fb210531441",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/notification-contract-test.js",
+    "sha": "c02eaf61968ae27cd9edb52b697a9c3c33df39a977725b321085be2dd44aed19",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r6/run-r6-tests.js",
+    "sha": "d622c12b8759cdeed40b57a5da94302407eff04331273f6e8260892148a004b9",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r7/dependency-boundary-test.js",
+    "sha": "10526bf25e341bd6404de75d48571bd7535f2f8ce1202da20c9a8fb0f63f7685",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r7/learning-candidate-test.js",
+    "sha": "f19aefc0e3da7b6e460a850e5c4786fa82cc426aae470a212e27d8c933d23940",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r7/learning-dedup-test.js",
+    "sha": "1e0af81412d6ec28210411148878c8cf14450a6a3183e9050d8b78e4976f7650",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r7/learning-gates-test.js",
+    "sha": "7573e371cbb0dfbc151103b8387d177c2f8003afc925c008fdb1c1ef6a1f6b7a",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r7/learning-ingestion-test.js",
+    "sha": "1ab8b80703339fa646b4227e678f9a04238eb0266303dd471d01fb33a30c7f44",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r7/learning-source-registry-test.js",
+    "sha": "76de16c2eafa9bfb782bcbb23b943c1f75bc333655eedcd01e5e75317e5d55e4",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r7/run-r7-tests.js",
+    "sha": "c9257c75696cc9fc3e77d55a1f586f0a26ecadba191e00a0b60f1039df9a4673",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/custom-dedup-test.js",
+    "sha": "e1bc11fff30d9253b5e1287b988c121622de885597bc55a0208f688974420160",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/custom-file-store-test.js",
+    "sha": "8cc896c3ed629149dd69bb254ba6a932bdf7d05fbc7c84e14ef33ea3c0df84bc",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/custom-library-service-test.js",
+    "sha": "2d2f14c229155789f0d79a5d851276969ad7a6de53256559b198c47f7ce9941a",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/custom-selector-test.js",
+    "sha": "56df85750ee52aac11a46983cdf6eaf736bf2672640c672168e026bd82ec0a78",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/custom-upload-model-test.js",
+    "sha": "59c59c325baa54302f8fb94befb9a329f605a1a858c881893bb96e063df055bd",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/custom-validator-test.js",
+    "sha": "730e5e5ab5985b039830ae2fd364d9a1f3018fa3f12f9b1d71b07569e169b9bf",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/dependency-boundary-test.js",
+    "sha": "8840fb6ac5e81913b7bec4dde21a8b4ff82ba2d0da5fef7aa05e84411cf8c40b",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/r8-decoded-metadata-test.js",
+    "sha": "8d6b876d994a6e447d6d8405f19ec0fdb5e796069b7eb48c1d630433bcd701d9",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/r8-final-orphan-cleanup-test.js",
+    "sha": "fb08effcfed31822fc18100f22a48e126284797c06cfc8a53cf5c63793b2d0f7",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/r8-missing-repository-test.js",
+    "sha": "deceb66e00bef523125d3839cd155328f1af177ce447c62bb26021c6a70a3103",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/r8-required-safety-gate-test.js",
+    "sha": "c2062f1ce8d0cd7ce78bd9e96683baad731048bce5016a8ee7f4bae82bc90928",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/r8-spoofed-dimensions-test.js",
+    "sha": "eee85974452f98c2e60123351f5c866500b35c7d5e634d19de06d3de12afa684",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r8/run-r8-tests.js",
+    "sha": "42b9b25ea9f3dd79e19cdd6ad874a600d792a897bdd537c7d0c6187c91f553af",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/dependency-boundary-test.js",
+    "sha": "6326e77c68742adc2ed2406cb309dd8e2fa2816fc51f3906df53147249018ec8",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/legacy-render-adapter-test.js",
+    "sha": "92670df5f864c84df3db65d2361f14baf61faae2dced4fde6eba89ed1c18be2c",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/render-frame-validator-test.js",
+    "sha": "0e12ef2c1bfdec0c37010785fbd1bf3c64ce8fcca13724009f2d3c34ffd5aa23",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/render-golden-parity-test.js",
+    "sha": "a5781f64dfe060c122a349b0fc0269bef6bbd4ef9481ce15a2f4cfe766172c02",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/render-orchestrator-test.js",
+    "sha": "8cef7f4acc5661bed7e2b552d2d04d9fc3af362442b687c21d590df15310df99",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/render-profile-test.js",
+    "sha": "d58f7167dfd4fdf6f660ad82bbd1c4bb64f70398ab514d5c2fb5461430bc0598",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/render-request-test.js",
+    "sha": "fca3fe74b0766fd3b1fa0eb4acfed37ddf177fce48aeb468dc1a4991178c13af",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/render-shadow-mismatch-test.js",
+    "sha": "f6e518bf01e5800f82279a250a2b9c9a6c79536b3e3f18a533c88706123e3079",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/render-shadow-test.js",
+    "sha": "10043ca441b39d0719accfd101d34f20c298739039b20862d8a3d30239b8e8d3",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/render-validator-test.js",
+    "sha": "874f7ecbeca1b67ea8503ff652d5d7259d29bfa557792d0a62143165a8e86691",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/r9/run-r9-tests.js",
+    "sha": "2ae347e6dad7e6146512dfc061af2d04e0d0aa993d46cf5995bb0103c24c8e35",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/analysis-card-test.js",
+    "sha": "80a1a09319695e7980225be9e05bd3f8561f5a345084e36918404a6b379cf08c",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/cjk-glyph-test.js",
+    "sha": "4a9a6abb746b52558c143db45645db239457b4364239bb0d9975a4016fea25df",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/comparison-pair-test.js",
+    "sha": "bd5120e1cb067bad8ef6b57b49a9f872bded585c49f5344b0edbfa23fcb4517a",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/deterministic-test.js",
+    "sha": "8ab3d96b5cd887c8ed8d59bbb490c59a5d740e35da6ed83affaf9f9fbcdf0663",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/image-rasterizer-test.js",
+    "sha": "ee290e4755f6863d1591d645e88b79f58a3b280ca62afcc4ddfe551779e7b04e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/production-chain-test.js",
+    "sha": "b5b6cde64840f852ed48e65308be8920b1528f79fd9ab8dcc333accad052f517",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/render-shadow-meaningful-test.js",
+    "sha": "5d2b29243c30802fdc65d483dcd3acc12e7607e5fe25064c393963404ec68714",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/sequence-2x2-test.js",
+    "sha": "02d70bee6729f5572f4e4cfdc994e05791da2c8ace13b843da08c900a9960efd",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/shadow-independent-test.js",
+    "sha": "845f1dc504ed0dace395e3a5294a954fa7b500b7ee7bc1c1af0a13452655f630",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/render/text-rasterizer-test.js",
+    "sha": "f70659163a34d0204765a7126dfb9eaf9da36ecf023b934274e3538f7a716df5",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/safety/classifier-readiness-truth-test.js",
+    "sha": "8efdfc412fbcbef3bd1253468b9d1b7816ee9d5e67e578eb7c518f1fc734d47c",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/safety/model-loader-registry-test.js",
+    "sha": "1ab384131ae12e33cd43e13bda1ceb2aa2bedb61ee47e34ba3151348e0c0d4dd",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/safety/nsfw-safety-gate-test.js",
+    "sha": "1cb4bca04947c60d8fc86bf5d118bfbff7e77d3bcc341fccd3be60c8d956d581",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/safety/safety-classifier-lifecycle-test.js",
+    "sha": "61ba6344a0bc23bfc2676ae0f3177d2480db4192d122ba9ba506191efcd1b937",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  },
+  {
+    "path": "test/safety/safety-classifier-port-test.js",
+    "sha": "99a57b080628f5cf8616c49e868112882b687b9e4d853663b0c468fa34a8a75e",
+    "reason": "Expired/Weak/Duplicate test",
+    "replacedBy": "qa/tests/integration/"
+  }
+]

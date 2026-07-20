@@ -174,14 +174,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function shuffleArray(array) {
-  const result = [...array];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
-}
 
 async function withRetry(operation, label, maxAttempts = 3, baseDelayMs = 500) {
   let lastError;
@@ -456,11 +448,9 @@ async function addCandidate(candidate, index, options) {
     }
   }
 
-  // 项目无真实 NSFW 分类器运行时，pending 永远不会被提升为 approved，
-  // 导致抓取图片永远无法进入自动轮播。直接设为 approved 让图片可用。
   // 已通过上面的 contentSafetyCheck（blocklist）做基础过滤。
   // 若未来接入真实分类器，恢复为 'pending' 并在 process-images.js 中提升。
-  entry.safetyStatus = 'approved';
+  entry.safetyStatus = 'pending';
   entry.poolType = options.poolType || candidate.poolType || 'study_frames';
   index.push(entry);
   return { status: 'downloaded', id, path: rawPath };
@@ -787,7 +777,6 @@ async function runFetchImages(argsOverride) {
   }
 
   let candidates = await gatherCandidates(config);
-  candidates = shuffleArray(candidates);
   const limited = args.limit > 0 ? candidates.slice(0, args.limit) : candidates;
 
   const results = { downloaded: 0, skipped: 0, failed: 0, details: [] };

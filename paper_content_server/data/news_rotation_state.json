@@ -1,166 +1,54 @@
 {
   "version": 1,
-  "updatedAt": "2026-07-09T23:01:33.724Z",
+  "updatedAt": "2026-07-20T11:47:37.434Z",
   "shown": [
     {
-      "url": "https://theinitium.com/20260710-international-polymarket-journalist-news-gambling-experiment-zh-hans/",
-      "titleHash": "1fad12fc66bd739aaab989766612458ef17f0bf2",
-      "title": "记者能靠下注新闻赚钱吗？虚拟 Polymarket 一个月赌博记",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
-    },
-    {
-      "url": "https://www.lemonde.fr/international/live/2026/07/10/en-direct-guerre-au-moyen-orient-nouvel-entretien-entre-donald-trump-et-benyamin-netanyahou-l-armee-israelienne-a-declare-que-la-campagne-contre-l-iran-n-etait-pas-terminee_6721826_3210.html",
-      "titleHash": "259cec7dd4a4b04e127eb0fd352e9e56bc0ab2f5",
-      "title": "EN DIRECT, guerre au Moyen-Orient : nouvel entretien entre Donald Trump et Benyamin Nétanyahou ; l’armée israélienne a …",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
-    },
-    {
-      "url": "https://www.nytimes.com/2026/07/09/us/politics/trump-arch-height-approval.html",
-      "titleHash": "944459dfb1d80c486e99161cf314705e51669b76",
-      "title": "Can Trump’s Arch Be So Tall? A Panel Led by His Allies Tentatively Says Yes.",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
-    },
-    {
-      "url": "https://www.lemonde.fr/international/article/2026/07/09/attentats-a-damas-lors-de-la-visite-d-emmanuel-macron-les-autorites-syriennes-affirment-avoir-arrete-les-responsables_6722143_3210.html",
-      "titleHash": "91361a8e1bc968bfd0fc5c1e794c243f9a4e42c5",
-      "title": "Attentats à Damas lors de la visite d’Emmanuel Macron : les autorités syriennes affirment avoir arrêté les responsables",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
-    },
-    {
-      "url": "https://www.nytimes.com/2026/07/08/us/politics/graham-platner-campaign-implosion-maine.html",
-      "titleHash": "1901756240117df2c5260b979658010af5610cfb",
-      "title": "Inside the Implosion of Graham Platner’s Maine Senate Campaign: ‘A Slow-Rolling Disaster’",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
-    },
-    {
-      "url": "https://www.nytimes.com/2026/07/09/us/politics/platner-maine-democrats-replacement-candidate.html",
-      "titleHash": "8aee52c9df44985d073805da465f63eb136373db",
-      "title": "Graham Platner’s Exit Sets Off Scramble for New Democratic Senate Candidate in Maine",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
-    },
-    {
-      "url": "https://www.npr.org/2026/07/09/nx-s1-5822534/airline-consolidation-now-rules-the-skies-has-it-been-good-for-passengers",
-      "titleHash": "64837b088655a582117e8bae3dbc1af243555f21",
-      "title": "Airline consolidation now rules the skies. Has it been good for passengers?",
-      "category": "economy",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
-    },
-    {
-      "url": "https://www.lemonde.fr/societe/article/2026/07/09/la-pauvrete-reste-au-plus-haut-les-inegalites-atteignent-un-nouveau-record_6722140_3224.html",
-      "titleHash": "d4c2070dfe2f17a6a4138ef22bbc66f5e632f6ef",
-      "title": "La pauvreté reste au plus haut, les inégalités atteignent un nouveau record",
-      "category": "economy",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
-    },
-    {
-      "url": "https://36kr.com/newsflashes/3889004592937730?f=rss",
-      "titleHash": "89352c92bd8d3bab90c3519a5a6ad12c65b1a6aa",
-      "title": "美股三大指数集体收涨，Arm涨超9%",
+      "url": "www.ithome.com/0/979/210.htm",
+      "titleHash": "0a6864faf56d40d030c92eb84e53833747955fe0",
+      "title": "2027 款传祺向往 S7 PHEV 将于 7 月 22 日上市：升级 192 线激光雷达、智驾小蓝灯、38.8kWh 电池组",
       "category": "technology",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
+      "slotKey": "2026-07-20T13:30",
+      "shownAt": "2026-07-20T11:47:37.434Z"
     },
     {
-      "url": "https://www.lemonde.fr/culture/article/2026/07/09/avec-la-parabole-du-seum-rebecca-chaillon-malaxe-ses-combats-au-theatre_6722137_3246.html",
-      "titleHash": "ff59987687da609aca284897d184e025f004bbc2",
-      "title": "Avec « La Parabole du seum », Rébecca Chaillon malaxe ses combats au théâtre",
-      "category": "culture",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:10.951Z"
-    },
-    {
-      "url": "https://www.lemonde.fr/international/live/2026/07/10/en-direct-guerre-au-moyen-orient-nouvel-entretien-entre-donald-trump-et-benyamin-netanyahou-l-armee-israelienne-a-declare-que-la-campagne-contre-l-iran-n-etait-pas-terminee_6721826_3210.html",
-      "titleHash": "259cec7dd4a4b04e127eb0fd352e9e56bc0ab2f5",
-      "title": "EN DIRECT, guerre au Moyen-Orient : nouvel entretien entre Donald Trump et Benyamin Nétanyahou ; l’armée israélienne a …",
+      "url": "cn.nytimes.com/china/20260720/china-trump-meddling-election",
+      "titleHash": "912aa208990489bed2e7c3a3844bc91cd7ecf85e",
+      "title": "北京驳斥特朗普指控，但回应相对克制",
       "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
+      "slotKey": "2026-07-20T13:30",
+      "shownAt": "2026-07-20T11:47:37.434Z"
     },
     {
-      "url": "https://www.nytimes.com/2026/07/09/us/politics/trump-arch-height-approval.html",
-      "titleHash": "944459dfb1d80c486e99161cf314705e51669b76",
-      "title": "Can Trump’s Arch Be So Tall? A Panel Led by His Allies Tentatively Says Yes.",
+      "url": "theinitium.com/20260720-ukraine-cabinet-reshuffle-fedorov-zh-hans",
+      "titleHash": "a1127be2c44b7afdca12236c6a7cb7cdfd031987",
+      "title": "战争时刻撤换明星国防部长？乌克兰内阁改组引发街头抗争｜Whatsnew",
       "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
+      "slotKey": "2026-07-20T13:30",
+      "shownAt": "2026-07-20T11:47:37.434Z"
     },
     {
-      "url": "https://www.lemonde.fr/international/article/2026/07/09/attentats-a-damas-lors-de-la-visite-d-emmanuel-macron-les-autorites-syriennes-affirment-avoir-arrete-les-responsables_6722143_3210.html",
-      "titleHash": "91361a8e1bc968bfd0fc5c1e794c243f9a4e42c5",
-      "title": "Attentats à Damas lors de la visite d’Emmanuel Macron : les autorités syriennes affirment avoir arrêté les responsables",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
+      "url": "cn.nytimes.com/usa/20260720/trump-speech-china-xi",
+      "titleHash": "1b02b9a0b2f87d7632c0113715252b2ab86491e7",
+      "title": "特朗普“怒斥”中国，但仍寻求与习近平建立良好关系",
+      "category": "international",
+      "slotKey": "2026-07-20T13:30",
+      "shownAt": "2026-07-20T11:47:37.434Z"
     },
     {
-      "url": "https://www.nytimes.com/2026/07/08/us/politics/graham-platner-campaign-implosion-maine.html",
-      "titleHash": "1901756240117df2c5260b979658010af5610cfb",
-      "title": "Inside the Implosion of Graham Platner’s Maine Senate Campaign: ‘A Slow-Rolling Disaster’",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
+      "url": "theinitium.com/20260718-hongkong-beyblade-craze-zh-hans",
+      "titleHash": "6049ce831c2b04205d648eb2acf35d251ef902ee",
+      "title": "热血！对战！香港街头陀螺热，“高压生活的排毒模式”",
+      "category": "international",
+      "slotKey": "2026-07-20T13:30",
+      "shownAt": "2026-07-20T11:47:37.434Z"
     },
     {
-      "url": "https://www.nytimes.com/2026/07/09/upshot/platner-senate-replacements-history.html",
-      "titleHash": "a072d8e5c1bc0154e31ee808a3ba4767fc88a6e8",
-      "title": "Maine Democrats Hope to Replace Platner as Senate Nominee. Has That Ever Worked?",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
-    },
-    {
-      "url": "https://www.nytimes.com/2026/07/09/world/middleeast/palestinian-authority-elections-abbas.html",
-      "titleHash": "42beeb06b69959f0cce05a54dc2b63c498a1db48",
-      "title": "Palestinian Authority Sets Date for First Major Elections in 20 Years",
-      "category": "politics",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
-    },
-    {
-      "url": "https://www.nytimes.com/2026/07/09/travel/help-i-refueled-my-rental-car-but-enterprise-charged-me-anyway.html",
-      "titleHash": "c0b24bdf4d63be9b4dd82e0b55d5f1512904616a",
-      "title": "Help! I Refueled My Rental Car, but Enterprise Charged Me Anyway.",
+      "url": "www.ithome.com/0/979/202.htm",
+      "titleHash": "e5a63aee7ca14f2226b4760173f96a480a9d6815",
+      "title": "天文学家警告：人造的“土星环”式卫星群可能很快就会布满天空",
       "category": "economy",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
-    },
-    {
-      "url": "https://www.nytimes.com/2026/07/09/business/grocery-stores-lower-food-prices.html",
-      "titleHash": "efef1ddade24a78026c0fe8bae95d0217c5f5e0a",
-      "title": "Grocery Stores Lower Prices as Consumers Pare Spending",
-      "category": "economy",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
-    },
-    {
-      "url": "https://www.ithome.com/0/974/788.htm",
-      "titleHash": "350535d1de01f912ac73901b56a2b5b47f940db2",
-      "title": "OpenAI 旗下桌面浏览器 ChatGPT Atlas 即将被砍，部分功能会整合进其他产品",
-      "category": "technology",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
-    },
-    {
-      "url": "https://www.lemonde.fr/culture/article/2026/07/09/aux-rencontres-de-la-photographie-d-arles-modele-animal-ou-deux-siecles-de-regards-sur-les-betes_6722129_3246.html",
-      "titleHash": "142ab3e69dbe4ccd5f61027fcce1e8681dcd7605",
-      "title": "Aux Rencontres de la photographie d’Arles, « Modèle animal » ou deux siècles de regards sur les bêtes",
-      "category": "culture",
-      "slotKey": "2026-07-10:offhours",
-      "shownAt": "2026-07-09T23:01:33.724Z"
+      "slotKey": "2026-07-20T13:30",
+      "shownAt": "2026-07-20T11:47:37.434Z"
     }
   ]
 }

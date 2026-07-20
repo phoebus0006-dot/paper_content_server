@@ -1,0 +1,33 @@
+{
+  "PUB-01": {
+    "endpoint": "/api/admin/publish/news",
+    "request": { "newsId": "test" },
+    "error": "News snapshot frameId must start with news:"
+  },
+  "PUB-02": {
+    "endpoint": "/api/admin/publish/photo",
+    "request": { "photoId": "test" },
+    "error": "Cannot read properties of undefined (reading 'filter')"
+  },
+  "NEWS-01": {
+    "endpoint": "/api/admin/news/draft",
+    "request": { "rawTitle": "A very long title that should definitely trigger the too wide error in the current version of the content server because it exceeds the pixel limit of the e-paper display", "rawSummary": "" },
+    "error": "title too wide"
+  },
+  "MODE-01": {
+    "action": "Restart server after manual publish",
+    "result": "Loses manual mode"
+  },
+  "IMG-01": {
+    "action": "Upload or fetch images",
+    "result": "safetyStatus=approved is assigned directly"
+  },
+  "IMG-02": {
+    "action": "Preview vs Publish photo",
+    "result": "Inconsistent processing recipes"
+  },
+  "UI-01": {
+    "action": "Publish from UI",
+    "result": "Depends only on Toast, doesn't verify active state"
+  }
+}

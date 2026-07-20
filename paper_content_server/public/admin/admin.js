@@ -96,7 +96,7 @@ if(loginForm){
   });
 }
 
-var TAB_TITLES={dashboard:'总览','news-page':'新闻审查','photos-page':'图片库','photo-editor-page':'图片编辑','publish-page':'发布中心','status-page':'运行状态'};
+var TAB_TITLES={dashboard:'工作台','news-page':'新闻','photos-page':'图片','history-page':'发布记录','system-page':'系统'};
 function switchTab(name){
   document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
   var page=$(name);if(page)page.classList.add('active');
@@ -221,16 +221,43 @@ function loadControlMode() {
 function loadDashboard(){
   api('/api/admin/dashboard').then(function(d){
     if(!d)return;
-    setText('dash-mode',d.currentMode,'未设置');
-    setText('dash-slot',d.currentSlot,'未生成');
-    setText('dash-frameid',d.frameId?(d.frameId.slice(0,50)+'...'):'未生成','未生成');
-    setText('dash-nextswitch',d.nextSwitchLocal,'未调度');
     setText('dash-news',d.newsItemCount!==undefined?String(d.newsItemCount):'未加载','未加载');
     setText('dash-cache',d.frameCacheEntries!==undefined?String(d.frameCacheEntries):'0','0');
     setText('dash-uptime',d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟','<1 分钟');
-    setText('dash-override',d.manualOverride||'auto','auto');
-    setText('dash-override-expires',d.overrideExpiresAt,'未设置');
     setText('dash-lastpublish',d.lastPublishedAt||'未发布','未发布');
+    
+    // UI-01: 真实读取 /api/state.json 回显当前正在播报的内容、ID 和模式
+    api('/api/state.json').then(function(state) {
+       if(!state) return;
+       var modeStr = state.mode;
+       if (modeStr === 'manual_news' || modeStr === 'manual_photo') modeStr = '手动覆盖（需强制重启恢复）';
+       else if (modeStr === 'auto') modeStr = '自动播报';
+       else if (modeStr === 'photo') modeStr = '自动播报 (图片)';
+       else if (modeStr === 'news') modeStr = '自动播报 (新闻)';
+       else if (modeStr === 'test') modeStr = '测试图';
+       
+       setText('dash-mode', modeStr || '未知', '未知');
+       setText('dash-slot', state.frameId || '未生成', '未生成');
+       setText('dash-nextswitch', state.nextSwitchLocal || '未调度', '未调度');
+    }).catch(function(e) {
+       console.warn('state.json fetch failed:', e);
+    });
+    
+    var imgUrl = '/api/frame/latest?t=' + Date.now();
+    var img = $('dash-preview-img');
+    if (img) {
+      var h={}; if(TOKEN) h['Authorization']='Bearer '+TOKEN;
+      fetch(imgUrl,{headers:h}).then(function(r){
+        if(!r.ok) throw new Error('not ok');
+        return r.blob();
+      }).then(function(b){
+        if(img.src && img.src.indexOf('blob:')===0) URL.revokeObjectURL(img.src);
+        img.src = URL.createObjectURL(b);
+        img.style.display = '';
+      }).catch(function(){
+        img.style.display='none';
+      });
+    }
     STATE.dashboard=d;
   }).catch(function(e){showErrorBox('dashboard load failed: '+(e&&e.message||e))});
 }
@@ -359,26 +386,18 @@ function renderNewsList(items) {
   items.forEach(function(item,i){
     var card=document.createElement('div');
     card.className='news-card'+(i===SELECTED_NEWS_IDX?' selected':'');
-    var statusBadge='<span class="badge '+(item.translationStatus==='translated'?'badge-status-translated':item.translationStatus==='original'?'badge-status-original':item.translationStatus==='missing-key'?'badge-status-missing-key':item.translationStatus==='failed'?'badge-status-failed':'badge-status-stub')+'">'+(item.translationStatus||'unknown')+'</span>';
     var isFirst=(i===0);
     var isLast=(i===items.length-1);
-    var upDisabled=isFirst?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
-    var downDisabled=isLast?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
-    var qualityHtml=renderQualityRules(item);
-    card.innerHTML='<div class="meta">'+
-      '<span class="badge badge-category">'+(item.category||'综合')+'</span>'+
-      statusBadge+
-      '<span class="small muted">'+(item.source||'')+'</span>'+
-      '<span class="small muted">'+(item.titleLen||0)+'字 / '+(item.summaryLen||0)+'字</span>'+
-      '</div>'+
-      qualityHtml+
-      '<div class="news-title-row">'+esc(item.title||'无标题')+'</div>'+
-      '<div class="news-summary-row">'+esc(item.summary||'无摘要')+'</div>'+
-      '<div class="actions">'+
-      '<button'+upDisabled+' onclick="event.stopPropagation();moveNews('+i+',-1)">⬆ 上移</button>'+
-      '<button'+downDisabled+' onclick="event.stopPropagation();moveNews('+i+',1)">⬇ 下移</button>'+
-      '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')">移除</button>'+
-      '<a href="'+esc(safeUrl(item.url))+'" target="_blank" class="btn btn-sm btn-outline" onclick="event.stopPropagation()">原文</a>'+
+    var upDisabled=isFirst?' disabled class="btn btn-sm btn-disabled"':' class="btn btn-sm"';
+    var downDisabled=isLast?' disabled class="btn btn-sm btn-disabled"':' class="btn btn-sm"';
+    card.innerHTML=
+      '<div class="news-card-title">'+esc(item.title||'无标题')+'</div>'+
+      '<div class="news-card-meta"><span>'+esc(item.source||'')+'</span><span>'+(item.titleLen||0)+'/'+(item.summaryLen||0)+' 字</span></div>'+
+      '<div class="actions" style="margin-top:8px">'+
+      '<button'+upDisabled+' onclick="event.stopPropagation();moveNews('+i+',-1)">上移</button>'+
+      '<button'+downDisabled+' onclick="event.stopPropagation();moveNews('+i+',1)">下移</button>'+
+      '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')"><svg class="icon"><use href="/admin/icons.svg#icon-delete"></use></svg></button>'+
+      '<a href="'+esc(safeUrl(item.url))+'" target="_blank" class="btn btn-sm" onclick="event.stopPropagation()"><svg class="icon"><use href="/admin/icons.svg#icon-external-link"></use></svg></a>'+
       '</div>';
     card.onclick=function(){selectNews(i);};
     el.appendChild(card);
@@ -414,28 +433,26 @@ function selectNews(idx){
 function renderNewsDetail(item){
   var el=$('news-detail');
   if(!el||!item)return;
-  var statusBadge='<span class="badge '+(item.translationStatus==='translated'?'badge-status-translated':item.translationStatus==='original'?'badge-status-original':item.translationStatus==='missing-key'?'badge-status-missing-key':item.translationStatus==='failed'?'badge-status-failed':'badge-status-stub')+'">'+(item.translationStatus||'unknown')+'</span>';
-  var qualityHtml=renderQualityRules(item);
+  var statusBadge='<span class="badge '+(item.translationStatus==='translated'?'badge-active':'')+'">'+(item.translationStatus||'unknown')+'</span>';
+  
   var origTitle=item.originalTitle||null;
   var origSummary=item.originalSummary||null;
-  var hasOrig=!!(origTitle||origSummary);
-  var origContent='';
-  if(hasOrig){
-    origContent='<div><strong>标题:</strong> '+esc(origTitle)+'</div><div><strong>摘要:</strong> '+esc(origSummary)+'</div>';
-  }else{
-    origContent='<em>(原文未提供)</em>';
-  }
-  var originalSection='<div class="detail-field"><div class="detail-label">原文</div><div class="detail-value"><div class="news-original-content" style="display:none">'+origContent+'</div><button class="btn btn-sm btn-outline news-original-toggle" onclick="toggleOriginal()">显示原文</button></div></div>';
+  
+  var origTitleEl=$('orig-title');
+  var origSummaryEl=$('orig-summary');
+  if(origTitleEl) origTitleEl.textContent = origTitle || '无标题';
+  if(origSummaryEl) origSummaryEl.textContent = origSummary || '无摘要';
+
+  var rulesEl=$('quality-rules');
+  if(rulesEl) rulesEl.innerHTML = renderQualityRules(item);
+
   el.innerHTML=
-    '<div class="detail-field"><div class="detail-label">分类</div><div class="detail-value"><span class="badge badge-category">'+esc(item.category||'综合')+'</span> '+statusBadge+'</div></div>'+
-    qualityHtml+
-    '<div class="detail-field"><div class="detail-label">显示标题</div><div class="detail-value"><input class="news-title" value="'+esc(item.title||'')+'" style="width:100%"></div></div>'+
-    '<div class="detail-field"><div class="detail-label">显示摘要</div><div class="detail-value"><textarea class="news-summary" rows="3" style="width:100%">'+esc(item.summary||'')+'</textarea></div></div>'+
-    originalSection+
-    '<div class="detail-field"><div class="detail-label">来源</div><div class="detail-value">'+esc(item.source||'未知')+'</div></div>'+
-    '<div class="detail-field"><div class="detail-label">发布时间</div><div class="detail-value">'+esc(item.publishedAt||'未知')+'</div></div>'+
-    '<div class="detail-field"><div class="detail-label">原文链接</div><div class="detail-value"><a href="'+esc(safeUrl(item.url))+'" target="_blank">'+esc(item.url||'无链接')+'</a></div></div>'+
-    '<div class="detail-field"><div class="detail-label">字数</div><div class="detail-value">标题 '+(item.titleLen||0)+' 字 / 摘要 '+(item.summaryLen||0)+' 字</div></div>';
+    '<div class="param-row"><span class="param-label">分类</span><span class="badge badge-category">'+esc(item.category||'综合')+'</span> '+statusBadge+'</div>'+
+    '<div class="flex-col" style="margin-bottom:12px"><label class="small muted">显示标题</label><input class="news-title" value="'+esc(item.title||'')+'"></div>'+
+    '<div class="flex-col" style="margin-bottom:12px"><label class="small muted">显示摘要</label><textarea class="news-summary" rows="5">'+esc(item.summary||'')+'</textarea></div>'+
+    '<div class="small muted">来源: '+esc(item.source||'未知')+'</div>'+
+    '<div class="small muted">时间: '+esc(item.publishedAt||'未知')+'</div>'+
+    '<div class="small muted">原文: <a href="'+esc(safeUrl(item.url))+'" target="_blank">'+esc(item.url||'无链接')+'</a></div>';
 }
 
 function toggleOriginal(){
@@ -487,8 +504,8 @@ async function saveNewsDraft(){
     toast('无变更，无需保存','info');
     return null;
   }
-  var btn=qs('#news-page .panel-actions .btn-primary');
-  if(btn){btn.disabled=true;btn.textContent='保存中...';}
+  var btn=qs('#news-edit .btn-primary');
+  if(btn){btn.disabled=true;btn.innerHTML='保存中...';}
   try {
     var r = await api('/api/admin/news/draft',{method:'POST',body:JSON.stringify({items:items})});
     if(r && r.error) throw new Error(r.error);
@@ -499,7 +516,7 @@ async function saveNewsDraft(){
     // 不在这里 toast，由调用方（publishNews）统一反馈，避免双 toast
     throw e;
   } finally {
-    if(btn){btn.disabled=false;btn.textContent='💾 保存草稿';}
+    if(btn){btn.disabled=false;btn.innerHTML='<svg class="icon"><use href="/admin/icons.svg#icon-save"></use></svg> 保存';}
   }
 }
 
@@ -583,7 +600,7 @@ function removeNews(idx){
     // 但 url 已变化，必须落盘。
     NEWS_BASELINE = null;
     saveNewsDraft().catch(function(e){
-      toast('删除已应用但草稿保存失败: '+(e&&e.message||e)+'。请手动点"💾 保存草稿"重试。','error');
+      toast('删除已应用但草稿保存失败: '+(e&&e.message||e)+'。请手动点"保存"重试。','error');
     });
   });
 }
@@ -628,15 +645,15 @@ function loadPhotos(){
       // TOKEN 模式下 <img src> 无法带 Authorization 头，缩略图会 403。
       // 改为 fetch + createObjectURL 渲染。
       var thumbUrl='/api/admin/photos/'+encodeURIComponent(p.id)+'/thumbnail?'+Date.now();
-      item.innerHTML='<div class="thumb"><img alt="'+esc(p.title||'')+'" loading="lazy" onerror="this.parentElement.classList.add(\'broken\');this.style.display=\'none\'"></div>'+
-        '<div class="info">'+
-        '<div class="name">'+esc(p.title||p.id.slice(0,12))+'</div>'+
-        '<div class="meta-row"><span>'+esc(p.source||'未知')+' · '+(p.width||0)+'x'+(p.height||0)+'</span>'+safetyBadge+'</div>'+
-        '<div class="actions">'+
-        '<button class="btn btn-sm btn-outline" onclick="openEditor(\''+p.id+'\')">编辑</button>'+
-        '<button class="btn btn-sm btn-primary" onclick="publishPhoto(\''+p.id+'\')">发布</button>'+
-        '<button class="btn btn-sm btn-danger" onclick="deletePhoto(\''+p.id+'\')">删除</button>'+
-        '</div></div>';
+      item.innerHTML='<div class="photo-thumb"><img alt="'+esc(p.title||'')+'" loading="lazy" onerror="this.parentElement.classList.add(\'broken\');this.style.display=\'none\'"></div>'+
+        '<div class="photo-info">'+
+        '<div class="photo-name">'+esc(p.title||p.id.slice(0,12))+'</div>'+
+        '<div class="small muted"><span>'+esc(p.source||'未知')+'</span></div></div>';
+      item.onclick = function() {
+        document.querySelectorAll('#photo-grid .photo-item').forEach(function(n){n.classList.remove('selected')});
+        item.classList.add('selected');
+        renderPhotoInspector(p);
+      };
       el.appendChild(item);
       // 异步加载缩略图（带 Authorization 头）
       (function(imgEl,url){
@@ -673,7 +690,7 @@ if(photoForm){
     var fileInput=$('photo-file');
     if(!fileInput||!fileInput.files[0]){toast('请选择文件','error');return;}
     var btn=qs('#photo-upload-form button[type="submit"]');
-    if(btn){btn.disabled=true;btn.textContent='上传中...';}
+    if(btn){btn.disabled=true;btn.innerHTML='上传中...';}
     var file = fileInput.files[0];
     var h={'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream'};
     if(TOKEN) h['Authorization']='Bearer '+TOKEN;
@@ -687,7 +704,7 @@ if(photoForm){
         });
       }
     }).catch(function(e){toast('上传错误: '+e.message,'error')}).finally(function(){
-      if(btn){btn.disabled=false;btn.textContent='📤 上传';}
+      if(btn){btn.disabled=false;btn.innerHTML='<svg class="icon"><use href="/admin/icons.svg#icon-upload"></use></svg> 上传图片';}
     });
   });
 }
@@ -708,8 +725,31 @@ function publishPhoto(id){
 // ── Photo Editor ──
 var EDITOR_STATE={};
 
+function renderPhotoInspector(p) {
+  var el=$('photo-inspector');
+  if(!el) return;
+  var thumbUrl='/api/admin/photos/'+encodeURIComponent(p.id)+'/thumbnail?'+Date.now();
+  el.innerHTML = '<div class="panel-title">图片详情</div>'+
+    '<div class="epaper-frame" style="height:180px;width:100%;margin-bottom:16px"><img id="inspector-img" alt="'+esc(p.title||'')+'"></div>'+
+    '<div class="flex-col" style="margin-bottom:16px">'+
+      '<div style="font-weight:600">'+esc(p.title||p.id)+'</div>'+
+      '<div class="small muted">来源: '+esc(p.source||'未知')+'</div>'+
+      '<div class="small muted">尺寸: '+(p.width||0)+'x'+(p.height||0)+'</div>'+
+    '</div>'+
+    '<div class="actions" style="margin-bottom:16px">'+
+      '<button class="btn btn-primary btn-block" onclick="openEditor(\''+p.id+'\')"><svg class="icon"><use href="/admin/icons.svg#icon-edit"></use></svg> 编辑并发布</button>'+
+      '<button class="btn btn-danger btn-block" onclick="deletePhoto(\''+p.id+'\')"><svg class="icon"><use href="/admin/icons.svg#icon-delete"></use></svg> 删除</button>'+
+    '</div>';
+  var imgEl=$('inspector-img');
+  var h={}; if(TOKEN) h['Authorization']='Bearer '+TOKEN;
+  fetch(thumbUrl,{headers:h}).then(function(r){return r.ok?r.blob():null}).then(function(b){
+    if(b && imgEl) imgEl.src=URL.createObjectURL(b);
+  }).catch(function(){});
+}
+
 function openEditor(id){
-  switchTab('photo-editor-page');
+  var ws = $('photo-editor-workspace');
+  if(ws) ws.classList.add('active');
   EDITOR_STATE.id=id;
   // 默认 recipe;如果图片有已保存的 recipe,后续异步覆盖
   EDITOR_STATE.recipe={brightness:1,contrast:1,saturation:1,gamma:1,rotate:0,flipH:false,flipV:false,sharpen:0,blur:0};
@@ -725,17 +765,11 @@ function openEditor(id){
       loadEditorPreview();
     }
   });
-  var editorHeader=$('photo-editor-page').querySelector('h2');
-  if(editorHeader){
-    var closeBtn=editorHeader.parentNode.querySelector('.editor-close-btn');
-    if(!closeBtn){
-      closeBtn=document.createElement('button');
-      closeBtn.className='btn btn-sm btn-outline editor-close-btn';
-      closeBtn.textContent='← 返回图片库';
-      closeBtn.onclick=function(){switchTab('photos-page')};
-      editorHeader.parentNode.insertBefore(closeBtn,editorHeader.nextSibling);
-    }
-  }
+}
+
+function closeEditor(){
+  var ws = $('photo-editor-workspace');
+  if(ws) ws.classList.remove('active');
 }
 
 // 把 UI 控件(滑块/复选框/下拉)同步到 EDITOR_STATE.recipe,避免打开新图片时控件位置和 recipe 不同步

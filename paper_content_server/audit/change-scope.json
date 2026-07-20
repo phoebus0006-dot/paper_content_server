@@ -1,0 +1,1142 @@
+[
+  {
+    "path": ".dockerignore",
+    "type": "MODIFY"
+  },
+  {
+    "path": ".gitignore",
+    "type": "MODIFY"
+  },
+  {
+    "path": "audit/before-hashes.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "audit/change-scope.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "audit/problem-reproductions.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "audit/protected-hashes.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "audit/removed-files.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "audit/test-classification.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "data/last_good_news.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "data/library_state.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "data/news_candidates_pool.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "data/news_rotation_state.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "data/raw_index.json",
+    "type": "MODIFY"
+  },
+  {
+    "path": "docs.zip",
+    "type": "ADD"
+  },
+  {
+    "path": "migrate_tests.js",
+    "type": "ADD"
+  },
+  {
+    "path": "patch_integration.js",
+    "type": "ADD"
+  },
+  {
+    "path": "public/admin/admin.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "qa/helpers/add-scope.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/helpers/reproduce.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/manifest.json",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/removed-tests.json",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/test-publish-news.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/tests/e2e/dummy.test.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/tests/integration/production-integration-test.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/tests/integration/r0-http-behavior-test.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/tests/integration/r0-restart-persistence-test.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/tests/integration/v3-production-path-test.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/tests/mutation/dummy.test.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/tests/security/dummy.test.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/tests/unit/dummy.test.js",
+    "type": "ADD"
+  },
+  {
+    "path": "qa/tests/visual/dummy.test.js",
+    "type": "ADD"
+  },
+  {
+    "path": "scripts/fetch-images.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "scripts/qa-clean.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "scripts/qa-verify-clean.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "scripts/scope-check.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "scripts/test-runner.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "scripts/update-scope.js",
+    "type": "ADD"
+  },
+  {
+    "path": "server.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "src/admin/publish-service.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "src/news/title-summarizer.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "src/render/text-rasterizer.js",
+    "type": "MODIFY"
+  },
+  {
+    "path": "fix_boot.py",
+    "type": "DELETE"
+  },
+  {
+    "path": "fix_control_mode.py",
+    "type": "DELETE"
+  },
+  {
+    "path": "fix_fetch.py",
+    "type": "DELETE"
+  },
+  {
+    "path": "fix_restore.py",
+    "type": "DELETE"
+  },
+  {
+    "path": "fix_server.py",
+    "type": "DELETE"
+  },
+  {
+    "path": "scripts/_check_quality.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "scripts/_cleanup.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "scripts/_fix_ia.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "scripts/_fix_ia2.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "scripts/_fix_wm.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-browser-p0-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-cidr-policy-unit-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-cross-origin-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-csrf-policy-unit-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-lan-direct-access-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-lan-mode-screenshot.png",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-network-cidr-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-redesign-browser-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-token-mode-compatibility-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/admin-ui-no-login-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/asset-selection-service-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/compose-services-translation-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/override-concurrency-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/override-persistence-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/admin/ui/handler-contract.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/app/graceful-shutdown-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/assets/asset-delete-service-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/composition/delete-service-composition-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/composition/render-shadow-composition-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/config/admin-config-validation-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/config/feature-flag-truth-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/config/learning-config-propagation-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/config/server-no-direct-env-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/config/translation-config-validation-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/content-pipeline/concurrency-lock.test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/content-pipeline/news-sync.test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/content-pipeline/photo-sync.test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/A-schedule-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/B-epf1-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/C-state-frame-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/D-schedule-night-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/E-news-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/F-news-render-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/G-photo-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/H-safety-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/I-news-lastgood-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/J-admin-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/K-operating-modes-contract.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/contracts/run-contracts.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/custom-library/classifier-chain-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/custom-library/custom-upload-security-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/custom-library/streaming-upload-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/features/feature-readiness-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/learning/hyatt-image.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/mqtt/mqtt-invalid-sha.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/mqtt/mqtt-missing-version.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/mqtt/mqtt-v0-invalid.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/mqtt/mqtt-v1-valid.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/mqtt/mqtt-v2-unknown-reason.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/mqtt/mqtt-v2-valid.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/mqtt/mqtt-v3-invalid.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/checkerboard.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/gradient.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/manifest.json",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/real-photo.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/rgba-semi.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/rgba-solid.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/rgba-transparent.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/solid-black.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/solid-blue.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/solid-green.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/solid-red.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/solid-white.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/fixtures/r2/golden/solid-yellow.epf1",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/integration/v3-production-path-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/learning/learning-downloader-harden-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/learning/learning-ingestion-production-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/learning/learning-policy-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/learning/learning-scheduler-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/learning/wikimedia-source-adapter-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/mqtt/mqtt-client-port-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r0/r0-http-behavior-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r0/r0-restart-persistence-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r0/r0-static-contract-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r0/run-r0-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r1/app-shell-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r1/atomic-file-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r1/clock-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r1/config-parity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r1/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r1/http-client-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r1/json-store-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r1/logger-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r1/production-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r10/admin-asset-query-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r10/admin-feature-flags-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r10/admin-publication-query-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r10/admin-read-only-http-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r10/admin-secret-redaction-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r10/admin-system-status-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r10/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r10/run-r10-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r11/build-manifest-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r11/clean-build-artifacts-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r11/dockerfile-manifest-failclosed-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r11/dockerfile-multistage-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r11/frame-validator-cli-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r11/nas-verify-script-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r11/run-r11-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r11/workflow-location-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r11/workflow-working-directory-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r12/mqtt-frame-sha256-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r12/run-r12-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r2/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r2/epf1-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r2/frame-validator-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r2/image-frame-parity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r2/palette-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r2/quantizer-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r2/run-r2-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/admin-publication-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/full-frame-integrity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/history-failure-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/notification-port-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/operating-mode-service-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/pin-store-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/publication-atomicity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/publication-concurrency-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/publication-history-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/publication-lock-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/publication-service-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/restart-recovery-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/rollback-history-failure-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/rollback-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/run-r3-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/snapshot-cache-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/snapshot-corruption-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/snapshot-model-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/snapshot-store-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r3/state-frame-snapshot-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/active-asset-delete-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/active-replacement-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/active-replacement-runtime-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/asset-model-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/asset-reference-index-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/asset-repository-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/async-cleanup-order-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/cleanup-error-blocks-unlink-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/delete-dry-run-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/delete-failure-atomicity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/delete-idempotency-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/delete-pipeline-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/failure-audit-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/history-reference-filter-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/history-reference-identity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/legacy-asset-adapter-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/r4-history-type-filter-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/r4-original-symlink-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/r4-path-relative-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/r4-replacement-short-circuit-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/real-delete-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/real-delete-runtime-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/reference-accuracy-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/reference-cleaner-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/reference-error-semantics-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/rollback-error-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/rollback-invalidation-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/rollback-rejection-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/run-r4-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/stable-asset-identity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/tombstone-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r4/unsafe-delete-path-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/article-identity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/last-good-store-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/news-deduplicator-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/news-http-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/news-normalizer-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/news-pipeline-parity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/news-production-parity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/news-production-wiring-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/run-r5-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r5/translation-gate-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/mqtt-config-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/mqtt-message-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/mqtt-publication-integration-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/mqtt-publisher-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/mqtt-real-broker-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/mqtt-real-client-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/mqtt-reconnect-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/mqtt-shared-fixture-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/mqtt-topic-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/notification-adapter-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/notification-contract-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r6/run-r6-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r7/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r7/learning-candidate-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r7/learning-dedup-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r7/learning-gates-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r7/learning-ingestion-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r7/learning-source-registry-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r7/run-r7-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/custom-dedup-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/custom-file-store-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/custom-library-service-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/custom-selector-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/custom-upload-model-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/custom-validator-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/r8-decoded-metadata-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/r8-final-orphan-cleanup-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/r8-missing-repository-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/r8-required-safety-gate-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/r8-spoofed-dimensions-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r8/run-r8-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/dependency-boundary-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/legacy-render-adapter-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/render-frame-validator-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/render-golden-parity-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/render-orchestrator-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/render-profile-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/render-request-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/render-shadow-mismatch-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/render-shadow-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/render-validator-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/r9/run-r9-tests.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/analysis-card-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/cjk-glyph-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/comparison-pair-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/deterministic-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/image-rasterizer-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/production-chain-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/render-shadow-meaningful-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/sequence-2x2-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/shadow-independent-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/render/text-rasterizer-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/safety/classifier-readiness-truth-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/safety/model-loader-registry-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/safety/nsfw-safety-gate-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/safety/safety-classifier-lifecycle-test.js",
+    "type": "DELETE"
+  },
+  {
+    "path": "test/safety/safety-classifier-port-test.js",
+    "type": "DELETE"
+  }
+]

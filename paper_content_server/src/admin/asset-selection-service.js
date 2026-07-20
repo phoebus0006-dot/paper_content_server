@@ -16,19 +16,29 @@ function createAssetSelectionService(assetRepository, snapshotStore, logger) {
       throw new Error('Library type mismatch: expected ' + libraryType + ', got ' + asset.libraryType);
     }
 
-    if (asset.safetyStatus !== 'SAFE') {
+    if (asset.safetyStatus !== 'SAFE' && asset.safetyStatus !== 'APPROVED') {
       throw new Error('Asset not safe: ' + asset.safetyStatus);
+    }
+
+    if (asset.reviewStatus !== 'APPROVED') {
+      throw new Error('Asset reviewStatus must be APPROVED, got ' + asset.reviewStatus);
     }
 
     if (asset.lifecycleStatus !== 'SELECTABLE') {
       throw new Error('Asset not selectable: ' + asset.lifecycleStatus);
     }
 
-    // localPath 必须可读
+    // localPath 必须可读且安全
     if (!asset.localPath) throw new Error('Asset has no local path');
     var fs = require('fs');
-    if (!fs.existsSync(asset.localPath)) {
-      throw new Error('Asset local file not found: ' + asset.localPath);
+    var path = require('path');
+    var DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
+    var resolvedPath = path.resolve(DATA_DIR, asset.localPath);
+    if (!resolvedPath.startsWith(path.resolve(DATA_DIR))) {
+      throw new Error('Path traversal detected');
+    }
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error('Asset local file not found: ' + resolvedPath);
     }
 
     return { asset: asset, assetId: assetId, libraryType: libraryType };
@@ -75,12 +85,21 @@ function createAssetSelectionService(assetRepository, snapshotStore, logger) {
 
     // 选择第一个(不回退到非 theme/album 匹配的资产)
     var selected = assets[0];
+    if (selected.reviewStatus !== 'APPROVED') {
+      throw new Error('Asset reviewStatus must be APPROVED, got ' + selected.reviewStatus);
+    }
 
     // 验证 localPath 可读
     if (!selected.localPath) throw new Error('Selected asset has no local path');
     var fs = require('fs');
-    if (!fs.existsSync(selected.localPath)) {
-      throw new Error('Asset local file not found: ' + selected.localPath);
+    var path = require('path');
+    var DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
+    var resolvedPath = path.resolve(DATA_DIR, selected.localPath);
+    if (!resolvedPath.startsWith(path.resolve(DATA_DIR))) {
+      throw new Error('Path traversal detected');
+    }
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error('Asset local file not found: ' + resolvedPath);
     }
 
     return { asset: selected, assetId: selected.assetId, libraryType: libraryType, theme: theme, albumId: albumId };

@@ -176,7 +176,8 @@ function createCustomLibraryService(fileStore, validator, deduplicator, safetyGa
         libraryType: 'CUSTOM', sourceType: 'upload',
         sha256: sha256, mimeType: decoded.mimeType,
         width: decoded.width, height: decoded.height,
-        safetyStatus: 'SAFE', lifecycleStatus: 'SELECTABLE',
+        safetyStatus: 'PENDING', reviewStatus: 'PENDING', lifecycleStatus: 'QUARANTINED',
+        metadata: { poolType: 'custom' }
       });
       await assetRepository.create(asset);
       // 不返回 finalPath(避免泄露内部路径)
@@ -393,8 +394,10 @@ function createCustomLibraryService(fileStore, validator, deduplicator, safetyGa
         mimeType: decoded.mimeType,
         width: decoded.width,
         height: decoded.height,
-        safetyStatus: 'SAFE',
-        lifecycleStatus: 'SELECTABLE',
+        safetyStatus: 'PENDING',
+        reviewStatus: 'PENDING',
+        lifecycleStatus: 'QUARANTINED',
+        metadata: { poolType: 'custom' }
       });
       await assetRepository.create(asset);
       // 不返回 finalPath(避免泄露内部路径)

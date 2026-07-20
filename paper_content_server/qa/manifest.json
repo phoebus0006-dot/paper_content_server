@@ -1,0 +1,23 @@
+{
+  "unit": [
+    "qa/tests/unit/dummy.test.js"
+  ],
+  "integration": [
+    "qa/tests/integration/v3-production-path-test.js",
+    "qa/tests/integration/r0-http-behavior-test.js",
+    "qa/tests/integration/r0-restart-persistence-test.js",
+    "qa/tests/integration/production-integration-test.js"
+  ],
+  "e2e": [
+    "qa/tests/e2e/dummy.test.js"
+  ],
+  "security": [
+    "qa/tests/security/dummy.test.js"
+  ],
+  "visual": [
+    "qa/tests/visual/dummy.test.js"
+  ],
+  "mutation": [
+    "qa/tests/mutation/dummy.test.js"
+  ]
+}

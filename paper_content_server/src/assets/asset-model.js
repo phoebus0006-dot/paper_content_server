@@ -49,6 +49,7 @@ function createAsset(fields) {
     rightsStatus: fields.rightsStatus || null,
     decodeStatus: fields.decodeStatus || 'PENDING',
     safetyStatus: fields.safetyStatus || 'UNKNOWN',
+    reviewStatus: fields.reviewStatus || 'PENDING',
     relevanceStatus: fields.relevanceStatus || 'UNKNOWN',
     qualityStatus: fields.qualityStatus || 'UNKNOWN',
     lifecycleStatus: fields.lifecycleStatus || 'DISCOVERED',

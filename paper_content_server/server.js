@@ -450,6 +450,12 @@ async function main() {
   runtime.publicationHistory = boot.deps.publicationHistory;
   runtime.notificationPort = boot.deps.notificationPort;
   runtime.publicationService = boot.services.publicationService;
+  runtime.stateProvider = function () {
+    return runtime.publicationService ? runtime.publicationService.getActive() : {};
+  };
+  runtime.contentBuilder = getContentForNow;
+  runtime.createSnapshot = R3_snapshotModel.createSnapshot;
+  runtime.overridePersistence = require('./src/admin/override-persistence');
   runtime.adminPublishService = new AdminPublishService(runtime, r1Logger);
   runtime.titleSummarizer = TitleSummarizer;
   runtime.imageRecipeService = new ImageRecipeService(runtime);
@@ -500,27 +506,40 @@ async function main() {
   // local file present. If valid, the operating mode is restored to the same
   // snapshot. If invalid, the override is cleared and the server falls through
   // to AUTO schedule (no silent asset substitution).
-  if (runtime.overridePersistence && runtime.assetRepository && runtime.operatingModeService) {
+  if (runtime.overridePersistence && runtime.assetRepository && runtime.operatingModeService && runtime.snapshotStore) {
     try {
       var persistedOverride = runtime.overridePersistence.loadOverride();
-      if (persistedOverride && (persistedOverride.mode === 'ONE_SHOT_OVERRIDE' || persistedOverride.mode === 'FOCUS_LOCK') && persistedOverride.snapshotId) {
-        var v3Validation = await runtime.overridePersistence.validateOverrideAsync(persistedOverride, runtime.assetRepository);
-        if (v3Validation.valid) {
-          // Restore operating mode; snapshot was already preloaded above.
-          if (persistedOverride.mode === 'ONE_SHOT_OVERRIDE') {
-            runtime.operatingModeService.enterOneShot(persistedOverride.snapshotId, persistedOverride.expiresAt || persistedOverride.savedAt);
-            r1Logger.info('Restored ONE_SHOT override: asset=' + persistedOverride.assetId);
-          } else {
-            runtime.operatingModeService.enterFocusLock(persistedOverride.snapshotId, {
-              libraryType: persistedOverride.libraryType || null,
-              theme: persistedOverride.theme || null,
-              albumId: persistedOverride.albumId || null
-            });
-            r1Logger.info('Restored FOCUS_LOCK override: asset=' + persistedOverride.assetId);
-          }
-        } else {
-          r1Logger.warn('Persisted override invalid on restart (' + v3Validation.reason + ') — clearing override, falling through to AUTO schedule');
-          runtime.overridePersistence.clearOverride();
+      if (persistedOverride && persistedOverride.mode && persistedOverride.snapshotId) {
+        var validModes = ['ONE_SHOT_OVERRIDE', 'FOCUS_LOCK', 'MANUAL_NEWS', 'MANUAL_PHOTO'];
+        if (validModes.includes(persistedOverride.mode)) {
+           var v3Validation = await runtime.overridePersistence.validateOverrideAsync(persistedOverride, runtime.assetRepository, runtime.snapshotStore);
+           if (v3Validation.valid) {
+             if (persistedOverride.mode === 'ONE_SHOT_OVERRIDE') {
+               var osNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
+               var mtimePlus30 = new Date(new Date(persistedOverride._mtime).getTime() + 30 * 60 * 1000);
+               var expires = persistedOverride.expiresAt ? new Date(persistedOverride.expiresAt) : mtimePlus30;
+               if (expires <= osNow) {
+                 r1Logger.warn('Persisted ONE_SHOT expired — clearing override, falling through to AUTO schedule');
+                 runtime.overridePersistence.clearOverride();
+               } else {
+                 runtime.operatingModeService.enterOneShot(persistedOverride.snapshotId, persistedOverride.expiresAt || persistedOverride.savedAt);
+                 r1Logger.info('Restored ONE_SHOT override');
+               }
+             } else if (persistedOverride.mode === 'FOCUS_LOCK') {
+               runtime.operatingModeService.enterFocusLock(persistedOverride.snapshotId, {
+                 libraryType: persistedOverride.libraryType || null,
+                 theme: persistedOverride.theme || null,
+                 albumId: persistedOverride.albumId || null
+               });
+               r1Logger.info('Restored FOCUS_LOCK override');
+             } else {
+               runtime.operatingModeService.setMode(persistedOverride.mode);
+               r1Logger.info('Restored ' + persistedOverride.mode + ' override');
+             }
+           } else {
+             r1Logger.warn('Persisted override invalid on restart (' + v3Validation.reason + ') — clearing override, falling through to AUTO schedule');
+             runtime.overridePersistence.clearOverride();
+           }
         }
       }
     } catch (e) {
@@ -1928,7 +1947,7 @@ async function ensureFallbackStudyFrames() {
       theme: t.theme,
       kind: t.kind,
       poolType: 'study_frames',
-      safetyStatus: 'approved',
+      safetyStatus: 'pending',
       rightsStatus: 'known',
       rights: {
         author: 'Built-in',
@@ -2433,7 +2452,7 @@ async function getContentForNow(now, opts) {
     // opts.newsOverride 允许调用方跳过 buildNewsSnapshot 直接传入草稿快照，
     // 用于 publish/news 端点发布用户在 admin UI 编辑过的新闻内容。
     const news = opts.newsOverride || (await buildNewsSnapshot(now));
-    const frameId = `${snapshot.mode}:${snapshot.slotKey}:${news.frameId}`;
+    const frameId = `${effectiveMode}:${snapshot.slotKey}:${news.frameId}`;
     const cacheKey = frameId;
     if (!runtime.cachedFrames.has(cacheKey)) {
       const frame = buildFrameBuffer(await renderNewsFrame({
@@ -2481,7 +2500,7 @@ async function getContentForNow(now, opts) {
       return e.id === opts.photoId;
     });
     if (!manualEntry) throw new Error('photo not found: ' + opts.photoId);
-    var manualSlot = selectPhotoSnapshot(now);
+    var manualSlot = selectPhotoSnapshot(now, manualIdx);
     var manualFrameId = 'photo:' + manualSlot.slotKey + ':manual:' + opts.photoId;
     photo = {
       // id 必须写入：publish-history preview 缩略图、save-edit/delete 缓存失效靠它匹配。
@@ -2723,8 +2742,18 @@ async function handleRequest(req, res) {
       }
       var activeSnap = await ensureActiveSnapshotForSchedule(now);
       runtime.pinStore.pin(client, activeSnap.snapshotId);
+      
+      let resPayload = { ...activeSnap.payload };
+      if (resPayload.title) resPayload.title = truncateByWidth(resPayload.title, 30);
+      if (resPayload.items) {
+        resPayload.items = resPayload.items.map(item => ({
+          ...item,
+          zhTitle: truncateByWidth(item.zhTitle, 30)
+        }));
+      }
+      
       const body = Buffer.from(JSON.stringify({
-        ...activeSnap.payload,
+        ...resPayload,
         snapshotId: activeSnap.snapshotId,
         panelIndex,
         operatingMode: runtime.operatingModeService ? runtime.operatingModeService.getMode() : 'AUTO',
@@ -3441,13 +3470,15 @@ async function handleRequest(req, res) {
         failJson(res, 403, 'forbidden');
         return;
       }
-      var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
-      if (!snap) {
-        try {
-          var c = await getContentForNow(new Date());
-          snap = c.snapshot;
-        } catch (e) {}
+      var snap = null;
+      try {
+        if (runtime.publicationService) snap = await runtime.publicationService.getActive();
+      } catch (e) {}
+      if (!snap && runtime.cachedFrames.size > 0) {
+        snap = Array.from(runtime.cachedFrames.values())[0].snapshot;
       }
+      var opMode = runtime.operatingModeService ? runtime.operatingModeService.getMode() : 'AUTO';
+
       var newsItemCount = 0;
       try {
         var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
@@ -3467,7 +3498,7 @@ async function handleRequest(req, res) {
         uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000),
         frameRenderCount: runtime.renderCount,
         newsItemCount: newsItemCount,
-        manualOverride: runtime.manualOverride || null,
+        manualOverride: opMode !== 'AUTO' ? true : null,
         overrideExpiresAt: runtime.overrideExpiresAt || null,
         lastPublishedAt: runtime.lastPublishedAt || null
       });
@@ -3486,22 +3517,25 @@ async function handleRequest(req, res) {
         failJson(res, 403, 'forbidden');
         return;
       }
-      var snap2 = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
-      if (!snap2) {
-        try {
-          var c2 = await getContentForNow(new Date());
-          snap2 = c2.snapshot;
-        } catch (e) {}
-      }
-      var mode = runtime.manualOverride ? 'manual' : snap2 ? snap2.mode : 'unknown';
+      var snap2 = null;
+      try {
+        if (runtime.publicationService) snap2 = await runtime.publicationService.getActive();
+      } catch (e) {}
+      
+      var opMode = runtime.operatingModeService ? runtime.operatingModeService.getMode() : 'AUTO';
+      var isManual = opMode !== 'AUTO';
+      var mode = isManual ? 'manual' : 'auto';
       var description = '';
-      if (mode === 'manual') description = '手动覆盖 — 当前内容由管理员手动指定';else if (mode === 'unknown') description = '暂无排程信息 — 调度器可能尚未运行';else description = '自动调度 — 由时间 SLOT 调度器自动选择内容';
+      if (isManual) description = '手动覆盖 — 当前内容由管理员手动指定 (' + opMode + ')';
+      else if (!snap2) description = '暂无排程信息 — 调度器可能尚未运行';
+      else description = '自动调度 — 由时间 SLOT 调度器自动选择内容';
+
       respondJson(res, {
         status: 'ok',
         mode: mode,
         modeLabel: mode === 'manual' ? '手动覆盖' : mode === 'unknown' ? '未知' : '自动调度',
         description: description,
-        overrideActive: !!runtime.manualOverride,
+        overrideActive: isManual,
         overrideExpiresAt: runtime.overrideExpiresAt || null,
         slot: snap2 ? snap2.slotKey : null,
         nextSwitchAt: snap2 ? snap2.nextSwitchLocal : null
@@ -3815,63 +3849,69 @@ async function handleRequest(req, res) {
         }
         var su = {},
           st = {};
+        var processedItems = [];
         for (var dk = 0; dk < di.length; dk++) {
           var d = di[dk];
-          if (!d.title || !d.title.trim()) {
-            failJson(res, 400, 'item ' + (dk + 1) + ': title empty');
-            return;
-          }
+          var rawTitle = d.rawTitle || d.title;
+          var rawSummary = d.rawSummary || d.summary;
+
+          if (!rawTitle || !rawTitle.trim()) { failJson(res, 400, 'item ' + (dk + 1) + ': title empty'); return; }
+          if (!rawSummary || !rawSummary.trim()) { failJson(res, 400, 'item ' + (dk + 1) + ': summary empty'); return; }
+          if (!d.url || !d.url.trim()) { failJson(res, 400, 'item ' + (dk + 1) + ': URL empty'); return; }
+          if (!d.source || !d.source.trim()) { failJson(res, 400, 'item ' + (dk + 1) + ': source empty'); return; }
+          if (!d.category || !d.category.trim()) { failJson(res, 400, 'item ' + (dk + 1) + ': category empty'); return; }
+
+          var un = d.url.toLowerCase().replace(/[?#].*$/, '');
+          if (su[un]) { failJson(res, 400, 'duplicate URL: ' + d.url); return; }
+          su[un] = true;
+
+          var tn = rawTitle.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
+          if (st[tn]) { failJson(res, 400, 'duplicate title: ' + rawTitle); return; }
+          st[tn] = true;
+
           const titleFont = 24;
           const cardW = Math.floor((800 - 14 * 2 - 12) / 2); // 380
           const maxWidth = cardW - 12; // 368
+          
+          let summaryRes = {
+            rawTitle: rawTitle,
+            displayTitle: rawTitle,
+            titleStatus: 'fit',
+            titleWidthPx: 0,
+            titleMaxWidthPx: maxWidth
+          };
+
           if (runtime.titleSummarizer) {
-            const width = runtime.titleSummarizer.measureTextWidthPixels(d.title, titleFont);
-            if (width > maxWidth) {
-              failJson(res, 400, 'item ' + (dk + 1) + ': title too wide (' + Math.round(width) + 'px > ' + maxWidth + 'px). Please edit.');
-              return;
-            }
+            summaryRes = runtime.titleSummarizer.summarizeTitle(rawTitle, maxWidth, titleFont);
           } else {
-            var titleCpLen = [...d.title].length;
-            if (titleCpLen > 24) {
-              failJson(res, 400, 'item ' + (dk + 1) + ': title too long (' + titleCpLen + ' code points)');
-              return;
-            }
+             var titleCpLen = [...rawTitle].length;
+             summaryRes.titleWidthPx = titleCpLen * titleFont;
+             if (titleCpLen > 24) {
+               summaryRes.titleStatus = 'needs_review';
+               summaryRes.displayTitle = rawTitle.slice(0, 21) + '...';
+             }
           }
-          if (!d.summary || !d.summary.trim()) {
-            failJson(res, 400, 'item ' + (dk + 1) + ': summary empty');
-            return;
-          }
-          if (!d.url || !d.url.trim()) {
-            failJson(res, 400, 'item ' + (dk + 1) + ': URL empty');
-            return;
-          }
-          if (!d.source || !d.source.trim()) {
-            failJson(res, 400, 'item ' + (dk + 1) + ': source empty');
-            return;
-          }
-          if (!d.category || !d.category.trim()) {
-            failJson(res, 400, 'item ' + (dk + 1) + ': category empty');
-            return;
-          }
-          var un = d.url.toLowerCase().replace(/[?#].*$/, '');
-          if (su[un]) {
-            failJson(res, 400, 'duplicate URL: ' + d.url);
-            return;
-          }
-          su[un] = true;
-          var tn = d.title.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
-          if (st[tn]) {
-            failJson(res, 400, 'duplicate title: ' + d.title);
-            return;
-          }
-          st[tn] = true;
+
+          processedItems.push({
+            ...d,
+            rawTitle: rawTitle,
+            rawSummary: rawSummary,
+            displayTitle: summaryRes.displayTitle,
+            displaySummary: rawSummary,
+            titleStatus: summaryRes.titleStatus,
+            titleWidthPx: summaryRes.titleWidthPx,
+            titleMaxWidthPx: summaryRes.titleMaxWidthPx,
+            title: summaryRes.displayTitle,
+            summary: rawSummary
+          });
         }
         await R1_writeFileAtomic(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({
-          items: di
+          items: processedItems
         }, null, 2));
         respondJson(res, {
           status: 'ok',
-          count: di.length
+          count: processedItems.length,
+          items: processedItems
         });
       } catch (e) {
         failJson(res, 500, e.message);
@@ -3978,11 +4018,40 @@ async function handleRequest(req, res) {
         failJson(res, 400, 'photoId required');
         return;
       }
-      if (!runtime.publicationService || !runtime.snapshotStore || !runtime.imageRecipeService) {
+      if (!runtime.publicationService || !runtime.snapshotStore || !runtime.imageRecipeService || !runtime.assetRepository) {
         failJson(res, 503, 'publication service unavailable');
         return;
       }
+
+      var asset = await runtime.assetRepository.findById(photoId);
+      if (!asset) {
+        failJson(res, 404, 'Asset not found');
+        return;
+      }
       
+      var resolvedPath = path.resolve(DATA_DIR, asset.localPath || '');
+      if (!resolvedPath.startsWith(path.resolve(DATA_DIR))) {
+        failJson(res, 403, 'Path traversal detected');
+        return;
+      }
+      if (!fs.existsSync(resolvedPath)) {
+        failJson(res, 404, 'Asset file missing');
+        return;
+      }
+      
+      if (asset.safetyStatus !== 'SAFE' && asset.safetyStatus !== 'APPROVED') {
+        failJson(res, 403, 'Asset safetyStatus must be SAFE or APPROVED');
+        return;
+      }
+      if (asset.reviewStatus !== 'APPROVED') {
+        failJson(res, 403, 'Asset reviewStatus must be APPROVED');
+        return;
+      }
+      if (asset.lifecycleStatus !== 'SELECTABLE') {
+        failJson(res, 403, 'Asset lifecycleStatus must be SELECTABLE');
+        return;
+      }
+
       var photoRecipe = null;
       try {
         photoRecipe = await runtime.imageRecipeService.validateAndApplyRecipe(photoId, pbBody.photoRecipe || null);
@@ -3991,14 +4060,8 @@ async function handleRequest(req, res) {
         return;
       }
       try {
-        // 读取 image_index.json 中该 photoId 的 recipe，传给 getContentForNow。
-        // 之前不传 recipe，用户在编辑器调的亮度/对比度/翻转等对发布的 frame 无影响。
-        var photoRecipe = null;
-        var photoEntry = imgIdx.filter(function (e) {
-          return e.id === photoId;
-        })[0];
-        if (photoEntry && photoEntry.recipe) photoRecipe = photoEntry.recipe;
-        // forceMode:'photo' + photoId 确保发布用户指定的图片，而不是 getContentForNow 自动选择的内容
+        // forceMode:'photo' + photoId 确保发布用户指定的图片
+        // Pass the validated recipe we got from imageRecipeService
         var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date(), {
           forceMode: 'photo',
           photoId: photoId,
@@ -4470,7 +4533,7 @@ async function handleRequest(req, res) {
           theme: 'uploaded',
           kind: 'shot',
           poolType: 'study_frames',
-          safetyStatus: 'approved',
+          safetyStatus: 'pending',
           // 上传图片用户主动上传，默认 approved
           width: FRAME_WIDTH,
           height: FRAME_HEIGHT,
@@ -4542,7 +4605,17 @@ async function handleRequest(req, res) {
       try {
         var body = JSON.parse(await readBody(req));
         if (body.recipe) {
-          imgIdx[fIdx].recipe = body.recipe;
+          if (runtime.imageRecipeService) {
+            try {
+              imgIdx[fIdx].recipe = await runtime.imageRecipeService.validateAndApplyRecipe(pId, body.recipe);
+            } catch (err) {
+              failJson(res, 400, 'Invalid recipe: ' + err.message);
+              return;
+            }
+          } else {
+            imgIdx[fIdx].recipe = body.recipe;
+          }
+          imgIdx[fIdx].safetyStatus = 'pending';
           try {
             await R1_writeFileAtomic(path.join(DATA_DIR, 'image_index.json'), JSON.stringify(imgIdx, null, 2));
           } catch (e) {
@@ -5482,7 +5555,7 @@ async function handleRequest(req, res) {
         recentError: runtime.recentError || null,
         lastNewsRefreshAt: runtime.lastNewsRefreshAt || null,
         buildSha: BUILD_GIT_SHA,
-        manualOverride: runtime.manualOverride || null,
+        manualOverride: opMode !== 'AUTO' ? true : null,
         overrideExpiresAt: runtime.overrideExpiresAt || null,
         lastPublishedAt: runtime.lastPublishedAt || null
       });

@@ -539,6 +539,8 @@ module.exports = {
   renderTextAsync: renderTextAsync,
   wrapText: wrapText,
   wrapTextForCJK: wrapTextForCJK,
+  measureTextWidth: measureTextWidth,
+  estimateCharWidth: estimateCharWidth,
   applyEllipsis: applyEllipsis,
   renderCJKPlaceholder: renderCJKPlaceholder,
   isCJKChar: isCJKChar,

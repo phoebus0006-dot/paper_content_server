@@ -90,6 +90,22 @@ async function runProcessImages(argsOverride) {
         .png()
         .toBuffer();
       await fsp.writeFile(processedPngPath, buf);
+function truncateByWidth(text, maxColumns) {
+  const source = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!source) return '';
+  let result = '';
+  let width = 0;
+  for (const char of source) {
+    const charWidth = /[\u4e00-\u9fa5\u3040-\u30ff\u3400-\u4dbf]/.test(char) ? 2 : 1;
+    if (width + charWidth > maxColumns) {
+      if (result.length > 1) result = result.slice(0, -1) + '…';
+      return result;
+    }
+    result += char;
+    width += charWidth;
+  }
+  return result;
+}
 
       imageIndex.push({
         id: raw.id,
@@ -98,13 +114,13 @@ async function runProcessImages(argsOverride) {
         status: 'processed',
         addedAt: new Date().toISOString(),
         createdAt: raw.downloadedAt || new Date().toISOString(),
-        title: raw.title || raw.id,
+        title: truncateByWidth(raw.title || raw.id, 30),
         source: raw.source || 'unknown',
         sourceType: raw.sourceType || 'unknown',
         theme: raw.theme || 'cinematic',
         kind: raw.kind || 'shot',
         poolType: raw.poolType || 'study_frames',
-        safetyStatus: raw.safetyStatus || 'approved',
+        safetyStatus: raw.safetyStatus || 'pending',
         width: FRAME_WIDTH,
         height: FRAME_HEIGHT,
         hash: raw.hash || sha1(buf),

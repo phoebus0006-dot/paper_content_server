@@ -12,3 +12,10 @@ serial_*.txt
 .DS_Store
 # Test data residue
 test_data_*/
+qa/runtime/
+dist/
+test_v3_*/
+deploy.tar
+*.tmp
+*.corrupt.*
+_fix_*.js
