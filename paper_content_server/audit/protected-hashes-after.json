@@ -1,8 +1,52 @@
 {
-  "paper_content_server/src/news/news-title-service.js": "A815A6D7362EF477FA366D41455B83D472E7BA2EF695B753842CFE65628FC287",
-  "paper_content_server/src/admin/admin-state-service.js": "EDEA105EDCC654E858271A7B95EAAB15E8803DD4D969D513DA77174EB0B71D2C",
-  "paper_content_server/src/images/image-rasterizer-v2.js": "C504FB9279D51D177D275ABA4DF6A71DD2EFBD4E6B7920FD305AFE3CBFE6DA92",
-  "paper_content_server/src/files/safe-image-path.js": "FC448BE775519115A4C6A0A93DCBC615674C8C5A83319E7EBDB587962243D8B7",
-  "paper_content_server/server.js": "4A8577EE503AF3E92697859241FC851D77B2D3A8C58B4997E7EA681AF8FF5B55",
-  "paper_content_server/src/publication/publication-service.js": "BFE421DA3B8A860DBE4277F15CF3CA7AA075C91E93791DCE832F48AB0232320F"
+  "server.js": {
+    "size": 177142,
+    "lines": 4083,
+    "sha256": "9fd409feff4129b9f1018a95b75dbbcfcef14e2bbf2e27acd038261635fcbd3b"
+  },
+  "src/publication/publication-service.js": {
+    "size": 5072,
+    "lines": 128,
+    "sha256": "bfe421da3b8a860dbe4277f15cf3ca7aa075c91e93791dce832f48ab0232320f"
+  },
+  "src/publication/publication-history-adapter.js": {
+    "size": 1611,
+    "lines": 56,
+    "sha256": "8adece48fd9720cca49d353caedf3bf43187c7b6ff45ec19311f7aa0dbdcc8b8"
+  },
+  "src/admin/admin-state-service.js": {
+    "size": 5738,
+    "lines": 162,
+    "sha256": "edea105edcc654e858271a7b95eaab15e8803dd4d969d513da77174eb0b71d2c"
+  },
+  "src/admin/admin-routes.js": {
+    "size": 6003,
+    "lines": 143,
+    "sha256": "9b3ab2277921567bdfa7099acdffdacd8e9762e18a2dc2c06d36048af5e73f18"
+  },
+  "src/files/safe-image-path.js": {
+    "size": 1514,
+    "lines": 56,
+    "sha256": "fc448be775519115a4c6a0a93dcbc615674c8c5a83319e7ebdb587962243d8b7"
+  },
+  "src/images/image-rasterizer-v2.js": {
+    "size": 3361,
+    "lines": 107,
+    "sha256": "c504fb9279d51d177d275aba4df6a71dd2efbd4e6b7920fd305afe3cbfe6da92"
+  },
+  "src/images/image-recipe-service.js": {
+    "size": 3590,
+    "lines": 100,
+    "sha256": "57c7fc2b5cea66782e0142e77c3b8519ddf8558fa9f1cff762a1c936a983b388"
+  },
+  "src/news/news-title-service.js": {
+    "size": 3399,
+    "lines": 99,
+    "sha256": "a815a6d7362ef477fa366d41455b83d472e7ba2ef695b753842cfe65628fc287"
+  },
+  "scripts/generate-build-info.js": {
+    "size": 853,
+    "lines": 24,
+    "sha256": "eb8e296856276e2eb034a7cc8fcdbdf96b20b91ddb4dc8e360cfcfd09e7129cf"
+  }
 }

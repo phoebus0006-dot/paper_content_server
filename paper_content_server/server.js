@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const { URL } = require('url');
 
 const sharp = require('sharp');
+const { AdminStateService } = require('./src/admin/admin-state-service');
+const { handleAdminRoutes } = require('./src/admin/admin-routes');
 
 // R1 bridge — legacy adapter wiring
 var R1_loadConfig = require('./src/config/load-config').loadConfig;
@@ -312,6 +314,12 @@ async function main() {
   runtime.notificationPort = boot.deps.notificationPort;
   runtime.publicationService = boot.services.publicationService;
   runtime.adminQueryService = boot.services.adminQueryService || null;
+  runtime.adminStateService = new AdminStateService({
+    operatingModeService: runtime.operatingModeService || null,
+    snapshotStore: runtime.snapshotStore || null,
+    publicationHistory: runtime.publicationHistory || null,
+    mqttClient: runtime.mqttClient || null,
+  });
   runtime.featureFlagView = boot.services.featureFlagView || null;
   runtime.assetRepository = boot.services.assetRepository || null;
   runtime.customLibraryService = boot.services.customLibraryService || null;
@@ -490,7 +498,7 @@ function loadAppConfig() {
     r1Logger.error('Config validation failed: ' + result.errors.join('; '));
     // Only hard-exit when run as the entry point. When required by tests for
     // utility functions, log and fall through so the module still loads.
-    runtime.adminStateService = new AdminStateService({ operatingModeService: runtime.operatingModeService || null, snapshotStore: runtime.snapshotStore || null, publicationHistory: runtime.publicationHistory || null, mqttClient: runtime.mqttClient || null }); if (require.main === module) {
+    if (require.main === module) {
       process.exit(1);
     }
   }
@@ -3239,13 +3247,23 @@ async function handleRequest(req, res) {
       if (ADMIN_ACCESS_MODE !== 'lan' && !ADMIN_TOKEN) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
       if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
-      var newsItemCount = 0;
-      try {
-        var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
-        if (fs.existsSync(lgPath2)) { var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8')); if (lg2 && lg2.items) newsItemCount = lg2.items.length; }
-      } catch(e) {}
-      respondJson(res, { status: 'ok', timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount, newsItemCount: newsItemCount, manualOverride: runtime.manualOverride || null, overrideExpiresAt: runtime.overrideExpiresAt || null, lastPublishedAt: runtime.lastPublishedAt || null });
+      if (typeof runtime.adminStateService?.getAdminState === 'function') {
+        try {
+          const st = await runtime.adminStateService.getAdminState();
+          respondJson(res, { ...st, deprecated: true, deprecationNotice: 'Use GET /api/admin/state instead' });
+        } catch(e) {
+          respondJson(res, { status: 'error', error: e.message, deprecated: true });
+        }
+      } else {
+        // Fallback: old state construction (AdminStateService not available)
+        var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
+        var newsItemCount = 0;
+        try {
+          var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
+          if (fs.existsSync(lgPath2)) { var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8')); if (lg2 && lg2.items) newsItemCount = lg2.items.length; }
+        } catch(e) {}
+        respondJson(res, { status: 'ok', deprecated: true, timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount, newsItemCount: newsItemCount, manualOverride: runtime.manualOverride || null, overrideExpiresAt: runtime.overrideExpiresAt || null, lastPublishedAt: runtime.lastPublishedAt || null });
+      }
       return;
     }
 
@@ -3645,11 +3663,19 @@ async function handleRequest(req, res) {
     // ── Admin read-only query routes (R10: admin-query-service HTTP exposure) ──
     if (parsed.pathname === '/api/admin/system/status') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
-      try {
-        var sysStatus = await runtime.adminQueryService.getSystemStatus();
-        respondJson(res, sysStatus);
-      } catch(e) { failJson(res, 500, 'system status failed: ' + e.message); }
+      if (typeof runtime.adminStateService?.getAdminState === 'function') {
+        try {
+          const st = await runtime.adminStateService.getAdminState();
+          respondJson(res, { ...st, deprecated: true, deprecationNotice: 'Use GET /api/admin/state instead' });
+        } catch(e) { failJson(res, 500, 'system status failed (admin state): ' + e.message); }
+      } else if (runtime.adminQueryService) {
+        try {
+          var sysStatus = await runtime.adminQueryService.getSystemStatus();
+          respondJson(res, { ...sysStatus, deprecated: true });
+        } catch(e) { failJson(res, 500, 'system status failed: ' + e.message); }
+      } else {
+        failJson(res, 503, 'no status service available');
+      }
       return;
     }
 
@@ -3950,8 +3976,21 @@ async function handleRequest(req, res) {
       return;
     }
 
+    if (parsed.pathname === '/api/admin/state') {
+      if (!adminAuth(req)) { respondJson(res, { error: 'forbidden' }); return; }
+      try {
+        if (typeof runtime.adminStateService.getAdminState === 'function') {
+          const st = await runtime.adminStateService.getAdminState();
+          respondJson(res, st);
+        } else {
+          respondJson(res, { status: 'unavailable', reason: 'AdminStateService not initialized' });
+        }
+      } catch(e) { respondJson(res, { status: 'error', error: e.message }); }
+      return;
+    }
+
 res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-     if (parsed.pathname === '/api/admin/state') { if (!adminAuth(req)) { respondJson(res, { error: 'forbidden' }); return; } try { if (typeof runtime.adminStateService.getAdminState === 'function') { const st = await runtime.adminStateService.getAdminState(); respondJson(res, st); } else { respondJson(res, { status: 'unavailable', reason: 'AdminStateService not initialized' }); } } catch(e) { respondJson(res, { status: 'error', error: e.message }); } return; }res.end('Not found');
+    res.end('Not found');
   } catch (error) {
     const body = Buffer.from(JSON.stringify({ error: error.message }, null, 2));
     r1Logger.error('request failed ' + parsed.pathname + ': ' + (error.stack || error.message));
