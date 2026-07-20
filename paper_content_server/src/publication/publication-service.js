@@ -27,6 +27,16 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
       return snapshotStore.activate(snapshot.snapshotId);
     }).then(function() {
       snapshotCache.set(snapshot.snapshotId, snapshot);
+      return snapshotStore.readActive();
+    }).then(function(active) {
+      if (!active || active.activeSnapshotId !== snapshot.snapshotId) {
+        throw new Error('Async read-back validation failed: active snapshot mismatch');
+      }
+      return snapshotStore.load(active.activeSnapshotId);
+    }).then(function(loaded) {
+      if (!loaded || loaded.frameId !== snapshot.frameId || loaded.mode !== snapshot.mode || loaded.frameSha256 !== snapshot.frameSha256) {
+        throw new Error('Async read-back validation failed: field mismatch');
+      }
     }).then(function() {
       // History failure is isolated: does not reject publish, does not undo activation
       return history.append({

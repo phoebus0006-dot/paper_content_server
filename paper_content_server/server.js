@@ -3323,7 +3323,7 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/publish/news' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      var fid = 'manual-news:' + Date.now().toString(36);
+      var fid = 'news:' + Date.now().toString(36);
       var overrideFile = path.join(DATA_DIR, 'admin_override.json');
       var oldOverride = null;
       try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
@@ -3354,7 +3354,7 @@ async function handleRequest(req, res) {
       try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
       var foundPhoto = imgIdx.some(function(e) { return e.id === photoId; });
       if (!foundPhoto && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
-      var fid2 = 'manual-photo:' + Date.now().toString(36);
+      var fid2 = 'photo:' + Date.now().toString(36);
       var overrideFile = path.join(DATA_DIR, 'admin_override.json');
       var oldOverride = null;
       try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
@@ -3392,7 +3392,19 @@ async function handleRequest(req, res) {
           failJson(res, 400, 'contentType must be "photo" or "news", got: ' + contentType); return;
         }
         var osNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
-        var osExpiresAt = computeNextSwitchAt(osNow);
+        
+        // Dedicated next half-hour boundary logic for ONE_SHOT (decoupled from schedule window)
+        var osNext = new Date(osNow.getTime());
+        osNext.setSeconds(0);
+        osNext.setMilliseconds(0);
+        if (osNext.getMinutes() < 30) {
+          osNext.setMinutes(30);
+        } else {
+          osNext.setHours(osNext.getHours() + 1);
+          osNext.setMinutes(0);
+        }
+        var osExpiresAt = osNext;
+        
         var osContent;
         if (contentType === 'news') {
           osContent = await buildNewsSnapshot(osNow);
@@ -3403,14 +3415,14 @@ async function handleRequest(req, res) {
           }
           try {
             var osSelection = await runtime.assetSelectionService.selectForOneShot(libraryType, assetId);
-            osContent = await buildPhotoSnapshotFromAsset(osSelection.asset, osNow, 'one-shot:photo');
+            osContent = await buildPhotoSnapshotFromAsset(osSelection.asset, osNow, 'photo:' + Date.now().toString(36));
           } catch(selErr) {
             failJson(res, 400, 'asset selection failed: ' + selErr.message); return;
           }
         } else {
           osContent = await buildPhotoSnapshot(osNow);
         }
-        var osFrameId = 'one-shot:' + contentType + ':' + Date.now().toString(36);
+        var osFrameId = contentType + ':' + Date.now().toString(36);
         var osSnap = R3_snapshotModel.createSnapshot(osFrameId, osContent.snapshot, osContent.frame, contentType, { publishReason: 'one_shot' });
         await runtime.publicationService.publish(osSnap);
         runtime.operatingModeService.enterOneShot(osSnap.snapshotId, osExpiresAt);
@@ -3624,6 +3636,12 @@ async function handleRequest(req, res) {
       if (!imgPath) { res.writeHead(404); res.end('no image path'); return; }
       // Resolve relative to app root
       var fullImgPath = path.isAbsolute(imgPath) ? imgPath : path.join(ROOT_DIR, imgPath);
+      try {
+        var { validateSafeImagePath } = require('./src/safety/safe-image-path');
+        fullImgPath = validateSafeImagePath(fullImgPath, [ROOT_DIR, DATA_DIR]);
+      } catch (e) {
+        res.writeHead(403); res.end('forbidden path: ' + e.message); return;
+      }
       if (!fs.existsSync(fullImgPath)) { res.writeHead(404); res.end('file not found: ' + fullImgPath); return; }
       try {
         var imgBuf = fs.readFileSync(fullImgPath);
@@ -3640,28 +3658,50 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/override' && req.method === 'DELETE') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      // V3: clear persisted override via overridePersistence (replaces ad-hoc unlinkSync)
-      if (runtime.overridePersistence) {
-        try { runtime.overridePersistence.clearOverride(); } catch(e) {}
-      } else {
-        try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
-      }
-      // Also exit any active operating mode so the schedule can republish
-      if (runtime.operatingModeService) {
-        try { runtime.operatingModeService.exitOneShot(); } catch(e) {}
-        try { runtime.operatingModeService.exitFocusLock(); } catch(e) {}
-      }
-      // R3.6: Re-publish schedule-based content after clearing override
-      if (runtime.publicationService && runtime.snapshotStore) {
-        try {
+      try {
+        var previousMode = 'AUTO';
+        var previousOneShot = null;
+        var previousFocusLock = null;
+        var previousOverrideFileContent = null;
+        
+        if (runtime.operatingModeService) {
+          previousMode = runtime.operatingModeService.getMode();
+          previousOneShot = runtime.operatingModeService.getOneShotContext();
+          previousFocusLock = runtime.operatingModeService.getFocusLockContext();
+          runtime.operatingModeService.exitOneShot();
+          runtime.operatingModeService.exitFocusLock();
+        }
+
+        var overrideFilePath = path.join(DATA_DIR, 'admin_override.json');
+        try { previousOverrideFileContent = fs.readFileSync(overrideFilePath, 'utf8'); } catch(e) {}
+        
+        if (runtime.overridePersistence) {
+          try { runtime.overridePersistence.clearOverride(); } catch(e) {}
+        } else {
+          try { fs.unlinkSync(overrideFilePath); } catch(e) {}
+        }
+
+        // R3.6: Re-publish schedule-based content after clearing override
+        if (runtime.publicationService && runtime.snapshotStore) {
           var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
           var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'schedule_restore' });
           await runtime.publicationService.publish(snap);
-        } catch (e) {
-          r1Logger.warn('R3 publish after override clear failed: ' + e.message);
         }
+        
+        respondJson(res, { status: 'ok' });
+      } catch (e) {
+        r1Logger.error('AUTO restore transaction failed, rolling back: ' + e.message);
+        // Rollback state
+        if (previousOverrideFileContent) {
+          try { fs.writeFileSync(overrideFilePath, previousOverrideFileContent); } catch(err) {}
+        }
+        if (runtime.operatingModeService && previousMode === 'ONE_SHOT_OVERRIDE' && previousOneShot) {
+          runtime.operatingModeService.enterOneShot(previousOneShot.snapshotId, previousOneShot.expiresAt);
+        } else if (runtime.operatingModeService && previousMode === 'FOCUS_LOCK' && previousFocusLock) {
+          runtime.operatingModeService.enterFocusLock(previousFocusLock.snapshotId, previousFocusLock);
+        }
+        failJson(res, 500, 'Restore to AUTO failed: ' + e.message);
       }
-      respondJson(res, { status: 'ok' });
       return;
     }
 
