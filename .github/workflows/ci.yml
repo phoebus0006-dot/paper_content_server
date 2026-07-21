@@ -23,6 +23,13 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npm run test:security
+      - run: npm run test:e2e
+      - run: npm run test:visual
+      - run: npm run test:contract
+      - run: npm run mutation:test
+      - run: npm run test:all
       - run: node --check server.js
       - run: npm run docs:check
       - run: npm run contracts:test
