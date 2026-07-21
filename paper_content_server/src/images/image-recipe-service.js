@@ -63,21 +63,33 @@ class ImageRecipeService {
     return sorted;
   }
 
-  hashRecipe(recipe) {
-    const sorted = this._sortObjectKeys(recipe);
-    const str = JSON.stringify(sorted);
+  sourceHash(inputPath) {
+    const fd = fs.openSync(inputPath, 'r');
+    const hash = crypto.createHash('sha256');
+    const buf = Buffer.alloc(65536);
+    var bytes = 0;
+    while ((bytes = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+      hash.update(buf.subarray(0, bytes));
+    }
+    fs.closeSync(fd);
+    return hash.digest('hex');
+  }
+
+  hashRecipe(recipe, sourceHash) {
+    var str = sourceHash ? sourceHash + ':' : '';
+    str += JSON.stringify(this._sortObjectKeys(recipe));
     return crypto.createHash('sha256').update(str).digest('hex');
   }
 
   async processImage(inputPath, recipe) {
     if (!inputPath) throw new Error('Input path is required');
     if (!recipe || typeof recipe !== 'object') throw new Error('Recipe is required');
-    if (!fs.existsSync(inputPath)) throw new Error(`File not found: ${inputPath}`);
+    if (!fs.existsSync(inputPath)) throw new Error('File not found: ' + inputPath);
 
-    const canonicalRecipe = this.normalizeRecipe(recipe);
-    const hash = this.hashRecipe(canonicalRecipe);
+    var srcHash = this.sourceHash(inputPath);
+    var canonicalRecipe = this.normalizeRecipe(recipe);
 
-    let img = sharp(inputPath);
+    var img = sharp(inputPath);
 
     img = img.flatten({ background: canonicalRecipe.background || '#ffffff' });
 
@@ -102,28 +114,28 @@ class ImageRecipeService {
         position: 'center'
       });
     } else if (canonicalRecipe.fitMode === 'manual_crop') {
-      const currentMeta = await img.toBuffer().then(b => sharp(b).metadata());
+      var currentMeta = await img.toBuffer().then(function(b) { return sharp(b).metadata(); });
 
-      const cx = Math.floor(canonicalRecipe.crop.x * currentMeta.width);
-      const cy = Math.floor(canonicalRecipe.crop.y * currentMeta.height);
-      const cw = Math.max(1, Math.floor(canonicalRecipe.crop.width * currentMeta.width));
-      const ch = Math.max(1, Math.floor(canonicalRecipe.crop.height * currentMeta.height));
-      const cropW = Math.min(cw, currentMeta.width - cx);
-      const cropH = Math.min(ch, currentMeta.height - cy);
+      var cx = Math.floor(canonicalRecipe.crop.x * currentMeta.width);
+      var cy = Math.floor(canonicalRecipe.crop.y * currentMeta.height);
+      var cw = Math.max(1, Math.floor(canonicalRecipe.crop.width * currentMeta.width));
+      var ch = Math.max(1, Math.floor(canonicalRecipe.crop.height * currentMeta.height));
+      var cropW = Math.min(cw, currentMeta.width - cx);
+      var cropH = Math.min(ch, currentMeta.height - cy);
 
       img = img.extract({
         left: cx, top: cy, width: cropW, height: cropH
       });
 
       if (canonicalRecipe.zoom > 1) {
-        const zw = Math.max(1, Math.floor(cropW / canonicalRecipe.zoom));
-        const zh = Math.max(1, Math.floor(cropH / canonicalRecipe.zoom));
+        var zw = Math.max(1, Math.floor(cropW / canonicalRecipe.zoom));
+        var zh = Math.max(1, Math.floor(cropH / canonicalRecipe.zoom));
 
-        const pxOffset = canonicalRecipe.panX * (cropW - zw) / 2;
-        const pyOffset = canonicalRecipe.panY * (cropH - zh) / 2;
+        var pxOffset = canonicalRecipe.panX * (cropW - zw) / 2;
+        var pyOffset = canonicalRecipe.panY * (cropH - zh) / 2;
 
-        const zx = Math.max(0, Math.floor((cropW - zw) / 2 + pxOffset));
-        const zy = Math.max(0, Math.floor((cropH - zh) / 2 + pyOffset));
+        var zx = Math.max(0, Math.floor((cropW - zw) / 2 + pxOffset));
+        var zy = Math.max(0, Math.floor((cropH - zh) / 2 + pyOffset));
 
         img = img.extract({
           left: zx, top: zy,
@@ -154,47 +166,58 @@ class ImageRecipeService {
 
     img = img.removeAlpha();
 
-    const { data, info } = await img.png().toBuffer({ resolveWithObject: true });
+    // Output raw RGB (3 channels) for canonical epaper image-frame encoder
+    var result = await img.raw().toBuffer({ resolveWithObject: true });
+    var recipeHash = this.hashRecipe(canonicalRecipe, srcHash);
+    var processedHash = crypto.createHash('sha256').update(result.data).digest('hex');
 
-    return { buffer: data, info, hash };
+    return {
+      buffer: result.data,
+      info: result.info,
+      sourceHash: srcHash,
+      recipeHash: recipeHash,
+      hash: processedHash
+    };
   }
 
-  async processAsset(assetId, recipe, options = {}) {
+  async processAsset(assetId, recipe, options) {
     if (!this.assetRepository) throw new Error('Asset repository not configured');
     if (!this.imageRasterizer) throw new Error('Image rasterizer not configured');
+    options = options || {};
 
-    const asset = await this.assetRepository.getAsset(assetId);
-    if (!asset) throw new Error(`Asset not found: ${assetId}`);
+    var asset = await this.assetRepository.getAsset(assetId);
+    if (!asset) throw new Error('Asset not found: ' + assetId);
 
     if (asset.safetyStatus !== 'SAFE' && !options.skipSafetyCheck) {
-      throw new Error(`Asset not safe: ${asset.safetyStatus}`);
+      throw new Error('Asset not safe: ' + asset.safetyStatus);
     }
     if (asset.reviewStatus !== 'APPROVED' && !options.skipReviewCheck) {
-      throw new Error(`Asset not approved: ${asset.reviewStatus}`);
+      throw new Error('Asset not approved: ' + asset.reviewStatus);
     }
 
-    const canonicalRecipe = this.normalizeRecipe(recipe);
-    const sourceHash = asset.sha256 || crypto.createHash('sha256').update(assetId).digest('hex');
-    const rendererVersion = this.imageRasterizer.getVersion ? this.imageRasterizer.getVersion() : 'v1';
+    var canonicalRecipe = this.normalizeRecipe(recipe);
+    var srcHash = asset.sha256 || this.sourceHash(asset.rawPath || asset.path);
+    var rendererVersion = this.imageRasterizer.getVersion ? this.imageRasterizer.getVersion() : 'v1';
 
-    const recipeHashStr = `${sourceHash}:${JSON.stringify(canonicalRecipe)}:${rendererVersion}`;
-    const recipeHash = crypto.createHash('sha256').update(recipeHashStr).digest('hex');
-
-    const rasterResult = await this.imageRasterizer.rasterize(
+    var rasterResult = await this.imageRasterizer.rasterize(
       asset.rawPath || asset.path,
       canonicalRecipe,
       { width: 800, height: 480 }
     );
 
-    const processedImageHash = crypto.createHash('sha256').update(rasterResult.frameBuffer).digest('hex');
+    var recipeHash = crypto.createHash('sha256')
+      .update(srcHash + ':' + JSON.stringify(this._sortObjectKeys(canonicalRecipe)) + ':' + rendererVersion)
+      .digest('hex');
+
+    var processedHash = crypto.createHash('sha256').update(rasterResult.frameBuffer).digest('hex');
 
     return {
-      assetId,
-      sourceHash,
-      canonicalRecipe,
-      recipeHash,
-      rendererVersion,
-      processedImageHash,
+      assetId: assetId,
+      sourceHash: srcHash,
+      canonicalRecipe: canonicalRecipe,
+      recipeHash: recipeHash,
+      rendererVersion: rendererVersion,
+      processedImageHash: processedHash,
       buffer: rasterResult.frameBuffer,
       mimeType: 'application/epf1'
     };

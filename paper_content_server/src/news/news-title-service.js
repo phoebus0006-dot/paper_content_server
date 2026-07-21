@@ -31,7 +31,7 @@ class NewsTitleService {
     }
 
     if (!this.textRasterizer) {
-      return this._needsReviewResult(title, title, 'TITLE_RENDERER_UNAVAILABLE');
+      return this._needsReviewResult(rawTitle, title, 'TITLE_RENDERER_UNAVAILABLE');
     }
 
     // 3. Measure candidates using official renderer

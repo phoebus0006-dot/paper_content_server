@@ -3390,8 +3390,10 @@ async function handleRequest(req, res) {
       }
       if (!foundEntry && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
       if (foundEntry) {
-        if (foundEntry.safetyStatus !== 'SAFE') { failJson(res, 400, 'photo safety check failed: ' + (foundEntry.safetyStatus || 'unknown')); return; }
-        if (foundEntry.reviewStatus !== 'APPROVED') { failJson(res, 400, 'photo review check failed: ' + (foundEntry.reviewStatus || 'unknown')); return; }
+        var approval = require('./src/images/image-approval-adapter').resolveStatus(foundEntry);
+        if (approval.safetyStatus !== 'SAFE') { failJson(res, 400, 'photo safety check failed: ' + (approval.safetyStatus)); return; }
+        if (approval.reviewStatus !== 'APPROVED') { failJson(res, 400, 'photo review check failed: ' + (approval.reviewStatus)); return; }
+        if (approval.lifecycleStatus !== 'SELECTABLE') { failJson(res, 400, 'photo lifecycle check failed: ' + (approval.lifecycleStatus)); return; }
       }
       var fid2 = 'manual-photo:' + Date.now().toString(36);
       var overrideFile = path.join(DATA_DIR, 'admin_override.json');
@@ -3663,13 +3665,17 @@ async function handleRequest(req, res) {
         if (parsed.pathname === '/api/admin/photo-eink-preview') {
           var pvRst = runtime.imageRasterizer;
           var pvResult = await pvRst.rasterize(pvFullPath, pvRecipe, { width: FRAME_WIDTH, height: FRAME_HEIGHT });
-          res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': pvResult.frameBuffer.length, 'X-Format': 'epf1' });
-          res.end(pvResult.frameBuffer);
+          // Send preview PNG (not binary EPF1), with frame metadata in headers
+          var pvPNG = await sharp(pvFullPath).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'contain', background: '#ffffff' }).removeAlpha().png().toBuffer();
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': pvPNG.length, 'X-Format': 'epf1', 'X-Frame-Sha256': pvResult.hash, 'X-Frame-Length': String(pvResult.frameBuffer.length) });
+          res.end(pvPNG);
         } else {
           var pvSvc = new ImageRecipeService();
           var pvResult2 = await pvSvc.processImage(pvFullPath, pvRecipe);
-          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': pvResult2.buffer.length });
-          res.end(pvResult2.buffer);
+          // Convert raw RGB to PNG for browser display
+          var pngBuf = await sharp(pvResult2.buffer, { raw: { width: pvResult2.info.width, height: pvResult2.info.height, channels: pvResult2.info.channels } }).png().toBuffer();
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': pngBuf.length, 'X-Source-Hash': pvResult2.sourceHash, 'X-Recipe-Hash': pvResult2.recipeHash, 'X-Processed-Image-Hash': pvResult2.hash });
+          res.end(pngBuf);
         }
       } catch(e) {
         failJson(res, 500, 'preview failed: ' + e.message);
