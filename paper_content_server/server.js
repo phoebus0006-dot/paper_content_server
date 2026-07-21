@@ -2491,14 +2491,14 @@ async function renderPhotoFrame(selection, now) {
 
   const { data, info } = await (PHOTO_QUANT_MODE === 'clean'
     ? sharp(selection.entry.processedPngPath)
-        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill', kernel: 'lanczos3' })
+        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'contain', kernel: 'lanczos3' })
         .flatten({ background: '#ffffff' })
         .modulate({ brightness: 1.03, saturation: 1.15 })
         .blur(0.5)
         .raw()
         .toBuffer({ resolveWithObject: true })
     : sharp(selection.entry.processedPngPath)
-        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
+        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'contain' })
         .flatten({ background: '#ffffff' })
         .raw()
         .toBuffer({ resolveWithObject: true }));
@@ -3262,14 +3262,7 @@ async function handleRequest(req, res) {
           respondJson(res, { status: 'error', error: e.message, deprecated: true });
         }
       } else {
-        // Fallback: old state construction (AdminStateService not available)
-        var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
-        var newsItemCount = 0;
-        try {
-          var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
-          if (fs.existsSync(lgPath2)) { var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8')); if (lg2 && lg2.items) newsItemCount = lg2.items.length; }
-        } catch(e) {}
-        respondJson(res, { status: 'ok', deprecated: true, timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount, newsItemCount: newsItemCount, manualOverride: runtime.manualOverride || null, overrideExpiresAt: runtime.overrideExpiresAt || null, lastPublishedAt: runtime.lastPublishedAt || null });
+        failJson(res, 503, 'AdminStateService not available');
       }
       return;
     }
@@ -3343,6 +3336,25 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/publish/news' && req.method === 'POST') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      var draftPath = path.join(DATA_DIR, 'admin_news_draft.json');
+      try {
+        var draftData = JSON.parse(fs.readFileSync(draftPath, 'utf8'));
+        var draftItems = draftData.items || [];
+        var failedItems = [];
+        for (var ni = 0; ni < draftItems.length; ni++) {
+          var item = draftItems[ni];
+          if (item.titleStatus === 'needs_review' || item.reviewStatus === 'pending') {
+            failedItems.push({ index: ni, title: item.displayTitle || item.rawTitle, titleStatus: item.titleStatus, reviewStatus: item.reviewStatus });
+          }
+        }
+        if (failedItems.length > 0) {
+          failJson(res, 400, 'items need review: ' + JSON.stringify(failedItems));
+          return;
+        }
+      } catch(e) {
+        failJson(res, 400, 'cannot read draft: ' + e.message);
+        return;
+      }
       var fid = 'manual-news:' + Date.now().toString(36);
       var overrideFile = path.join(DATA_DIR, 'admin_override.json');
       var oldOverride = null;
@@ -3372,8 +3384,15 @@ async function handleRequest(req, res) {
       try { var pb = JSON.parse(await readBody(req)); photoId = (pb && pb.photoId) || ''; } catch(e) {}
       var imgIdx = [];
       try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
-      var foundPhoto = imgIdx.some(function(e) { return e.id === photoId; });
-      if (!foundPhoto && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
+      var foundEntry = null;
+      for (var pi2 = 0; pi2 < imgIdx.length; pi2++) {
+        if (imgIdx[pi2].id === photoId) { foundEntry = imgIdx[pi2]; break; }
+      }
+      if (!foundEntry && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
+      if (foundEntry) {
+        if (foundEntry.safetyStatus !== 'SAFE') { failJson(res, 400, 'photo safety check failed: ' + (foundEntry.safetyStatus || 'unknown')); return; }
+        if (foundEntry.reviewStatus !== 'APPROVED') { failJson(res, 400, 'photo review check failed: ' + (foundEntry.reviewStatus || 'unknown')); return; }
+      }
       var fid2 = 'manual-photo:' + Date.now().toString(36);
       var overrideFile = path.join(DATA_DIR, 'admin_override.json');
       var oldOverride = null;
@@ -3624,7 +3643,37 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/photo-preview' || parsed.pathname === '/api/admin/photo-eink-preview') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      failJson(res, 501, '图片预览服务未就绪');
+      var pvPhotoId = '';
+      try { var pvBody = JSON.parse(await readBody(req)); pvPhotoId = (pvBody && pvBody.photoId) || ''; } catch(e) {}
+      if (!pvPhotoId) { failJson(res, 400, 'photoId required'); return; }
+      var pvIdx = [];
+      try { pvIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      var pvEntry = null;
+      for (var pvi = 0; pvi < pvIdx.length; pvi++) {
+        if (pvIdx[pvi].id === pvPhotoId) { pvEntry = pvIdx[pvi]; break; }
+      }
+      if (!pvEntry) { failJson(res, 404, 'photo not found'); return; }
+      var pvImgPath = pvEntry.processedPngPath || pvEntry.rawPath || '';
+      if (!pvImgPath) { failJson(res, 404, 'no image path'); return; }
+      var pvSip = runtime.safeImagePath;
+      if (!pvSip || !pvSip.isSafe(pvImgPath)) { failJson(res, 403, 'forbidden'); return; }
+      try {
+        var pvFullPath = pvSip.resolve(pvImgPath);
+        var pvRecipe = { fitMode: 'contain', background: '#ffffff' };
+        if (parsed.pathname === '/api/admin/photo-eink-preview') {
+          var pvRst = runtime.imageRasterizer;
+          var pvResult = await pvRst.rasterize(pvFullPath, pvRecipe, { width: FRAME_WIDTH, height: FRAME_HEIGHT });
+          res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': pvResult.frameBuffer.length, 'X-Format': 'epf1' });
+          res.end(pvResult.frameBuffer);
+        } else {
+          var pvSvc = new ImageRecipeService();
+          var pvResult2 = await pvSvc.processImage(pvFullPath, pvRecipe);
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': pvResult2.buffer.length });
+          res.end(pvResult2.buffer);
+        }
+      } catch(e) {
+        failJson(res, 500, 'preview failed: ' + e.message);
+      }
       return;
     }
 
@@ -3693,13 +3742,8 @@ async function handleRequest(req, res) {
           const st = await runtime.adminStateService.getAdminState();
           respondJson(res, { ...st, deprecated: true, deprecationNotice: 'Use GET /api/admin/state instead' });
         } catch(e) { failJson(res, 500, 'system status failed (admin state): ' + e.message); }
-      } else if (runtime.adminQueryService) {
-        try {
-          var sysStatus = await runtime.adminQueryService.getSystemStatus();
-          respondJson(res, { ...sysStatus, deprecated: true });
-        } catch(e) { failJson(res, 500, 'system status failed: ' + e.message); }
       } else {
-        failJson(res, 503, 'no status service available');
+        failJson(res, 503, 'AdminStateService not available');
       }
       return;
     }

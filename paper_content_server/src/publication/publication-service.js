@@ -91,17 +91,19 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
     var loaded, histStatus = 'OK';
     var oldActive = null;
     var activated = false;
-    return snapshotStore.readActive().then(function(active) {
-      oldActive = active ? active.activeSnapshotId : null;
-      if (oldActive === snapshotId) {
-        throw new Error('Already active: ' + snapshotId);
-      }
-    }).then(function() {
-      return history.list();
-    }).then(function(entries) {
+    // Restorability check must come first: a snapshot that is both active and
+    // non-restorable must report the restorability reason (stronger constraint).
+    return history.list().then(function(entries) {
       var entry = entries.filter(function(e) { return e.snapshotId === snapshotId; })[0];
       if (entry && entry.restorable === false) {
         throw new Error('Snapshot is not restorable: ' + snapshotId + ' reason=' + (entry.invalidReason || 'unknown'));
+      }
+    }).then(function() {
+      return snapshotStore.readActive();
+    }).then(function(active) {
+      oldActive = active ? active.activeSnapshotId : null;
+      if (oldActive === snapshotId) {
+        throw new Error('Already active: ' + snapshotId);
       }
     }).then(function() {
       return snapshotStore.load(snapshotId);
