@@ -22,11 +22,14 @@ COPY src/ ./src/
 COPY scripts/generate-build-info.js ./scripts/
 COPY public/ ./public/
 COPY server.js package.json ./
-COPY data/ ./data/
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
+COPY resources/ ./resources/
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
+    addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
+ENV DATA_DIR=/app/data
 USER appuser
-EXPOSE 8080
-ENTRYPOINT ["/sbin/tini", "--"]
+EXPOSE 8787
+ENTRYPOINT ["/sbin/tini", "--", "docker-entrypoint.sh"]
 CMD ["node", "server.js"]
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/health.json || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8787/api/health.json || exit 1

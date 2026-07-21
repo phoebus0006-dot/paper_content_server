@@ -4,5 +4,12 @@ node_modules/
 *.md
 audit/
 qa/coverage/
+qa/archive/
+qa/fixtures/
+qa/manifest.json
+scripts/
+test/
+data/
 Dockerfile
 .dockerignore
+docker-compose.yml

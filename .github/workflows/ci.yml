@@ -21,6 +21,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: paper_content_server/package-lock.json
       - run: npm ci
+      - run: npm run check
+      - run: npm run test:unit
       - run: node --check server.js
       - run: npm run docs:check
       - run: npm run contracts:test
