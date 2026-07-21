@@ -59,9 +59,18 @@ describe('Publish barrier consistency', () => {
     assert.notEqual(result.reviewStatus, 'APPROVED');
   });
 
-  it('legacy approved mapped to SAFE/APPROVED', () => {
+  it('legacy approved without file verification defaults to QUARANTINED', () => {
     var resolveStatus = require(path.join(ROOT, 'src', 'images', 'image-approval-adapter')).resolveStatus;
     var result = resolveStatus({ safetyStatus: 'approved' });
+    assert.equal(result.lifecycleStatus, 'QUARANTINED', 'legacy approved without verified file must be QUARANTINED');
+  });
+
+  it('legacy approved with verified file maps to SELECTABLE', () => {
+    var resolveStatus = require(path.join(ROOT, 'src', 'images', 'image-approval-adapter')).resolveStatus;
+    var fixture = path.join(ROOT, 'qa', 'fixtures', 'test-input.png');
+    var crypto = require('crypto');
+    var sha = crypto.createHash('sha256').update(require('fs').readFileSync(fixture)).digest('hex');
+    var result = resolveStatus({ safetyStatus: 'approved', rawPath: fixture, sha256: sha });
     assert.equal(result.safetyStatus, 'SAFE');
     assert.equal(result.reviewStatus, 'APPROVED');
     assert.equal(result.lifecycleStatus, 'SELECTABLE');

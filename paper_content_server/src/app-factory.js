@@ -1,0 +1,234 @@
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+function createApplication(options) {
+  options = options || {};
+  var runId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  var qaDir = path.join(__dirname, '..', 'qa');
+  var runtimeDir = path.join(qaDir, 'runtime', runId);
+  var dataDir = path.join(runtimeDir, 'data');
+  var snapDir = path.join(dataDir, 'snapshots');
+  var pubDir = path.join(dataDir, 'publication');
+
+  [dataDir, snapDir, pubDir].forEach(function(d) { fs.mkdirSync(d, { recursive: true }); });
+
+  var adminToken = options.adminToken || 'test-e2e-token';
+  process.env.DATA_DIR = dataDir;
+  process.env.ADMIN_TOKEN = adminToken;
+  process.env.ADMIN_ACCESS_MODE = 'token';
+  process.env.MQTT_ENABLED = 'false';
+  process.env.TRANSLATION_PROVIDER = 'none';
+  process.env.FEEDS_FILE = path.join(dataDir, 'feeds.json');
+  process.env.IMAGE_INDEX_FILE = path.join(dataDir, 'image_index.json');
+  process.env.LIBRARY_STATE_FILE = path.join(dataDir, 'library_state.json');
+  process.env.NEWS_CACHE_FILE = path.join(dataDir, 'news_cache.json');
+  process.env.NEWS_ROTATION_STATE_FILE = path.join(dataDir, 'news_rotation_state.json');
+  process.env.NODE_ENV = 'test';
+
+  fs.writeFileSync(path.join(dataDir, 'feeds.json'), '[]');
+  fs.writeFileSync(path.join(dataDir, 'news_cache.json'), JSON.stringify({ version: 1, updatedAt: null, translations: {} }));
+  fs.writeFileSync(path.join(dataDir, 'news_rotation_state.json'), JSON.stringify({ version: 1, updatedAt: null, shown: [] }));
+  fs.writeFileSync(path.join(dataDir, 'library_state.json'), JSON.stringify({ themeCursor: 0, currentTheme: null, currentImageIndex: 0, remainingThemeSlots: 1, lastSlotKey: null, lastSwitchDate: null, patternIndex: 0, currentKind: null }));
+  fs.writeFileSync(path.join(dataDir, 'image_index.json'), '[]');
+
+  var serverMod = require('../server.js');
+
+  var lg = options.logger || { info: function() {}, warn: function() {}, error: function() {} };
+
+  var R3_SnapshotStore = require('../src/snapshot/snapshot-store').SnapshotStore;
+  var R3_SnapshotCache = require('../src/snapshot/snapshot-cache').SnapshotCache;
+  var R3_PinStore = require('../src/snapshot/pin-store').PinStore;
+  var R3_PublicationLock = require('../src/publication/publication-lock').PublicationLock;
+  var R3_PublicationHistory = require('../src/publication/publication-history').PublicationHistory;
+  var R3_NoopNotificationPort = require('../src/publication/notification-port').NoopNotificationPort;
+  var R3_OperatingModeService = require('../src/publication/operating-mode-service').OperatingModeService;
+  var R3_PublicationService = require('../src/publication/publication-service').PublicationService;
+  var R3_snapshotModel = require('../src/snapshot/snapshot-model');
+
+  var { AdminStateService } = require('../src/admin/admin-state-service');
+  var { NewsTitleService } = require('../src/news/news-title-service');
+  var { SafeImagePath } = require('../src/files/safe-image-path');
+  var { ImageRasterizer } = require('../src/images/image-rasterizer-v2');
+  var { ImageRecipeService } = require('../src/images/image-recipe-service');
+
+  var snapshotStore = R3_SnapshotStore(snapDir, pubDir, lg);
+  var snapshotCache = R3_SnapshotCache();
+  var pinStore = R3_PinStore({ nowMs: function() { return Date.now(); } });
+  var publicationLock = R3_PublicationLock();
+  var operatingModeService = R3_OperatingModeService();
+  var publicationHistory = R3_PublicationHistory(path.join(pubDir, 'history.json'), lg);
+  var notificationPort = R3_NoopNotificationPort();
+
+  var overridePersistence = {
+    _data: null,
+    loadOverride: function() { return this._data; },
+    saveOverride: function(d) { this._data = d; },
+    clearOverride: function() { this._data = null; },
+  };
+
+  var frameCache = new Map();
+
+  var pubService = R3_PublicationService(
+    snapshotStore, snapshotCache, pinStore, publicationLock,
+    notificationPort, operatingModeService, publicationHistory, lg,
+    overridePersistence, frameCache
+  );
+
+  var adminStateService = new AdminStateService({
+    operatingModeService: operatingModeService,
+    snapshotStore: snapshotStore,
+    publicationHistory: publicationHistory,
+    mqttClient: null,
+  });
+  var newsTitleService = new NewsTitleService();
+  var safeImagePath = new SafeImagePath({ rootDir: path.join(__dirname, '..') });
+  var imageRasterizer = new ImageRasterizer();
+  var imageRecipeService = new ImageRecipeService();
+
+  serverMod.runtime.snapshotStore = snapshotStore;
+  serverMod.runtime.snapshotCache = snapshotCache;
+  serverMod.runtime.pinStore = pinStore;
+  serverMod.runtime.publicationLock = publicationLock;
+  serverMod.runtime.operatingModeService = operatingModeService;
+  serverMod.runtime.publicationHistory = publicationHistory;
+  serverMod.runtime.notificationPort = notificationPort;
+  serverMod.runtime.publicationService = pubService;
+  serverMod.runtime.adminStateService = adminStateService;
+  serverMod.runtime.newsTitleService = newsTitleService;
+  serverMod.runtime.safeImagePath = safeImagePath;
+  serverMod.runtime.imageRasterizer = imageRasterizer;
+  serverMod.runtime.overridePersistence = overridePersistence;
+  serverMod.runtime.config = {
+    features: {
+      deletePipelineEnabled: false,
+      customLibraryEnabled: false,
+      learningLibraryEnabled: false,
+      renderShadowEnabled: false,
+    },
+  };
+  serverMod.runtime.renderCount = 0;
+  serverMod.runtime.serverStartTime = Date.now();
+  serverMod.runtime.cachedFrames = new Map();
+  serverMod.runtime.cachedSnapshots = new Map();
+
+  operatingModeService.setMode('AUTO');
+
+  overridePersistence.clearOverride();
+
+  var fixtureImgSrc = path.join(__dirname, '..', 'resources', 'fallback-study', 'fb-color.png');
+  var fixtureImgDest = path.join(dataDir, 'fixture-test-image.png');
+  var fixtureImgExists = false;
+  try {
+    var fbBuf = fs.readFileSync(fixtureImgSrc);
+    fs.writeFileSync(fixtureImgDest, fbBuf);
+    fixtureImgExists = true;
+  } catch (e) {
+    lg.warn('fixture image copy failed: ' + e.message);
+  }
+
+  var fixtureImageId = 'e2e-fixture-image-001';
+
+  function setupFixtureImageIndex() {
+    var idx = [];
+    if (fixtureImgExists) {
+      idx.push({
+        id: fixtureImageId,
+        title: 'E2E Test Fixture',
+        source: 'test',
+        sourceType: 'test',
+        theme: 'test',
+        kind: 'shot',
+        poolType: 'study_frames',
+        safetyStatus: 'approved',
+        reviewStatus: 'APPROVED',
+        lifecycleStatus: 'SELECTABLE',
+        width: 800,
+        height: 480,
+        processedPngPath: fixtureImgDest,
+        rawPath: fixtureImgDest,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    fs.writeFileSync(path.join(dataDir, 'image_index.json'), JSON.stringify(idx, null, 2));
+  }
+  setupFixtureImageIndex();
+
+  var entries = JSON.parse(fs.readFileSync(path.join(dataDir, 'image_index.json'), 'utf8'));
+  serverMod.runtime.imageIndex = entries;
+  serverMod.runtime.fullImageIndex = entries;
+  serverMod.runtime.imageIndexLoadedAt = Date.now();
+
+  var libState = JSON.parse(fs.readFileSync(path.join(dataDir, 'library_state.json'), 'utf8'));
+  serverMod.runtime.libraryState = libState;
+
+  var initialized = false;
+  var initPromise = null;
+
+  function ensureInitialized() {
+    if (initialized) return Promise.resolve();
+    if (initPromise) return initPromise;
+    initPromise = snapshotStore.ensureDirs().then(function() {
+      var frame = Buffer.alloc(192010, 0x11);
+      frame.write('EPF1', 0, 4, 'ascii');
+      frame.writeUInt16LE(800, 4);
+      frame.writeUInt16LE(480, 6);
+      frame.writeUInt8(49, 8);
+      frame.writeUInt8(1, 9);
+      var snap = R3_snapshotModel.createSnapshot(
+        'photo:e2e-test',
+        { frameId: 'photo:e2e-test', mode: 'photo', slotKey: 'e2e-test' },
+        frame, 'photo',
+        { publishReason: 'e2e_setup' }
+      );
+      return pubService.publish(snap);
+    }).then(function() {
+      initialized = true;
+    });
+    return initPromise;
+  }
+
+  var cleanedUp = false;
+
+  function close() {
+    if (cleanedUp) return Promise.resolve();
+    cleanedUp = true;
+    serverMod.runtime.cachedFrames = new Map();
+    serverMod.runtime.cachedSnapshots = new Map();
+    return new Promise(function(resolve) {
+      try {
+        var rmDir = function(dirPath) {
+          if (fs.existsSync(dirPath)) {
+            fs.readdirSync(dirPath).forEach(function(entry) {
+              var fullPath = path.join(dirPath, entry);
+              if (fs.lstatSync(fullPath).isDirectory()) {
+                rmDir(fullPath);
+              } else {
+                fs.unlinkSync(fullPath);
+              }
+            });
+            fs.rmdirSync(dirPath);
+          }
+        };
+        rmDir(runtimeDir);
+      } catch (e) {
+        lg.warn('cleanup warning: ' + e.message);
+      }
+      resolve();
+    });
+  }
+
+  return {
+    app: serverMod.handleRequest,
+    runtime: serverMod.runtime,
+    close: close,
+    ensureInitialized: ensureInitialized,
+    dataDir: dataDir,
+    adminToken: adminToken,
+    fixtureImageId: fixtureImageId,
+    operatingModeService: operatingModeService,
+    overridePersistence: overridePersistence,
+  };
+}
+
+module.exports = { createApplication: createApplication };

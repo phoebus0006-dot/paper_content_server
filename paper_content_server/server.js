@@ -336,6 +336,14 @@ async function main() {
   runtime.assetSelectionService = boot.services.assetSelectionService || null;
   runtime.assetDeleteService = boot.services.assetDeleteService || null;
   runtime.overridePersistence = boot.services.overridePersistence || null;
+  // Inject late-bound dependencies into publication service (overridePersistence,
+  // frameCache are created after the service itself).
+  if (runtime.publicationService && typeof runtime.publicationService.setInjections === 'function') {
+    runtime.publicationService.setInjections({
+      overridePersistence: runtime.overridePersistence,
+      frameCache: runtime.cachedFrames,
+    });
+  }
   runtime.safetyClassifierPort = boot.services.safetyClassifierPort || null;
   runtime.config = boot.config || null;
   runtime.mqttClient = boot.deps.mqttClient || null;
@@ -2813,17 +2821,21 @@ async function handleRequest(req, res) {
       var frameSnap = null;
       if (pinnedId) { frameSnap = runtime.snapshotCache.get(pinnedId); if (!frameSnap) frameSnap = await runtime.publicationService.loadSnapshot(pinnedId); }
       if (frameSnap) {
+        var fSha = crypto.createHash('sha256').update(frameSnap.frame).digest('hex');
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': frameSnap.frame.length,
           'X-Frame-Id': frameSnap.frameId, 'X-Frame-Hex-Preview': hexPreview(frameSnap.frame), 'X-Pinned': '1',
-          'X-Frame-Mode': frameSnap.mode, 'X-Frame-Slot': frameSnap.payload.slotKey || frameSnap.frameId });
+          'X-Frame-Mode': frameSnap.mode, 'X-Frame-Slot': frameSnap.payload.slotKey || frameSnap.frameId,
+          'X-Frame-Sha256': fSha });
         res.end(frameSnap.frame); return;
       }
       var activeSnap = await runtime.publicationService.getActive();
       if (!activeSnap) activeSnap = await ensureActiveSnapshotForSchedule(now);
       if (activeSnap) {
+        var aSha = crypto.createHash('sha256').update(activeSnap.frame).digest('hex');
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': activeSnap.frame.length,
           'X-Frame-Id': activeSnap.frameId, 'X-Frame-Hex-Preview': hexPreview(activeSnap.frame),
-          'X-Frame-Mode': activeSnap.mode, 'X-Frame-Slot': activeSnap.payload.slotKey || activeSnap.frameId });
+          'X-Frame-Mode': activeSnap.mode, 'X-Frame-Slot': activeSnap.payload.slotKey || activeSnap.frameId,
+          'X-Frame-Sha256': aSha });
         res.end(activeSnap.frame); return;
       }
       res.writeHead(503, { 'Content-Type': 'text/plain' }); res.end('SNAPSHOT_SERVICE_UNAVAILABLE');
@@ -3663,12 +3675,35 @@ async function handleRequest(req, res) {
         var pvFullPath = pvSip.resolve(pvImgPath);
         var pvRecipe = { fitMode: 'contain', background: '#ffffff' };
         if (parsed.pathname === '/api/admin/photo-eink-preview') {
-          var pvRst = runtime.imageRasterizer;
-          var pvResult = await pvRst.rasterize(pvFullPath, pvRecipe, { width: FRAME_WIDTH, height: FRAME_HEIGHT });
-          // Send preview PNG (not binary EPF1), with frame metadata in headers
-          var pvPNG = await sharp(pvFullPath).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'contain', background: '#ffffff' }).removeAlpha().png().toBuffer();
-          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': pvPNG.length, 'X-Format': 'epf1', 'X-Frame-Sha256': pvResult.hash, 'X-Frame-Length': String(pvResult.frameBuffer.length) });
-          res.end(pvPNG);
+          var pvEinkSvc = new ImageRecipeService();
+          var pvEinkProc = await pvEinkSvc.processImage(pvFullPath, pvRecipe);
+          var pvEinkRst = runtime.imageRasterizer;
+          var pvEinkFrame = await pvEinkRst.rasterize(pvFullPath, pvRecipe, { width: FRAME_WIDTH, height: FRAME_HEIGHT });
+          var pvEinkHdr = epaperEpf1.parseHeader(pvEinkFrame.frameBuffer);
+          var pvEinkPayload = pvEinkFrame.frameBuffer.slice(pvEinkHdr.headerLength);
+          var pvEinkPixels = pvEinkHdr.width * pvEinkHdr.height;
+          var pvEinkRaw = Buffer.alloc(pvEinkPixels * 3, 255);
+          for (var pvEi = 0; pvEi < pvEinkPixels; pvEi++) {
+            var pvEb = Math.floor(pvEi / 2);
+            var pvEn = pvEi % 2 === 0 ? (pvEinkPayload[pvEb] >> 4) & 0x0F : pvEinkPayload[pvEb] & 0x0F;
+            var pvEc = epaperPalette.getPaletteColor(pvEn);
+            var pvErgb = pvEc ? pvEc.rgb : [255, 255, 255];
+            pvEinkRaw[pvEi * 3] = pvErgb[0];
+            pvEinkRaw[pvEi * 3 + 1] = pvErgb[1];
+            pvEinkRaw[pvEi * 3 + 2] = pvErgb[2];
+          }
+          var pvEinkPNG = await sharp(pvEinkRaw, { raw: { width: pvEinkHdr.width, height: pvEinkHdr.height, channels: 3 } }).png().toBuffer();
+          res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Content-Length': pvEinkPNG.length,
+            'X-Source-Hash': pvEinkProc.sourceHash,
+            'X-Recipe-Hash': pvEinkProc.recipeHash,
+            'X-Processed-Image-Hash': pvEinkProc.hash,
+            'X-Frame-Sha256': pvEinkFrame.hash,
+            'X-Frame-Length': String(pvEinkFrame.frameBuffer.length),
+            'X-Renderer-Version': '2.0',
+          });
+          res.end(pvEinkPNG);
         } else {
           var pvSvc = new ImageRecipeService();
           var pvResult2 = await pvSvc.processImage(pvFullPath, pvRecipe);
@@ -3715,28 +3750,93 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/admin/override' && req.method === 'DELETE') {
       if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      // V3: clear persisted override via overridePersistence (replaces ad-hoc unlinkSync)
-      if (runtime.overridePersistence) {
-        try { runtime.overridePersistence.clearOverride(); } catch(e) {}
-      } else {
-        try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
-      }
-      // Also exit any active operating mode so the schedule can republish
-      if (runtime.operatingModeService) {
-        try { runtime.operatingModeService.exitOneShot(); } catch(e) {}
-        try { runtime.operatingModeService.exitFocusLock(); } catch(e) {}
-      }
-      // R3.6: Re-publish schedule-based content after clearing override
-      if (runtime.publicationService && runtime.snapshotStore) {
-        try {
-          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'schedule_restore' });
-          await runtime.publicationService.publish(snap);
-        } catch (e) {
-          r1Logger.warn('R3 publish after override clear failed: ' + e.message);
+      // ── Full transaction: clear override and restore AUTO mode ──
+      var savedState = null;
+      try {
+        // 1. Save current manual state
+        var curActive = await runtime.snapshotStore.readActive();
+        var curMode = runtime.operatingModeService ? runtime.operatingModeService.getMode() : 'AUTO';
+        var curOverride = null;
+        if (runtime.overridePersistence) {
+          try { curOverride = runtime.overridePersistence.loadOverride(); } catch(e) {}
         }
+        savedState = { activeSnapshotId: curActive ? curActive.activeSnapshotId : null, mode: curMode, override: curOverride };
+
+        // 2. Generate current AUTO content (news/photo schedule)
+        var restoreNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
+        var content = await getContentForNow(restoreNow);
+
+        // 3. Generate and validate frame (192010 bytes)
+        var frame = content.frame;
+        if (!Buffer.isBuffer(frame) || frame.length !== 192010) {
+          throw new Error('Invalid frame: expected 192010 bytes, got ' + (frame ? frame.length : 'null'));
+        }
+        var { validateFrameBuffer } = require('./src/epaper/frame-validator');
+        var validation = validateFrameBuffer(frame);
+        if (!validation.ok) {
+          throw new Error('Frame validation failed: ' + validation.errors.join('; '));
+        }
+
+        // 4. Create and publish AUTO snapshot (internal transaction with rollback)
+        var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, frame, content.snapshot.mode, { publishReason: 'schedule_restore' });
+        await runtime.publicationService.publish(snap);
+
+        // 5. Set operatingMode = AUTO
+        if (runtime.operatingModeService) {
+          runtime.operatingModeService.setMode('AUTO');
+        }
+
+        // 6. Clear override persistence
+        if (runtime.overridePersistence) {
+          runtime.overridePersistence.clearOverride();
+        }
+
+        // 7. Read-back via AdminStateService
+        if (runtime.adminStateService) {
+          var adminState = await runtime.adminStateService.getAdminState();
+          if (!adminState.consistent) {
+            throw new Error('AdminStateService inconsistency after override clear: ' + JSON.stringify(adminState.inconsistencies));
+          }
+          if (adminState.active.operatingMode !== 'AUTO') {
+            throw new Error('Operating mode read-back failed: expected AUTO, got ' + adminState.active.operatingMode);
+          }
+        }
+
+        // 8. Read-back frame and compare SHA
+        var activePtr = await runtime.snapshotStore.readActive();
+        if (activePtr && activePtr.frameSha256) {
+          var frameSha = require('crypto').createHash('sha256').update(frame).digest('hex');
+          if (activePtr.frameSha256 !== frameSha) {
+            throw new Error('Frame SHA read-back mismatch: expected ' + frameSha + ', got ' + activePtr.frameSha256);
+          }
+        }
+
+        respondJson(res, { status: 'ok', operatingMode: 'AUTO' });
+      } catch(e) {
+        r1Logger.error('Override clear transaction failed: ' + e.message);
+        // 9. If ANY step fails, restore the saved manual state
+        if (savedState) {
+          try {
+            if (savedState.activeSnapshotId && runtime.snapshotStore) {
+              await runtime.snapshotStore.activate(savedState.activeSnapshotId);
+              r1Logger.info('Override clear rollback: restored active snapshot ' + savedState.activeSnapshotId);
+            }
+            if (runtime.operatingModeService && savedState.mode) {
+              runtime.operatingModeService.setMode(savedState.mode);
+            }
+            if (runtime.overridePersistence) {
+              if (savedState.override) {
+                runtime.overridePersistence.saveOverride(savedState.override);
+              } else {
+                runtime.overridePersistence.clearOverride();
+              }
+            }
+          } catch(restoreErr) {
+            r1Logger.error('Override clear rollback ALSO failed: ' + restoreErr.message);
+          }
+        }
+        failJson(res, 500, 'override clear failed: ' + e.message);
       }
-      respondJson(res, { status: 'ok' });
       return;
     }
 

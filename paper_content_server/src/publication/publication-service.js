@@ -1,13 +1,116 @@
-// publication-service.js — Unified publish command handler
-// Order: save → activate → cache → history append → notification
-// save/activate failure: reject, active snapshot unchanged
-// history/notification failure after activation: committed=true, status fields set
+// publication-service.js — Unified publish command handler with full transaction support
+// Transaction order: save state → save snapshot → activate → read-back → history append → notification
+// Pre-commit failure: full rollback via _restorePrePublicationState
+// Post-commit (history/notification) failure: committed=true, status fields set
 // Returns { snapshotId, committed, historyStatus, notificationStatus }
 
 var LOCK_KEY_PUBLISH = 'publish';
 
-function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notificationPort, operatingModeService, history, logger) {
+function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notificationPort, operatingModeService, history, logger, overridePersistence, frameCache) {
   logger = logger || { info: function() {}, warn: function() {}, error: function() {} };
+  overridePersistence = overridePersistence || null;
+  frameCache = frameCache || null;
+
+  // ── Late-bound dependency injection ──
+  // overridePersistence and frameCache are often created after the service
+  // itself; call setInjections() once both are available.
+  function setInjections(injections) {
+    if (!injections) return;
+    if (injections.overridePersistence) overridePersistence = injections.overridePersistence;
+    if (injections.frameCache) frameCache = injections.frameCache;
+  }
+
+  // ── Pre-publication state snapshot ──
+  function _savePrePublicationState() {
+    var state = {
+      activeSnapshotId: null,
+      operatingMode: null,
+      override: null,
+      lastPublishedAt: null,
+      snapshotCacheEntries: [],
+      frameCacheEntries: [],
+      historyPosition: [],
+    };
+
+    return snapshotStore.readActive().then(function(active) {
+      state.activeSnapshotId = active ? active.activeSnapshotId : null;
+      if (operatingModeService) {
+        state.operatingMode = operatingModeService.getMode();
+      }
+      if (overridePersistence) {
+        try { state.override = overridePersistence.loadOverride(); } catch(e) {}
+      }
+      return history.list();
+    }).then(function(entries) {
+      state.historyPosition = entries || [];
+      if (entries && entries.length > 0) {
+        state.lastPublishedAt = entries[0].publishedAt || null;
+      }
+      // Snapshot cache state
+      if (snapshotCache && typeof snapshotCache.keys === 'function') {
+        var keys = snapshotCache.keys();
+        state.snapshotCacheEntries = keys.map(function(k) {
+          return { key: k, value: snapshotCache.get(k) };
+        });
+      }
+      // Frame cache state (Map-like interface with keys()/get())
+      if (frameCache && typeof frameCache.keys === 'function') {
+        var fKeys = Array.from(frameCache.keys());
+        state.frameCacheEntries = fKeys.map(function(k) {
+          return { key: k, value: frameCache.get(k) };
+        });
+      }
+      return state;
+    });
+  }
+
+  // ── Full rollback: restore all captured pre-publication state ──
+  function _restorePrePublicationState(state) {
+    var chain = Promise.resolve();
+    if (state.activeSnapshotId) {
+      chain = chain.then(function() {
+        return snapshotStore.activate(state.activeSnapshotId).catch(function(err) {
+          logger.error('ROLLBACK: failed to restore active pointer ' + state.activeSnapshotId + ': ' + (err.message || err));
+        });
+      });
+    }
+    chain = chain.then(function() {
+      // Restore operating mode
+      if (state.operatingMode !== null && operatingModeService) {
+        try { operatingModeService.setMode(state.operatingMode); } catch(e) {
+          logger.error('ROLLBACK: failed to restore operating mode ' + state.operatingMode + ': ' + (e.message || e));
+        }
+      }
+      // Restore override persistence
+      if (overridePersistence) {
+        try {
+          if (state.override) {
+            overridePersistence.saveOverride(state.override);
+          } else {
+            overridePersistence.clearOverride();
+          }
+        } catch(e) {
+          logger.error('ROLLBACK: failed to restore override: ' + (e.message || e));
+        }
+      }
+      // Restore snapshot cache to pre-publication state
+      if (snapshotCache && typeof snapshotCache.clear === 'function') {
+        try { snapshotCache.clear(); } catch(e) {}
+        state.snapshotCacheEntries.forEach(function(entry) {
+          try { snapshotCache.set(entry.key, entry.value); } catch(e) {}
+        });
+      }
+      // Restore frame cache to pre-publication state
+      if (frameCache && typeof frameCache.clear === 'function') {
+        try { frameCache.clear(); } catch(e) {}
+        state.frameCacheEntries.forEach(function(entry) {
+          try { frameCache.set(entry.key, entry.value); } catch(e) {}
+        });
+      }
+      logger.info('ROLLBACK: restored pre-publication state (snapshot=' + state.activeSnapshotId + ', mode=' + state.operatingMode + ')');
+    });
+    return chain;
+  }
 
   function publish(snapshot) {
     return lock.acquire(LOCK_KEY_PUBLISH).then(function(release) {
@@ -22,19 +125,34 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
   }
 
   function doPublish(snapshot) {
+    var savedState = null;
     var histStatus = 'OK', notifStatus = 'OK';
-    var oldActive = null;
-    var activated = false;
-    return snapshotStore.readActive().then(function(active) {
-      oldActive = active ? active.activeSnapshotId : null;
+    var committed = false;
+
+    return _savePrePublicationState().then(function(state) {
+      savedState = state;
       return snapshotStore.save(snapshot);
     }).then(function() {
       return snapshotStore.activate(snapshot.snapshotId);
     }).then(function() {
-      activated = true;
       snapshotCache.set(snapshot.snapshotId, snapshot);
+      // Read-back: verify active pointer + frame SHA
+      return snapshotStore.readActive();
+    }).then(function(active) {
+      if (!active || active.activeSnapshotId !== snapshot.snapshotId) {
+        throw new Error('READ-BACK FAILED: active snapshot pointer mismatch (expected=' + snapshot.snapshotId + ', got=' + (active ? active.activeSnapshotId : 'null') + ')');
+      }
+      var crypto = require('crypto');
+      var actualSha = crypto.createHash('sha256').update(snapshot.frame).digest('hex');
+      if (actualSha !== snapshot.frameSha256) {
+        throw new Error('READ-BACK FAILED: frame SHA256 mismatch (expected=' + snapshot.frameSha256 + ', got=' + actualSha + ')');
+      }
+      logger.info('Read-back verified: snapshotId=' + snapshot.snapshotId + ' frameSha=' + actualSha.slice(0, 8));
     }).then(function() {
-      // History failure is isolated: does not reject publish
+      // ── COMMITTED POINT ──
+      // Activation + read-back succeeded; system is in a consistent state.
+      // History/notification failures do NOT trigger rollback.
+      committed = true;
       return history.append({
         id: Date.now().toString(36),
         type: snapshot.mode,
@@ -53,13 +171,17 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
       });
     }).then(function() {
       logger.info('Published: ' + snapshot.snapshotId + ' (frameId=' + snapshot.frameId + ', hist=' + histStatus + ', notif=' + notifStatus + ')');
-      return { snapshotId: snapshot.snapshotId, committed: true, historyStatus: histStatus, notificationStatus: notifStatus };
+      var result = { snapshotId: snapshot.snapshotId, committed: true, historyStatus: histStatus, notificationStatus: notifStatus };
+      if (histStatus === 'FAILED') {
+        result.historyFailed = true;
+      }
+      return result;
     }, function(err) {
-      // Rollback: if activation was committed but subsequent steps failed,
-      // restore old active pointer
-      if (activated && oldActive) {
-        snapshotStore.activate(oldActive).catch(function(re) {
-          logger.error('ROLLBACK FAILED: could not restore active pointer ' + oldActive + ': ' + (re.message || re));
+      // Full rollback only if NOT yet committed
+      if (!committed && savedState) {
+        logger.warn('Publish failed for ' + snapshot.snapshotId + ', rolling back: ' + (err.message || err));
+        return _restorePrePublicationState(savedState).then(function() {
+          throw err;
         });
       }
       throw err;
@@ -91,8 +213,6 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
     var loaded, histStatus = 'OK';
     var oldActive = null;
     var activated = false;
-    // Restorability check must come first: a snapshot that is both active and
-    // non-restorable must report the restorability reason (stronger constraint).
     return history.list().then(function(entries) {
       var entry = entries.filter(function(e) { return e.snapshotId === snapshotId; })[0];
       if (entry && entry.restorable === false) {
@@ -129,7 +249,6 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
       logger.info('Rollback to: ' + snapshotId + ' (frameSha=' + loaded.frameSha256.slice(0, 8) + ', hist=' + histStatus + ')');
       return { snapshotId: snapshotId, committed: true, historyStatus: histStatus };
     }, function(err) {
-      // Rollback restore: if activate succeeded but something after failed
       if (activated && oldActive) {
         snapshotStore.activate(oldActive).catch(function(re) {
           logger.error('ROLLBACK RESTORE FAILED: could not restore old active pointer ' + oldActive + ': ' + (re.message || re));
@@ -155,6 +274,7 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
     rollback: rollback,
     listSnapshots: listSnapshots,
     loadSnapshot: loadSnapshot,
+    setInjections: setInjections,
   };
 }
 
