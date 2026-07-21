@@ -64,3 +64,48 @@ jobs:
       - run: npm run v5:classifier
       - run: npm run v5:concurrency
       - run: npm run hygiene:check
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: paper_content_server
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build --target test -t paper-content-server:test .
+      - run: docker build --target production -t paper-content-server:production .
+      - name: Start production container
+        run: docker run -d --name pcs -p 8787:8787 paper-content-server:production
+      - name: Wait for /api/health.json
+        run: |
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8787/api/health.json > /dev/null 2>&1; then
+              echo "Server is ready"
+              break
+            fi
+            sleep 2
+          done
+      - name: Request /api/admin/state
+        run: curl -s http://localhost:8787/api/admin/state
+      - name: Request /api/state.json
+        run: curl -s http://localhost:8787/api/state.json
+      - name: Request /api/frame.bin
+        run: curl -s -o /dev/null -w "%{http_code}" http://localhost:8787/api/frame.bin
+      - name: Stop container
+        run: docker stop pcs
+      - name: Verify production image doesn't contain dev/test artifacts
+        run: |
+          docker run --rm --entrypoint sh paper-content-server:production -c '
+            for dir in qa test audit cleanup-audit; do
+              if [ -d "/app/$dir" ]; then
+                echo "FAIL: $dir/ directory found in production image"
+                exit 1
+              fi
+            done
+            if npm ls --depth=0 --only=dev 2>/dev/null | grep -q .; then
+              echo "FAIL: devDependencies found in production image"
+              exit 1
+            fi
+            echo "Production image verification passed"
+          '

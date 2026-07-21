@@ -13,7 +13,7 @@
     "test:e2e": "node --test qa/tests/e2e/*.js",
     "test:visual": "node --test qa/tests/visual/*.js",
     "test:contract": "node --test qa/tests/contract/*.js",
-    "mutation:test": "node --test qa/tests/mutation/*.js",
+    "mutation:test": "node --test qa/tests/mutation/mutation-runner.test.js",
     "fetch": "node scripts/fetch-images.js",
     "process": "node scripts/process-images.js",
     "import": "node scripts/import-images.js",

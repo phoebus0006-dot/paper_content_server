@@ -1,6 +1,9 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { createApplication } = require('../../../src/app-factory');
 
 function httpRequest(method, url, options) {
@@ -46,6 +49,7 @@ describe('Real HTTP E2E Tests', function() {
   var closeApp;
   var adminToken;
   var fixtureImageId;
+  var dataDir;
 
   before(async function() {
     var factory = createApplication();
@@ -53,6 +57,7 @@ describe('Real HTTP E2E Tests', function() {
     closeApp = factory.close;
     adminToken = factory.adminToken;
     fixtureImageId = factory.fixtureImageId;
+    dataDir = factory.dataDir;
 
     await factory.ensureInitialized();
 
@@ -151,6 +156,8 @@ describe('Real HTTP E2E Tests', function() {
     var ct = res.headers['content-type'] || '';
     assert.ok(ct.indexOf('image/png') >= 0);
     assert.ok(res.body.length > 100);
+    // Verify PNG magic bytes: 0x89 P N G
+    assert.ok(res.body.slice(0, 4).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47])), 'PNG magic bytes header missing');
     assert.ok(res.headers['x-source-hash']);
     assert.ok(res.headers['x-recipe-hash']);
     assert.ok(res.headers['x-processed-image-hash']);
@@ -179,13 +186,13 @@ describe('Real HTTP E2E Tests', function() {
     assert.ok(res.headers['x-frame-sha256'].length === 64);
   });
 
-  it('DELETE /api/admin/library/:id returns FEATURE_DISABLED', async function() {
+  it('DELETE /api/admin/library/:id returns FEATURE_DISABLED (expected for disabled feature)', async function() {
     var res = await httpRequest('DELETE', baseUrl + '/api/admin/library/test-asset-001', {
       headers: adminHeaders(),
     });
     assert.strictEqual(res.statusCode, 503);
     var body = res.body.toString('utf8');
-    assert.ok(body.indexOf('FEATURE_DISABLED') >= 0 || body.indexOf('deletePipelineEnabled') >= 0);
+    assert.ok(body.indexOf('FEATURE_DISABLED') >= 0, 'response must contain FEATURE_DISABLED');
   });
 
   it('DELETE /api/admin/override returns status or error with real rollback', async function() {
@@ -249,5 +256,177 @@ describe('Real HTTP E2E Tests', function() {
     assert.notStrictEqual(resPng.headers['x-source-hash'], undefined);
     assert.notStrictEqual(resEink.headers['x-source-hash'], undefined);
     assert.notStrictEqual(resEink.headers['x-renderer-version'], undefined);
+  });
+
+  // ── new tests ──
+
+  it('GET /api/admin/state, dashboard, and system/status have consistent fields', async function() {
+    var resState = await httpRequest('GET', baseUrl + '/api/admin/state', {
+      headers: adminHeaders(),
+    });
+    assert.strictEqual(resState.statusCode, 200);
+    var stateData = JSON.parse(resState.body.toString('utf8'));
+
+    var resDash = await httpRequest('GET', baseUrl + '/api/admin/dashboard', {
+      headers: adminHeaders(),
+    });
+    assert.strictEqual(resDash.statusCode, 200);
+    var dashData = JSON.parse(resDash.body.toString('utf8'));
+
+    var resStatus = await httpRequest('GET', baseUrl + '/api/admin/system/status', {
+      headers: adminHeaders(),
+    });
+    assert.strictEqual(resStatus.statusCode, 200);
+    var statusData = JSON.parse(resStatus.body.toString('utf8'));
+
+    // state and system/status should have identical active fields
+    assert.strictEqual(stateData.active.operatingMode, statusData.active.operatingMode,
+      'operatingMode mismatch');
+    assert.strictEqual(stateData.active.contentMode, statusData.active.contentMode,
+      'contentMode mismatch');
+    assert.strictEqual(stateData.active.snapshotId, statusData.active.snapshotId,
+      'snapshotId mismatch');
+    assert.strictEqual(stateData.active.frameId, statusData.active.frameId,
+      'frameId mismatch');
+    assert.strictEqual(stateData.active.frameSha256, statusData.active.frameSha256,
+      'frameSha256 mismatch');
+    assert.strictEqual(stateData.active.frameLength, statusData.active.frameLength,
+      'frameLength mismatch');
+
+    // dashboard returns the spread admin state so active fields are nested
+    assert.strictEqual(dashData.active.frameId, stateData.active.frameId,
+      'dashboard frameId mismatch');
+  });
+
+  it('GET /api/health.json returns OK', async function() {
+    var res = await httpRequest('GET', baseUrl + '/api/health.json', { headers: {} });
+    assert.strictEqual(res.statusCode, 200);
+    var ct = res.headers['content-type'] || '';
+    assert.ok(ct.indexOf('application/json') >= 0);
+    var data = JSON.parse(res.body.toString('utf8'));
+    assert.strictEqual(data.status, 'ok');
+  });
+
+  it('POST /api/admin/publish/news fails with pending reviewStatus', async function() {
+    // The draft items created by the setup have needs_review → pending status
+    var res = await httpRequest('POST', baseUrl + '/api/admin/publish/news', {
+      headers: adminHeaders(),
+      body: JSON.stringify({}),
+    });
+    assert.ok(res.statusCode === 400 || res.statusCode === 500);
+    if (res.statusCode === 400) {
+      var body = res.body.toString('utf8');
+      assert.ok(body.indexOf('review') >= 0, 'response should mention review');
+    }
+  });
+
+  it('GET /api/frame.bin has correct length and SHA header', async function() {
+    var res = await httpRequest('GET', baseUrl + '/api/frame.bin', { headers: {} });
+    assert.strictEqual(res.statusCode, 200);
+    var ct = res.headers['content-type'] || '';
+    assert.ok(ct.indexOf('application/octet-stream') >= 0, 'expected octet-stream content type');
+
+    assert.ok(res.headers['x-frame-id'], 'X-Frame-Id header missing');
+    assert.ok(res.headers['x-frame-sha256'], 'X-Frame-Sha256 header missing');
+    assert.strictEqual(res.headers['x-frame-sha256'].length, 64, 'X-Frame-Sha256 must be 64 hex chars');
+    assert.strictEqual(res.body.length, 192010, 'frame.bin body length must be 192010');
+
+    var computedSha = crypto.createHash('sha256').update(res.body).digest('hex');
+    assert.strictEqual(computedSha, res.headers['x-frame-sha256'], 'Computed SHA256 must match header');
+  });
+
+  it('POST /api/admin/publish/news with approved items succeeds', async function() {
+    // Try to restore the system to a valid state first
+    try {
+      await httpRequest('DELETE', baseUrl + '/api/admin/override', {
+        headers: adminHeaders(),
+      });
+    } catch (ignored) {
+      // best-effort restore
+    }
+
+    // Save a fresh draft
+    var draftRes = await httpRequest('POST', baseUrl + '/api/admin/news/draft', {
+      headers: adminHeaders(),
+      body: JSON.stringify({ items: DRAFT_ITEMS }),
+    });
+    assert.strictEqual(draftRes.statusCode, 200);
+
+    // Approve all items by editing the draft file directly
+    var draftFilePath = path.join(dataDir, 'admin_news_draft.json');
+    var draftData = JSON.parse(fs.readFileSync(draftFilePath, 'utf8'));
+    draftData.items.forEach(function(item) {
+      item.titleStatus = 'ok';
+      item.reviewStatus = 'approved';
+    });
+    fs.writeFileSync(draftFilePath, JSON.stringify(draftData, null, 2));
+
+    // Publish should now succeed
+    var pubRes = await httpRequest('POST', baseUrl + '/api/admin/publish/news', {
+      headers: adminHeaders(),
+      body: JSON.stringify({}),
+    });
+    assert.strictEqual(pubRes.statusCode, 200, 'publish should succeed with approved items');
+
+    // Read-back: GET /api/admin/state
+    var stateRes = await httpRequest('GET', baseUrl + '/api/admin/state', {
+      headers: adminHeaders(),
+    });
+    assert.strictEqual(stateRes.statusCode, 200);
+    var stateData = JSON.parse(stateRes.body.toString('utf8'));
+
+    // Read-back: GET /api/frame.bin
+    var frameRes = await httpRequest('GET', baseUrl + '/api/frame.bin', { headers: {} });
+    assert.strictEqual(frameRes.statusCode, 200);
+
+    // Verify frame.bin self-consistency (length and SHA)
+    assert.ok(frameRes.headers['x-frame-sha256'], 'X-Frame-Sha256 header missing');
+    assert.strictEqual(frameRes.body.length, 192010, 'frame.bin body length must be 192010');
+    var computedSha = crypto.createHash('sha256').update(frameRes.body).digest('hex');
+    assert.strictEqual(computedSha, frameRes.headers['x-frame-sha256'], 'Computed SHA256 must match header');
+
+    // Verify state/frame consistency if state has a valid frameId
+    if (stateData.active && stateData.active.frameId) {
+      assert.strictEqual(stateData.active.frameId, frameRes.headers['x-frame-id'],
+        'frameId mismatch between state and frame.bin');
+      assert.strictEqual(stateData.active.frameSha256, frameRes.headers['x-frame-sha256'],
+        'frameSha256 mismatch between state and frame.bin');
+      assert.strictEqual(stateData.active.frameLength, frameRes.body.length,
+        'frameLength mismatch between state and frame.bin length');
+    }
+  });
+
+  it('POST /api/admin/photo-preview returns recipe hashes', async function() {
+    if (!fixtureImageId) {
+      this.skip('no fixture image available');
+      return;
+    }
+    var res = await httpRequest('POST', baseUrl + '/api/admin/photo-preview', {
+      headers: adminHeaders(),
+      body: JSON.stringify({ photoId: fixtureImageId, recipe: { fitMode: 'contain', background: '#ffffff' } }),
+    });
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(res.headers['x-source-hash'], 'X-Source-Hash missing');
+    assert.ok(res.headers['x-recipe-hash'], 'X-Recipe-Hash missing');
+    assert.ok(res.headers['x-processed-image-hash'], 'X-Processed-Image-Hash missing');
+    // Verify PNG is valid (non-empty, starts with PNG magic)
+    assert.ok(res.body.length > 0, 'PNG body should be non-empty');
+    assert.ok(res.body.slice(0, 4).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47])), 'PNG magic bytes header missing');
+  });
+
+  it('DELETE /api/admin/override returns AUTO mode or error', async function() {
+    var res = await httpRequest('DELETE', baseUrl + '/api/admin/override', {
+      headers: adminHeaders(),
+    });
+    if (res.statusCode === 200) {
+      var data = JSON.parse(res.body.toString('utf8'));
+      assert.strictEqual(data.status, 'ok');
+      assert.strictEqual(data.operatingMode, 'AUTO');
+    } else if (res.statusCode === 500) {
+      var errBody = res.body.toString('utf8');
+      assert.ok(errBody.indexOf('override') >= 0 || errBody.indexOf('failed') >= 0);
+    } else {
+      assert.fail('unexpected status code: ' + res.statusCode);
+    }
   });
 });

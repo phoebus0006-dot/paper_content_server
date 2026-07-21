@@ -1,122 +1,24 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
 
-// ── Inlined computeNextSwitchAt with its dependencies ──
-// These are copied from server.js so the test can run without requiring
-// the full server module (which would trigger app startup).
-// The production implementation lives in server.js:computeNextSwitchAt (line 2223).
+const {
+  computeNextSwitchAt,
+  TIMEZONE,
+  dateFromWallTime,
+  getWallTime,
+  formatDateParts,
+} = require('../../../server');
 
-function formatDateParts(date, timeZone) {
-  var parts;
-  try {
-    parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }).formatToParts(new Date(date));
-  } catch (e) {
-    parts = new Intl.DateTimeFormat('en-CA', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }).formatToParts(new Date(date));
-  }
-  var map = Object.fromEntries(parts.map(function(p) { return [p.type, p.value]; }));
-  return {
-    year: map.year,
-    month: map.month,
-    day: map.day,
-    hour: map.hour,
-    minute: map.minute,
-    second: map.second,
-  };
+// ── Helpers ──
+
+function makeDate(year, month, day, hour, minute, second) {
+  return dateFromWallTime({ year, month, day, hour, minute, second: second || 0 }, TIMEZONE);
 }
 
-function getWallTime(date, timeZone) {
-  var parts = formatDateParts(date, timeZone);
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour),
-    minute: Number(parts.minute),
-    second: Number(parts.second),
-  };
-}
-
-function getTimeZoneOffsetMinutes(date, timeZone) {
-  var utcString = date.toLocaleString('en-US', { timeZone: 'UTC' });
-  var tzString = date.toLocaleString('en-US', { timeZone: timeZone });
-  var utcDate = new Date(utcString);
-  var tzDate = new Date(tzString);
-  return (utcDate.getTime() - tzDate.getTime()) / 60000;
-}
-
-function dateFromWallTime(_a, timeZone) {
-  var year = _a.year, month = _a.month, day = _a.day, hour = _a.hour, minute = _a.minute, second = _a.second;
-  var candidate = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0));
-  for (var attempt = 0; attempt < 3; attempt++) {
-    var offsetMinutes = getTimeZoneOffsetMinutes(candidate, timeZone);
-    candidate = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0) + offsetMinutes * 60000);
-    var wall = getWallTime(candidate, timeZone);
-    if (wall.year === year && wall.month === month && wall.day === day && wall.hour === hour && wall.minute === minute) {
-      return candidate;
-    }
-  }
-  return candidate;
-}
-
-function computeNextSwitchAt(now, timeZone) {
-  var t = getWallTime(now, timeZone);
-  var year = t.year;
-  var month = t.month;
-  var day = t.day;
-  var hour = 0;
-  var minute = 0;
-
-  if (t.hour < 10) {
-    hour = 10;
-    minute = 30;
-  } else if (t.hour >= 19) {
-    var next = new Date(Date.UTC(year, month - 1, day + 1, 12));
-    var nextWall = getWallTime(next, timeZone);
-    year = nextWall.year;
-    month = nextWall.month;
-    day = nextWall.day;
-    hour = 10;
-    minute = 30;
-  } else if (t.minute < 30) {
-    hour = t.hour;
-    minute = 30;
-  } else if (t.hour === 18) {
-    hour = 19;
-    minute = 0;
-  } else {
-    hour = t.hour + 1;
-    minute = 0;
-  }
-
-  return dateFromWallTime({ year: year, month: month, day: day, hour: hour, minute: minute, second: 0 }, timeZone);
-}
-
-// ── Test helper ──
-
-function makeUTCDate(year, month, day, hour, minute, second) {
-  // month is 0-based for Date.UTC
-  return new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0));
-}
-
-function toUTCHoursMinutes(date) {
-  return date.getUTCHours() + ':' + String(date.getUTCMinutes()).padStart(2, '0');
+function utcDate(year, month, day, hour, minute, second) {
+  return new Date(Date.UTC(year, month - 1, day, hour || 0, minute || 0, second || 0));
 }
 
 function formatUTCDate(date) {
@@ -128,106 +30,320 @@ function formatUTCDate(date) {
     String(date.getUTCSeconds()).padStart(2, '0');
 }
 
-// Use UTC timezone for fully deterministic tests (no DST edge cases)
-var TZ = 'UTC';
+function formatWallDate(date) {
+  const w = getWallTime(date, TIMEZONE);
+  return w.year + '-' +
+    String(w.month).padStart(2, '0') + '-' +
+    String(w.day).padStart(2, '0') + ' ' +
+    String(w.hour).padStart(2, '0') + ':' +
+    String(w.minute).padStart(2, '0') + ':' +
+    String(w.second).padStart(2, '0');
+}
 
-describe('computeNextSwitchAt — boundary cases (UTC)', () => {
+// ─────────────────────────────────────────────────────────────
+// computeNextSwitchAt — precise day/night period rules
+// ─────────────────────────────────────────────────────────────
 
-  var cases = [
-    // [label, input date (UTC), expected next switch output (UTC)]
-    // Before active window: switch to 10:30 same day
-    ['08:00 -> 10:30',       makeUTCDate(2025, 6, 15, 8, 0, 0),     makeUTCDate(2025, 6, 15, 10, 30, 0)],
-    ['08:12 -> 10:30',       makeUTCDate(2025, 6, 15, 8, 12, 0),    makeUTCDate(2025, 6, 15, 10, 30, 0)],
-    ['08:29:59 -> 10:30',    makeUTCDate(2025, 6, 15, 8, 29, 59),   makeUTCDate(2025, 6, 15, 10, 30, 0)],
-    // Active window start boundary
-    ['08:30 -> 10:30',       makeUTCDate(2025, 6, 15, 8, 30, 0),    makeUTCDate(2025, 6, 15, 10, 30, 0)],
-    // Mid-morning
-    ['09:00 -> 10:30',       makeUTCDate(2025, 6, 15, 9, 0, 0),     makeUTCDate(2025, 6, 15, 10, 30, 0)],
-    // Before half-hour boundary
-    ['10:29 -> 10:30',       makeUTCDate(2025, 6, 15, 10, 29, 0),   makeUTCDate(2025, 6, 15, 10, 30, 0)],
-    // Half-hour boundary: next 30-min slot
-    ['10:30 -> 11:00',       makeUTCDate(2025, 6, 15, 10, 30, 0),   makeUTCDate(2025, 6, 15, 11, 0, 0)],
-    ['10:42 -> 11:00',       makeUTCDate(2025, 6, 15, 10, 42, 0),   makeUTCDate(2025, 6, 15, 11, 0, 0)],
-    // Pre-hour boundary
-    ['10:59:59 -> 11:00',    makeUTCDate(2025, 6, 15, 10, 59, 59),  makeUTCDate(2025, 6, 15, 11, 0, 0)],
-    // Hour boundary
-    ['11:00 -> 11:30',       makeUTCDate(2025, 6, 15, 11, 0, 0),    makeUTCDate(2025, 6, 15, 11, 30, 0)],
-    // Late afternoon → last slot before 19:00
-    ['18:00 -> 18:30',       makeUTCDate(2025, 6, 15, 18, 0, 0),    makeUTCDate(2025, 6, 15, 18, 30, 0)],
-    ['18:30 -> 19:00',       makeUTCDate(2025, 6, 15, 18, 30, 0),   makeUTCDate(2025, 6, 15, 19, 0, 0)],
-    // After active window: next day 10:30
-    ['19:00 -> next day 10:30',       makeUTCDate(2025, 6, 15, 19, 0, 0),    makeUTCDate(2025, 6, 16, 10, 30, 0)],
-    ['21:12 -> next day 10:30',       makeUTCDate(2025, 6, 15, 21, 12, 0),   makeUTCDate(2025, 6, 16, 10, 30, 0)],
-    ['23:45 -> next day 10:30',       makeUTCDate(2025, 6, 15, 23, 45, 0),   makeUTCDate(2025, 6, 16, 10, 30, 0)],
-    ['23:59:59 -> next day 10:30',    makeUTCDate(2025, 6, 15, 23, 59, 59),  makeUTCDate(2025, 6, 16, 10, 30, 0)],
-  ];
+describe('computeNextSwitchAt — news period (10:30-19:00)', () => {
 
-  cases.forEach(function(_a) {
-    var label = _a[0], input = _a[1], expected = _a[2];
-    it(label, function() {
-      var result = computeNextSwitchAt(input, TZ);
-      assert.equal(result.getTime(), expected.getTime(),
-        'input=' + formatUTCDate(input) + ' expected=' + formatUTCDate(expected) + ' got=' + formatUTCDate(result));
-    });
-  });
-
-  // Month/year boundary: rollover from Dec 31 -> Jan 1
-  it('year boundary: Dec 31 23:00 -> Jan 1 10:30', function() {
-    var input = makeUTCDate(2025, 12, 31, 23, 0, 0);
-    var expected = makeUTCDate(2026, 1, 1, 10, 30, 0);
-    var result = computeNextSwitchAt(input, TZ);
+  // 10:30:00 is the start of the window → next half-hour slot 11:00
+  it('10:30:00 -> 11:00:00 (at boundary → next half-hour)', () => {
+    const input = makeDate(2025, 6, 15, 10, 30, 0);
+    const expected = makeDate(2025, 6, 15, 11, 0, 0);
+    const result = computeNextSwitchAt(input);
     assert.equal(result.getTime(), expected.getTime(),
-      'expected=' + formatUTCDate(expected) + ' got=' + formatUTCDate(result));
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
   });
 
-  // Month boundary: Jan 31 23:00 -> Feb 1 10:30
-  it('month boundary: Jan 31 23:00 -> Feb 1 10:30', function() {
-    var input = makeUTCDate(2025, 1, 31, 23, 0, 0);
-    var expected = makeUTCDate(2025, 2, 1, 10, 30, 0);
-    var result = computeNextSwitchAt(input, TZ);
+  it('10:30:01 -> 11:00:00 (just after boundary → next half-hour)', () => {
+    const input = makeDate(2025, 6, 15, 10, 30, 1);
+    const expected = makeDate(2025, 6, 15, 11, 0, 0);
+    const result = computeNextSwitchAt(input);
     assert.equal(result.getTime(), expected.getTime(),
-      'expected=' + formatUTCDate(expected) + ' got=' + formatUTCDate(result));
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
   });
 
-  // Edge: exactly at 10:30 → next slot is 11:00
-  it('exactly at 10:30 -> 11:00 (half-hour boundary)', function() {
-    var input = makeUTCDate(2025, 6, 15, 10, 30, 0);
-    var result = computeNextSwitchAt(input, TZ);
-    assert.equal(result.getUTCHours(), 11);
-    assert.equal(result.getUTCMinutes(), 0);
+  it('10:42:00 -> 11:00:00', () => {
+    const input = makeDate(2025, 6, 15, 10, 42, 0);
+    const expected = makeDate(2025, 6, 15, 11, 0, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
   });
 
-  // Edge: exactly at 18:30 → last slot ends at 19:00
-  it('exactly at 18:30 -> 19:00 (last slot boundary)', function() {
-    var input = makeUTCDate(2025, 6, 15, 18, 30, 0);
-    var result = computeNextSwitchAt(input, TZ);
-    assert.equal(result.getUTCHours(), 19);
-    assert.equal(result.getUTCMinutes(), 0);
+  it('11:00:00 -> 11:30:00', () => {
+    const input = makeDate(2025, 6, 15, 11, 0, 0);
+    const expected = makeDate(2025, 6, 15, 11, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
   });
 
-  // Edge: exactly at 19:00 → next day
-  it('exactly at 19:00 -> next day 10:30', function() {
-    var input = makeUTCDate(2025, 6, 15, 19, 0, 0);
-    var result = computeNextSwitchAt(input, TZ);
-    assert.equal(result.getUTCDate(), 16);
-    assert.equal(result.getUTCHours(), 10);
-    assert.equal(result.getUTCMinutes(), 30);
+  it('18:00:00 -> 18:30:00', () => {
+    const input = makeDate(2025, 6, 15, 18, 0, 0);
+    const expected = makeDate(2025, 6, 15, 18, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
   });
 
-  // Leap year: Feb 28 23:00 -> Mar 1 10:30 (non-leap)
-  it('non-leap Feb 28 23:00 -> Mar 1 10:30', function() {
-    var input = makeUTCDate(2025, 2, 28, 23, 0, 0);
-    var expected = makeUTCDate(2025, 3, 1, 10, 30, 0);
-    var result = computeNextSwitchAt(input, TZ);
-    assert.equal(result.getTime(), expected.getTime());
+  it('18:29:59 -> 18:30:00 (before half-hour → :30)', () => {
+    const input = makeDate(2025, 6, 15, 18, 29, 59);
+    const expected = makeDate(2025, 6, 15, 18, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
   });
 
-  // Leap year: Feb 29 23:00 -> Mar 1 10:30 (leap year 2024)
-  it('leap Feb 29 23:00 -> Mar 1 10:30', function() {
-    var input = makeUTCDate(2024, 2, 29, 23, 0, 0);
-    var expected = makeUTCDate(2024, 3, 1, 10, 30, 0);
-    var result = computeNextSwitchAt(input, TZ);
-    assert.equal(result.getTime(), expected.getTime());
+  it('18:30:00 -> 19:00:00 (at half-hour → 19:00 end of news)', () => {
+    const input = makeDate(2025, 6, 15, 18, 30, 0);
+    const expected = makeDate(2025, 6, 15, 19, 0, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('18:45:00 -> 19:00:00', () => {
+    const input = makeDate(2025, 6, 15, 18, 45, 0);
+    const expected = makeDate(2025, 6, 15, 19, 0, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('18:59:59 -> 19:00:00 (just before 19:00 → 19:00)', () => {
+    const input = makeDate(2025, 6, 15, 18, 59, 59);
+    const expected = makeDate(2025, 6, 15, 19, 0, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+});
+
+describe('computeNextSwitchAt — photo period (19:00-10:30)', () => {
+
+  it('19:00:00 -> next-day 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 19, 0, 0);
+    const expected = makeDate(2025, 6, 16, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('19:30:00 -> next-day 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 19, 30, 0);
+    const expected = makeDate(2025, 6, 16, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('21:00:00 -> next-day 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 21, 0, 0);
+    const expected = makeDate(2025, 6, 16, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('21:12:00 -> next-day 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 21, 12, 0);
+    const expected = makeDate(2025, 6, 16, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('23:45:00 -> next-day 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 23, 45, 0);
+    const expected = makeDate(2025, 6, 16, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('00:00:00 -> same-day 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 0, 0, 0);
+    const expected = makeDate(2025, 6, 15, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('01:30:00 -> same-day 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 1, 30, 0);
+    const expected = makeDate(2025, 6, 15, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('08:00:00 -> same-day 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 8, 0, 0);
+    const expected = makeDate(2025, 6, 15, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('08:12:00 -> same-day 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 8, 12, 0);
+    const expected = makeDate(2025, 6, 15, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('10:00:00 -> 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 10, 0, 0);
+    const expected = makeDate(2025, 6, 15, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('10:29:00 -> 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 10, 29, 0);
+    const expected = makeDate(2025, 6, 15, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('10:29:59 -> 10:30:00', () => {
+    const input = makeDate(2025, 6, 15, 10, 29, 59);
+    const expected = makeDate(2025, 6, 15, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+});
+
+describe('computeNextSwitchAt — year/month boundaries', () => {
+
+  it('Dec 31 19:00 -> Jan 1 10:30 (year boundary)', () => {
+    const input = makeDate(2025, 12, 31, 19, 0, 0);
+    const expected = makeDate(2026, 1, 1, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('Jan 31 19:00 -> Feb 1 10:30 (month boundary)', () => {
+    const input = makeDate(2025, 1, 31, 19, 0, 0);
+    const expected = makeDate(2025, 2, 1, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('Feb 28 (non-leap) 19:00 -> Mar 1 10:30', () => {
+    const input = makeDate(2025, 2, 28, 19, 0, 0);
+    const expected = makeDate(2025, 3, 1, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+  it('Feb 29 (leap) 19:00 -> Mar 1 10:30', () => {
+    const input = makeDate(2024, 2, 29, 19, 0, 0);
+    const expected = makeDate(2024, 3, 1, 10, 30, 0);
+    const result = computeNextSwitchAt(input);
+    assert.equal(result.getTime(), expected.getTime(),
+      'input=' + formatWallDate(input) + ' expected=' + formatWallDate(expected) + ' got=' + formatWallDate(result));
+  });
+
+});
+
+// ─────────────────────────────────────────────────────────────
+// One-shot content-type frameId verification
+// ─────────────────────────────────────────────────────────────
+
+describe('one-shot frameId — content type determines prefix', () => {
+
+  it('buildNewsSnapshot constructs frameId starting with "news:"', () => {
+    const src = computeNextSwitchAt.toString(); // not used; we inspect the source
+    const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
+    const serverSrc = fs.readFileSync(serverPath, 'utf8');
+    // In buildNewsSnapshot, the frameId is constructed as:  frameId: `news:${sha1(...)}`
+    const newsFrameLine = serverSrc.match(/frameId:\s*`news:\$\{sha1\(/);
+    assert.notEqual(newsFrameLine, null, 'buildNewsSnapshot frameId should start with "news:"');
+  });
+
+  it('buildPhotoSnapshot constructs frameId starting with "photo:"', () => {
+    const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
+    const serverSrc = fs.readFileSync(serverPath, 'utf8');
+    // In buildPhotoSnapshot, the frameId is constructed with:  const frameId = `photo:${snapshot.slotKey}:...`
+    const photoFrameLine = serverSrc.match(/const\s+frameId\s*=\s*`photo:\$\{snapshot\.slotKey\}/);
+    assert.notEqual(photoFrameLine, null, 'buildPhotoSnapshot frameId should start with "photo:"');
+  });
+
+  it('one-shot handler calls buildNewsSnapshot for news content type', () => {
+    const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
+    const serverSrc = fs.readFileSync(serverPath, 'utf8');
+    // The one-shot handler uses contentType to branch:
+    //   if (contentType === 'news') { osContent = await buildNewsSnapshot(osNow); }
+    const newsBranch = serverSrc.match(/if\s*\(contentType\s*===\s*['"]news['"]\)\s*\{[^}]*buildNewsSnapshot/);
+    assert.notEqual(newsBranch, null, 'one-shot handler should call buildNewsSnapshot for news content');
+  });
+
+  it('one-shot handler calls buildPhotoSnapshot or buildPhotoSnapshotFromAsset for photo content', () => {
+    const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
+    const serverSrc = fs.readFileSync(serverPath, 'utf8');
+    // Photo with explicit assetId → buildPhotoSnapshotFromAsset
+    const assetBranch = serverSrc.match(/buildPhotoSnapshotFromAsset/);
+    // Photo without assetId → buildPhotoSnapshot (the else branch)
+    const photoBranch = serverSrc.match(/else\s*\{[^}]*\n[^}]*buildPhotoSnapshot\b/);
+    assert.notEqual(assetBranch, null, 'one-shot handler should call buildPhotoSnapshotFromAsset when assetId provided');
+    assert.notEqual(photoBranch, null, 'one-shot handler should call buildPhotoSnapshot when no assetId');
+  });
+
+  it('one-shot response osFrameId uses "one-shot:{contentType}:" prefix', () => {
+    const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
+    const serverSrc = fs.readFileSync(serverPath, 'utf8');
+    // Line 3466: var osFrameId = 'one-shot:' + contentType + ':' + Date.now().toString(36);
+    const osFrameIdLine = serverSrc.match(/var\s+osFrameId\s*=\s*['"]one-shot:['"]\s*\+\s*contentType/);
+    assert.notEqual(osFrameIdLine, null, 'osFrameId should use "one-shot:{contentType}:" prefix');
+  });
+
+  it('frameId prefix determined by actual content type, not by current auto mode', () => {
+    const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
+    const serverSrc = fs.readFileSync(serverPath, 'utf8');
+    // Verify the one-shot handler never reads the runtime auto mode to determine frameId prefix.
+    // The contentType variable comes from the request body, not from the runtime operating mode.
+    const readsAutoMode = serverSrc.match(/one-shot[^}]*runtime\.\w+.*mode[^}]*frameId/);
+    // Verify the contentType is sourced from request body
+    const contentTypeFromBody = serverSrc.match(/contentType\s*=\s*String\(osBody\.contentType/);
+    assert.notEqual(contentTypeFromBody, null, 'contentType must come from request body, not auto mode');
+    // The frameId prefix is determined by contentType (request body), which represents actual content
+    assert.equal(readsAutoMode, null, 'one-shot handler should not read auto mode for frameId prefix');
+  });
+
+  it('one-shot snapshot mode matches content type ("news" or "photo")', () => {
+    const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
+    const serverSrc = fs.readFileSync(serverPath, 'utf8');
+    // createSnapshot is called with contentType as the mode parameter:
+    // R3_snapshotModel.createSnapshot(osFrameId, osContent.snapshot, osContent.frame, contentType, ...)
+    const snapModeMatch = serverSrc.match(/createSnapshot\([^)]*contentType/);
+    assert.notEqual(snapModeMatch, null, 'snapshot mode should be set from contentType');
+  });
+
+  it('buildNewsSnapshot frameId uses "news:" prefix via sha1 hash of items', () => {
+    const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
+    const serverSrc = fs.readFileSync(serverPath, 'utf8');
+    // Check the exact pattern: frameId: `news:${sha1(...)}`
+    const exactPattern = serverSrc.match(/frameId:\s*`news:\$\{sha1\(/);
+    assert.notEqual(exactPattern, null, 'buildNewsSnapshot should use news:sha1(...) frameId pattern');
+  });
+
+  it('buildPhotoSnapshot frameId uses "photo:" prefix with slotKey, kind, theme, contentId', () => {
+    const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
+    const serverSrc = fs.readFileSync(serverPath, 'utf8');
+    // Check: const frameId = `photo:${snapshot.slotKey}:${displayKind}:${selection.theme}:${contentId}`
+    const photoPattern = serverSrc.match(/const\s+frameId\s*=\s*`photo:\$\{snapshot\.slotKey\}:\$\{displayKind\}:\$\{selection\.theme\}:\$\{contentId\}`/);
+    assert.notEqual(photoPattern, null, 'buildPhotoSnapshot should use photo:slotKey:kind:theme:contentId pattern');
   });
 
 });

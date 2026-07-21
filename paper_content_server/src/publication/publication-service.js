@@ -1,7 +1,7 @@
 // publication-service.js — Unified publish command handler with full transaction support
 // Transaction order: save state → save snapshot → activate → read-back → history append → notification
-// Pre-commit failure: full rollback via _restorePrePublicationState
-// Post-commit (history/notification) failure: committed=true, status fields set
+// Pre-commit failure (including history): full rollback via _restorePrePublicationState
+// Post-commit (notification only) failure: committed=true, status fields set
 // Returns { snapshotId, committed, historyStatus, notificationStatus }
 
 var LOCK_KEY_PUBLISH = 'publish';
@@ -149,10 +149,7 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
       }
       logger.info('Read-back verified: snapshotId=' + snapshot.snapshotId + ' frameSha=' + actualSha.slice(0, 8));
     }).then(function() {
-      // ── COMMITTED POINT ──
-      // Activation + read-back succeeded; system is in a consistent state.
-      // History/notification failures do NOT trigger rollback.
-      committed = true;
+      // History append (pre-commit: failure triggers full rollback)
       return history.append({
         id: Date.now().toString(36),
         type: snapshot.mode,
@@ -160,11 +157,12 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
         snapshotId: snapshot.snapshotId,
         publishedAt: new Date().toISOString(),
         status: 'active',
-      }).catch(function(err) {
-        logger.error('history append failed after activation for ' + snapshot.snapshotId + ': ' + (err.message || err));
-        histStatus = 'FAILED';
       });
     }).then(function() {
+      // ── COMMITTED POINT ──
+      // Activation + read-back + history succeeded; snapshot is the committed state.
+      // Only notification failure is tolerated (committed=true, notificationStatus=FAILED).
+      committed = true;
       return notificationPort.notify({snapshotId:snapshot.snapshotId,frameId:snapshot.frameId,frameSha256:snapshot.frameSha256,publishedAt:new Date().toISOString(),reason:snapshot.publishReason}).catch(function(err) {
         logger.warn('notification failed for ' + snapshot.snapshotId + ': ' + err.message);
         notifStatus = 'FAILED';

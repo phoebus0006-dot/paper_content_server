@@ -218,7 +218,7 @@ const IMPORT_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.importImagesDir || pa
 const LAST_GOOD_NEWS_FILE = resolveConfiguredPath(APP_CONFIG.lastGoodNewsFile || path.join(DATA_DIR, 'last_good_news.json'));
 const FALLBACK_STUDY_DIR = resolveConfiguredPath(APP_CONFIG.fallbackStudyDir || path.join(DATA_DIR, 'fallback_study'));
 
-const runtime = {
+let runtime = {
   feeds: null,
   feedsLoadedAt: 0,
   newsCache: { version: 1, updatedAt: null, translations: {} },
@@ -3679,20 +3679,8 @@ async function handleRequest(req, res) {
           var pvEinkProc = await pvEinkSvc.processImage(pvFullPath, pvRecipe);
           var pvEinkRst = runtime.imageRasterizer;
           var pvEinkFrame = await pvEinkRst.rasterize(pvFullPath, pvRecipe, { width: FRAME_WIDTH, height: FRAME_HEIGHT });
-          var pvEinkHdr = epaperEpf1.parseHeader(pvEinkFrame.frameBuffer);
-          var pvEinkPayload = pvEinkFrame.frameBuffer.slice(pvEinkHdr.headerLength);
-          var pvEinkPixels = pvEinkHdr.width * pvEinkHdr.height;
-          var pvEinkRaw = Buffer.alloc(pvEinkPixels * 3, 255);
-          for (var pvEi = 0; pvEi < pvEinkPixels; pvEi++) {
-            var pvEb = Math.floor(pvEi / 2);
-            var pvEn = pvEi % 2 === 0 ? (pvEinkPayload[pvEb] >> 4) & 0x0F : pvEinkPayload[pvEb] & 0x0F;
-            var pvEc = epaperPalette.getPaletteColor(pvEn);
-            var pvErgb = pvEc ? pvEc.rgb : [255, 255, 255];
-            pvEinkRaw[pvEi * 3] = pvErgb[0];
-            pvEinkRaw[pvEi * 3 + 1] = pvErgb[1];
-            pvEinkRaw[pvEi * 3 + 2] = pvErgb[2];
-          }
-          var pvEinkPNG = await sharp(pvEinkRaw, { raw: { width: pvEinkHdr.width, height: pvEinkHdr.height, channels: 3 } }).png().toBuffer();
+          var pvEinkDecoded = epaperEpf1.decodeFrame(pvEinkFrame.frameBuffer);
+          var pvEinkPNG = await sharp(pvEinkDecoded.pixels, { raw: { width: pvEinkDecoded.width, height: pvEinkDecoded.height, channels: 3 } }).png().toBuffer();
           res.writeHead(200, {
             'Content-Type': 'image/png',
             'Content-Length': pvEinkPNG.length,
@@ -4216,11 +4204,41 @@ if (require.main === module) {
   });
 }
 
+// ── Runtime override for test isolation ────────────────────────────────
+// Creates a request handler that temporarily replaces the module-level
+// `runtime` variable with the provided customRuntime for the duration of
+// each request. A concurrent-access guard prevents overlapping requests
+// from different test servers from racing on the shared variable.
+var _activeRuntime = 0;
+
+function createHandler(customRuntime) {
+  return async function(req, res) {
+    if (_activeRuntime > 0) {
+      throw new Error(
+        'Concurrent request with swapped runtime detected. ' +
+        'Test servers with isolated runtimes must not serve concurrent requests. ' +
+        'Run E2E test files sequentially.'
+      );
+    }
+    _activeRuntime++;
+    var saved = runtime;
+    runtime = customRuntime;
+    try {
+      return await handleRequest(req, res);
+    } finally {
+      runtime = saved;
+      _activeRuntime--;
+    }
+  };
+}
+
 module.exports = {
   handleRequest: handleRequest,
   main: main,
   runtime: runtime,
+  createHandler: createHandler,
   PALETTE: epaperPalette.PALETTE,
+  TIMEZONE: TIMEZONE,
   extractTag,
   extractItems,
   parseFeedXml,
@@ -4233,6 +4251,7 @@ module.exports = {
   formatLocalTimeLabel,
   formatDateParts,
   getWallTime,
+  dateFromWallTime,
   computeNextSwitchAt,
   selectPhotoSnapshot,
   selectStudyPhoto,

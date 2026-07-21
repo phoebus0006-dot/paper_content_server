@@ -74,6 +74,31 @@ function parseHeader(buffer) {
   };
 }
 
+function decodeFrame(frameBuffer) {
+  var header = parseHeader(frameBuffer);
+  var payload = frameBuffer.slice(header.headerLength, header.headerLength + header.payloadLength);
+  var totalPixels = header.width * header.height;
+  var pixels = Buffer.alloc(totalPixels * 3);
+
+  for (var i = 0; i < totalPixels; i++) {
+    var byteIdx = Math.floor(i / 2);
+    var nibble = i % 2 === 0
+      ? (payload[byteIdx] >> 4) & 0x0F
+      : payload[byteIdx] & 0x0F;
+    var color = palette.getPaletteColor(nibble);
+    var rgb = color ? color.rgb : [255, 255, 255];
+    pixels[i * 3] = rgb[0];
+    pixels[i * 3 + 1] = rgb[1];
+    pixels[i * 3 + 2] = rgb[2];
+  }
+
+  return {
+    width: header.width,
+    height: header.height,
+    pixels: pixels
+  };
+}
+
 function hexPreview(buf, bytes) {
   bytes = bytes || 32;
   var parts = [];
@@ -88,6 +113,7 @@ module.exports = {
   packPixels: packPixels,
   buildHeader: buildHeader,
   parseHeader: parseHeader,
+  decodeFrame: decodeFrame,
   encodePayload: encodePayload,
   encodeFrame: encodeFrame,
   hexPreview: hexPreview,

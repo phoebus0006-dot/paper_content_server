@@ -34,6 +34,10 @@ function createApplication(options) {
 
   var serverMod = require('../server.js');
 
+  // Build an isolated runtime for this application instance — never mutate
+  // the module-level serverMod.runtime singleton.
+  var customRuntime = Object.assign({}, serverMod.runtime);
+
   var lg = options.logger || { info: function() {}, warn: function() {}, error: function() {} };
 
   var R3_SnapshotStore = require('../src/snapshot/snapshot-store').SnapshotStore;
@@ -86,20 +90,20 @@ function createApplication(options) {
   var imageRasterizer = new ImageRasterizer();
   var imageRecipeService = new ImageRecipeService();
 
-  serverMod.runtime.snapshotStore = snapshotStore;
-  serverMod.runtime.snapshotCache = snapshotCache;
-  serverMod.runtime.pinStore = pinStore;
-  serverMod.runtime.publicationLock = publicationLock;
-  serverMod.runtime.operatingModeService = operatingModeService;
-  serverMod.runtime.publicationHistory = publicationHistory;
-  serverMod.runtime.notificationPort = notificationPort;
-  serverMod.runtime.publicationService = pubService;
-  serverMod.runtime.adminStateService = adminStateService;
-  serverMod.runtime.newsTitleService = newsTitleService;
-  serverMod.runtime.safeImagePath = safeImagePath;
-  serverMod.runtime.imageRasterizer = imageRasterizer;
-  serverMod.runtime.overridePersistence = overridePersistence;
-  serverMod.runtime.config = {
+  customRuntime.snapshotStore = snapshotStore;
+  customRuntime.snapshotCache = snapshotCache;
+  customRuntime.pinStore = pinStore;
+  customRuntime.publicationLock = publicationLock;
+  customRuntime.operatingModeService = operatingModeService;
+  customRuntime.publicationHistory = publicationHistory;
+  customRuntime.notificationPort = notificationPort;
+  customRuntime.publicationService = pubService;
+  customRuntime.adminStateService = adminStateService;
+  customRuntime.newsTitleService = newsTitleService;
+  customRuntime.safeImagePath = safeImagePath;
+  customRuntime.imageRasterizer = imageRasterizer;
+  customRuntime.overridePersistence = overridePersistence;
+  customRuntime.config = {
     features: {
       deletePipelineEnabled: false,
       customLibraryEnabled: false,
@@ -107,10 +111,10 @@ function createApplication(options) {
       renderShadowEnabled: false,
     },
   };
-  serverMod.runtime.renderCount = 0;
-  serverMod.runtime.serverStartTime = Date.now();
-  serverMod.runtime.cachedFrames = new Map();
-  serverMod.runtime.cachedSnapshots = new Map();
+  customRuntime.renderCount = 0;
+  customRuntime.serverStartTime = Date.now();
+  customRuntime.cachedFrames = new Map();
+  customRuntime.cachedSnapshots = new Map();
 
   operatingModeService.setMode('AUTO');
 
@@ -155,12 +159,12 @@ function createApplication(options) {
   setupFixtureImageIndex();
 
   var entries = JSON.parse(fs.readFileSync(path.join(dataDir, 'image_index.json'), 'utf8'));
-  serverMod.runtime.imageIndex = entries;
-  serverMod.runtime.fullImageIndex = entries;
-  serverMod.runtime.imageIndexLoadedAt = Date.now();
+  customRuntime.imageIndex = entries;
+  customRuntime.fullImageIndex = entries;
+  customRuntime.imageIndexLoadedAt = Date.now();
 
   var libState = JSON.parse(fs.readFileSync(path.join(dataDir, 'library_state.json'), 'utf8'));
-  serverMod.runtime.libraryState = libState;
+  customRuntime.libraryState = libState;
 
   var initialized = false;
   var initPromise = null;
@@ -193,8 +197,8 @@ function createApplication(options) {
   function close() {
     if (cleanedUp) return Promise.resolve();
     cleanedUp = true;
-    serverMod.runtime.cachedFrames = new Map();
-    serverMod.runtime.cachedSnapshots = new Map();
+    customRuntime.cachedFrames = new Map();
+    customRuntime.cachedSnapshots = new Map();
     return new Promise(function(resolve) {
       try {
         var rmDir = function(dirPath) {
@@ -219,8 +223,8 @@ function createApplication(options) {
   }
 
   return {
-    app: serverMod.handleRequest,
-    runtime: serverMod.runtime,
+    app: serverMod.createHandler(customRuntime),
+    runtime: customRuntime,
     close: close,
     ensureInitialized: ensureInitialized,
     dataDir: dataDir,

@@ -316,52 +316,66 @@ describe('PublicationService transaction — fault injection', () => {
     assert.deepEqual(fc.get('existing-frame'), Buffer.from('old-data'), 'frame cache data intact');
   });
 
-  it('should return committed:true, historyFailed:true when history fails after commit', async () => {
+  it('should rollback and throw when history.append fails', async () => {
+    var initialSnap = makeSnapshot('news:initial', 'news');
     var store = mockSnapshotStore(false, false, false);
     var cache = mockSnapshotCache();
     var opMode = mockOperatingModeService('AUTO');
     var hist = mockHistory(true, []);
     var op = mockOverridePersistence();
     var fc = mockFrameCache();
+
+    // Pre-populate store with an active snapshot so rollback has a target
+    await store.save(initialSnap);
+    await store.activate(initialSnap.snapshotId);
+    cache.set(initialSnap.snapshotId, initialSnap);
+
     var svc = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, logger, op, fc);
     var snap = makeSnapshot('news:hist-fail', 'news');
 
-    var result = await svc.publish(snap);
+    try {
+      await svc.publish(snap);
+      assert.fail('should have thrown');
+    } catch(e) {
+      assert.ok(e.message.includes('history fail'), 'throws history fail error');
+    }
 
-    // Snapshot should be committed despite history failure
-    assert.equal(result.committed, true, 'committed despite history failure');
-    assert.equal(result.historyFailed, true, 'historyFailed flag set');
-    assert.equal(result.historyStatus, 'FAILED', 'historyStatus is FAILED');
-    assert.equal(result.notificationStatus, 'OK', 'notification OK');
-
-    // Active snapshot should be the published one
+    // State must be fully restored to pre-publication state (committed=false)
     var active = await store.readActive();
-    assert.equal(active.activeSnapshotId, snap.snapshotId, 'active snapshot is the published one');
+    assert.equal(active.activeSnapshotId, initialSnap.snapshotId, 'active snapshot restored to initial');
+    assert.equal(opMode.getMode(), 'AUTO', 'mode restored');
+    assert.equal(op.loadOverride(), null, 'override unchanged');
 
-    // Mode should remain AUTO (not rolled back after commit point)
-    assert.equal(opMode.getMode(), 'AUTO', 'mode unchanged after committed publish');
+    // History must NOT contain the new entry
+    var entries = await hist.list();
+    assert.equal(entries.length, 0, 'history unchanged after rollback');
+
+    // Cache must NOT contain the new snapshot
+    assert.equal(cache.has(snap.snapshotId), false, 'failed snapshot not in cache');
+    assert.equal(cache.has(initialSnap.snapshotId), true, 'initial snapshot preserved in cache');
   });
 
-  it('should return committed:true, historyFailed:true when both history and notification fail', async () => {
+  it('should return committed:true, notificationStatus=FAILED when only notification fails', async () => {
     var store = mockSnapshotStore(false, false, false);
     var cache = mockSnapshotCache();
     var opMode = mockOperatingModeService('AUTO');
-    var hist = mockHistory(true, []);
+    var hist = mockHistory(false, []);
     var notif = mockNotificationPort(true);
     var op = mockOverridePersistence();
     var fc = mockFrameCache();
     var svc = PublicationService(store, cache, mockLock(), mockLock(), notif, opMode, hist, logger, op, fc);
-    var snap = makeSnapshot('news:dual-fail', 'news');
+    var snap = makeSnapshot('news:notif-fail', 'news');
 
     var result = await svc.publish(snap);
 
-    assert.equal(result.committed, true, 'committed despite dual failure');
-    assert.equal(result.historyFailed, true, 'historyFailed flag set');
-    assert.equal(result.historyStatus, 'FAILED', 'historyStatus is FAILED');
+    assert.equal(result.committed, true, 'committed despite notification failure');
+    assert.equal(result.historyStatus, 'OK', 'historyStatus is OK');
     assert.equal(result.notificationStatus, 'FAILED', 'notificationStatus is FAILED');
+    assert.equal(result.historyFailed, undefined, 'historyFailed not set when history succeeded');
 
+    // Active snapshot must be the published one (committed)
     var active = await store.readActive();
-    assert.equal(active.activeSnapshotId, snap.snapshotId, 'active snapshot committed');
+    assert.equal(active.activeSnapshotId, snap.snapshotId, 'active snapshot is the published one');
   });
 
   it('should work correctly when no overridePersistence or frameCache are provided', async () => {
