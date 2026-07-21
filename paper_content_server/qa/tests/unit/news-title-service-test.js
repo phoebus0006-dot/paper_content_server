@@ -8,10 +8,10 @@ describe('NewsTitleService', () => {
     nts = new NewsTitleService();
   });
 
-  it('should normalize a simple title', async () => {
+  it('should preserve rawTitle (including spaces)', async () => {
     const r = await nts.normalizeTitle('  Hello World  ', 'Summary');
     assert.ok(r.displayTitle);
-    assert.equal(r.rawTitle, 'Hello World');
+    assert.equal(r.rawTitle, '  Hello World  ');
     assert.match(r.titleStatus, /^(fit|needs_review|error)$/);
   });
 
