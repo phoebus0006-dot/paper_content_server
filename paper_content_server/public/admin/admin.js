@@ -1,15 +1,14 @@
-var STATE = {};
-var ACCESS_MODE = null;
-var TOKEN = null;
-var LOGIN_CALLBACK = null;
-var SELECTED_NEWS_IDX = -1;
-var NEWS_BASELINE = null;
+var STATE={adminState:null,news:{selected:[],candidates:[]},gallery:{},publishHistory:[],editor:{assetId:null,originalImage:null,transformHistory:[],historyIndex:-1,zoom:1,panX:0,panY:0,rotation:0,flipH:false,flipV:false,mode:'contain',cropRect:null,isEinkPreview:false,saved:false}};
+var ACCESS_MODE=null,TOKEN=null,LOGIN_CALLBACK=null,SELECTED_NEWS_IDX=0,CONSISTENT=true,INCONSISTENCIES=[],ACTIVE_TAB='dashboard';
 
 function $(id){return document.getElementById(id)}
-function show(el){if(!el)return;if(el.id==='app'){el.style.display='grid'}else{el.style.display='block'}}
-function hide(el){if(el)style_display(el,'none')}
-function style_display(el,val){if(el)el.style.display=val}
+function show(el){if(!el)return;if(el.id==='app'){el.style.display='grid'}else if(el.id==='login-overlay'){el.style.display='flex'}else{el.style.display='block'}}
+function hide(el){if(el)el.style.display='none'}
 function qs(s,p){return(p||document).querySelector(s)}
+function qsa(s,p){return(p||document).querySelectorAll(s)}
+
+window.addEventListener('error',function(e){showErrorBox(e.message||'Unknown error')});
+window.addEventListener('unhandledrejection',function(e){var msg=(e.reason&&(e.reason.message||e.reason))||'Promise rejected';showErrorBox(String(msg))});
 
 function showErrorBox(msg){
   var box=$('page-error-box');
@@ -19,37 +18,32 @@ function showErrorBox(msg){
     box.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#dc3545;color:#fff;padding:12px 20px;border-radius:6px;z-index:10000;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:90vw';
     document.body.appendChild(box);
   }
-  box.textContent='后台加载失败: '+msg;
+  box.textContent='Error: '+msg;
   box.style.display='block';
 }
-window.addEventListener('error',function(e){
-  showErrorBox(e.message||'Unknown error');
-});
-window.addEventListener('unhandledrejection',function(e){
-  var msg=(e.reason&&(e.reason.message||e.reason))||'Promise rejected';
-  showErrorBox(String(msg));
-});
 
 function api(path,opts){
   opts=opts||{};
   var h={'Content-Type':'application/json'};
-  if(TOKEN) h['Authorization']='Bearer '+TOKEN;
+  if(TOKEN)h['Authorization']='Bearer '+TOKEN;
   return fetch(path,Object.assign({headers:h},opts)).then(function(r){
     if(r.status===401||r.status===403){
       if(ACCESS_MODE==='token'&&!TOKEN){showLogin();throw new Error('unauthorized')}
     }
     if(r.status===204)return null;
-    return r.json().catch(function(){return null});
+    var ct=r.headers.get('content-type')||'';
+    if(ct.indexOf('application/json')>=0)return r.json().catch(function(){return null});
+    if(ct.indexOf('image/')>=0||ct.indexOf('application/octet')>=0)return r.blob();
+    return r.text().then(function(t){try{return JSON.parse(t)}catch(e){return t}});
   });
 }
 
-function toast(msg,type){type=type||'info';var t=document.createElement('div');t.className='toast toast-'+type;t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove()},3000)}
+function toast(msg,type){type=type||'info';var t=document.createElement('div');t.className='toast toast-'+type;t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove()},3500)}
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
 function showLogin(){
-  if(!$('login-overlay')){
-    console.warn('showLogin skipped: login-overlay not present (LAN mode)');
-    return;
-  }
+  if(!$('login-overlay'))return;
   hide($('app'));
   show($('login-overlay'));
   if($('login-token'))$('login-token').value='';
@@ -57,10 +51,7 @@ function showLogin(){
 }
 
 function hideLogin(){
-  if(!$('login-overlay')){
-    console.warn('hideLogin skipped: login-overlay not present (LAN mode)');
-    return;
-  }
+  if(!$('login-overlay'))return;
   hide($('login-overlay'));
   show($('app'));
 }
@@ -71,290 +62,300 @@ if(loginForm){
     e.preventDefault();
     var token=$('login-token').value.trim();
     if(!token)return;
-    api('/api/admin/dashboard',{headers:{'Authorization':'Bearer '+token}}).then(function(d){
-      if(d&&d.status==='ok'){TOKEN=token;hideLogin();if(LOGIN_CALLBACK){LOGIN_CALLBACK();LOGIN_CALLBACK=null}}
-      else{$('login-error').textContent='Token 无效';$('login-error').style.display='block'}
+    var headers={'Authorization':'Bearer '+token};
+    api('/api/admin/state',{headers:headers}).then(function(d){
+      if(d&&(d.active||d.status==='ok'||d.generatedAt)){
+        TOKEN=token;hideLogin();
+        if(LOGIN_CALLBACK){LOGIN_CALLBACK();LOGIN_CALLBACK=null}
+      }else{
+        $('login-error').textContent='Token 无效';
+        $('login-error').style.display='block';
+      }
     }).catch(function(){toast('认证失败','error')});
   });
 }
 
-var TAB_TITLES={dashboard:'总览','news-page':'新闻审查','photos-page':'图片库','photo-editor-page':'图片编辑','publish-page':'发布中心','status-page':'运行状态'};
+var TAB_TITLES={dashboard:'工作台','news-page':'新闻审查','photos-page':'图片库','photo-editor-page':'图片编辑','publish-page':'发布中心','status-page':'运行状态'};
+
 function switchTab(name){
-  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
+  if(name==='photo-editor-page'&&!STATE.editor.assetId)return;
+  ACTIVE_TAB=name;
+  qsa('.page').forEach(function(p){p.classList.remove('active')});
   var page=$(name);if(page)page.classList.add('active');
-  document.querySelectorAll('.sidebar nav a').forEach(function(a){a.classList.remove('active')});
+  qsa('.sidebar nav a').forEach(function(a){a.classList.remove('active')});
   var link=qs('a[data-tab="'+name+'"]');if(link)link.classList.add('active');
   var titleEl=$('page-title');
   if(titleEl&&TAB_TITLES[name])titleEl.textContent=TAB_TITLES[name];
 }
 
-document.querySelectorAll('.sidebar nav a').forEach(function(a){
+qsa('.sidebar nav a').forEach(function(a){
   a.addEventListener('click',function(e){e.preventDefault();switchTab(a.getAttribute('data-tab'))});
 });
 
-function loadAll(){
-  loadDashboard();loadNewsReview();loadPhotos();loadPublishHistory();loadStatus();loadHealth();
-  updateRefreshTime();
+function setText(id,text,emptyText){
+  var el=$(id);if(!el)return null;
+  var val=text;
+  if(val===undefined||val===null||val===''||val==='-'||val==='--')val=emptyText||'暂无数据';
+  if(typeof val==='object')val=JSON.stringify(val);
+  el.textContent=val;
+  return el;
 }
 
-function refreshAll(){
-  loadAll();
-  toast('已刷新','info');
+function badge(text,cls){return '<span class="badge badge-'+cls+'">'+esc(text)+'</span>'}
+
+function checkConsistent(){
+  if(!CONSISTENT){
+    toast('系统状态不一致: '+INCONSISTENCIES.map(function(i){return i.code}).join(', '),'error');
+    return false;
+  }
+  return true;
 }
+
+function firstVal(obj,keys,def){for(var i=0;i<keys.length;i++){if(obj[keys[i]]!=null&&obj[keys[i]]!==''&&obj[keys[i]]!=='--')return obj[keys[i]]}return def||'--'}
+
+function showConfirmInline(parentId,title,message,onConfirm,onCancel){
+  var area=$(parentId);
+  if(!area)return;
+  area.innerHTML='<div class="inline-confirm"><div class="confirm-text"><strong>'+esc(title)+'</strong><br>'+esc(message)+'</div><div class="confirm-actions"><button class="btn btn-danger btn-sm" id="inline-confirm-ok">确认</button><button class="btn btn-outline btn-sm" id="inline-confirm-cancel">取消</button></div></div>';
+  $('inline-confirm-ok').onclick=function(){area.innerHTML='';if(onConfirm)onConfirm()};
+  $('inline-confirm-cancel').onclick=function(){area.innerHTML='';if(onCancel)onCancel()};
+}
+
+function addStatusDetail(el,text,type){
+  var existing=el.parentNode.querySelector('.status-detail');
+  if(existing)existing.remove();
+  var detail=document.createElement('div');
+  detail.className='status-detail '+(type||'info');
+  detail.textContent=text;
+  el.parentNode.appendChild(detail);
+}
+
+function formatTime(iso){if(!iso)return '--';try{var d=new Date(iso);if(isNaN(d.getTime()))return iso;return d.toLocaleString('zh-CN')}catch(e){return iso}}
+
+function truncate(s,len){if(!s)return '--';len=len||30;return s.length>len?s.slice(0,len)+'…':s}
 
 function updateRefreshTime(){
   var el=$('last-refresh');
   if(el)el.textContent='最后刷新: '+new Date().toLocaleTimeString('zh-CN');
 }
 
-function setText(id,text,emptyText){
-  var el=$(id);if(!el)return null;
-  var val=text;
-  if(val===undefined||val===null||val===''||val==='-'||val==='--'){
-    val=emptyText||'暂无数据';
-  }
-  el.textContent=val;
-  return el;
+function refreshAll(){
+  loadAdminState().then(function(){return Promise.all([loadDashboard(),loadNewsReview(),loadGallery(),loadPublishHistory(),loadStatusPage()])}).then(function(){toast('已刷新','info');updateRefreshTime()}).catch(function(e){toast('刷新失败: '+e.message,'error')});
 }
 
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+// ═══════════════════════════════════════
+// Admin State — primary data source
+// ═══════════════════════════════════════
 
-function renderQualityRules(item){
-  var html='';
-  var titleLen=item.titleLen||0;
-  var summaryLen=item.summaryLen||0;
-  if(titleLen>24){
-    html+='<div class="quality-rule error">标题过长: '+titleLen+'/24 字，超出 '+(titleLen-24)+' 字，EPD 上可能被截断</div>';
-  }
-  if(summaryLen<45){
-    html+='<div class="quality-rule warn">摘要过短: '+summaryLen+'/56 字，低于建议下限</div>';
-  }
-  if(summaryLen>70){
-    html+='<div class="quality-rule error">摘要过长: '+summaryLen+'/56 字，超出 '+(summaryLen-56)+' 字，结尾可能被截断</div>';
-  }
-  if(item.translationStatus==='original'){
-    html+='<div class="quality-rule info">未翻译，将显示原文</div>';
-  }
-  if(item.translationStatus==='missing-key'){
-    html+='<div class="quality-rule error">翻译失败: 缺少 API Key</div>';
-  }
-  if(!html)return '';
-  return '<div class="quality-rules">'+html+'</div>';
-}
-
-function showConfirm(title,message,onConfirm){
-  var overlay=document.createElement('div');
-  overlay.className='confirm-overlay';
-  overlay.innerHTML='<div class="confirm-box"><h3>'+esc(title)+'</h3><div class="confirm-text">'+esc(message)+'</div><div class="confirm-buttons"><button class="btn btn-outline" id="confirm-cancel-btn">取消</button><button class="btn btn-primary" id="confirm-ok-btn">确认</button></div></div>';
-  document.body.appendChild(overlay);
-  $('confirm-cancel-btn').onclick=function(){overlay.remove()};
-  $('confirm-ok-btn').onclick=function(){overlay.remove();if(onConfirm)onConfirm()};
-  overlay.onclick=function(e){if(e.target===overlay)overlay.remove()};
-}
-
-function addStatusDetail(el,text,type){
-  var existing=el.parentNode.querySelector('.status-detail-text');
-  if(existing)existing.remove();
-  var detail=document.createElement('div');
-  detail.className='status-detail-text '+(type||'info');
-  detail.textContent=text;
-  el.parentNode.appendChild(detail);
-}
-
-// ── Dashboard ──
-function loadDashboard(){
-  api('/api/admin/dashboard').then(function(d){
+function loadAdminState(){
+  return api('/api/admin/state').then(function(d){
     if(!d)return;
-    setText('dash-mode',d.currentMode,'未设置');
-    setText('dash-slot',d.currentSlot,'未生成');
-    setText('dash-frameid',d.frameId?(d.frameId.slice(0,50)+'...'):'未生成','未生成');
-    setText('dash-nextswitch',d.nextSwitchLocal,'未调度');
-    setText('dash-news',d.newsItemCount!==undefined?String(d.newsItemCount):'未加载','未加载');
-    setText('dash-cache',d.frameCacheEntries!==undefined?String(d.frameCacheEntries):'0','0');
-    setText('dash-uptime',d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟','<1 分钟');
-    setText('dash-override',d.manualOverride||'auto','auto');
-    setText('dash-override-expires',d.overrideExpiresAt,'未设置');
-    setText('dash-lastpublish',d.lastPublishedAt||'未发布','未发布');
-    var modeEl=$('dash-control-mode');
-    if(!modeEl){
-      modeEl=document.createElement('div');
-      modeEl.id='dash-control-mode';
-      modeEl.className='control-mode-box';
-      var dash=$('dashboard');
-      var cards=dash.querySelectorAll('.card');
-      cards[cards.length-1].parentNode.insertBefore(modeEl,cards[cards.length-1].nextSibling);
-    }
-    if(d.manualOverride==null||d.manualOverride===undefined){
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>自动调度 — 由时间 SLOT 调度器自动选择内容';
-    }else{
-      modeEl.innerHTML='<div class="control-mode-title">控制模式</div>手动覆盖 — 当前内容由管理员手动指定，到期时间: '+(d.overrideExpiresAt||'未知');
-    }
-    STATE.dashboard=d;
-  }).catch(function(e){showErrorBox('dashboard load failed: '+(e&&e.message||e))});
+    STATE.adminState=d;
+    CONSISTENT=d.consistent!==false;
+    INCONSISTENCIES=d.inconsistencies||[];
+    return d;
+  }).catch(function(e){showErrorBox('state load failed: '+(e&&e.message||e))});
 }
 
-// ── News Review ──
+// ═══════════════════════════════════════
+// Workbench / Dashboard
+// ═══════════════════════════════════════
+
+function loadDashboard(){
+  var st=STATE.adminState;
+  if(!st)return;
+  var active=st.active||{},ov=st.override||{},sch=st.schedule||{},dev=st.device||{},h=st.health||{},pub=st.lastPublication||{};
+  setText('wb-mode',active.contentMode||'unknown');
+  setText('wb-opmode',active.operatingMode||'UNKNOWN');
+  setText('wb-frameid',active.frameId||'未生成','未生成');
+  setText('wb-sha',active.frameSha256?active.frameSha256.slice(0,16)+'…':'--','--');
+  setText('wb-nextswitch',sch.nextSwitchAt?formatTime(sch.nextSwitchAt):'未调度','未调度');
+  setText('wb-override',ov.type||'auto','auto');
+  setText('wb-override-expires',ov.expiresAt?formatTime(ov.expiresAt):'未设置','未设置');
+  setText('wb-lastpub',pub.publishedAt?formatTime(pub.publishedAt):'未发布','未发布');
+  setText('wb-device',dev.connected?'已连接':'未连接','未连接');
+  setText('wb-uptime',h.uptime?Math.floor(h.uptime/60)+' 分钟':'<1 分钟','<1 分钟');
+  setText('wb-consistent',CONSISTENT?'是 — 无异常':'否 — 存在不一致','--');
+  if(!CONSISTENT){
+    var errList=$('wb-inconsistencies');
+    if(errList){
+      errList.innerHTML='';
+      INCONSISTENCIES.forEach(function(inc){
+        var li=document.createElement('li');
+        li.textContent=inc.code+': 期望 "'+inc.expected+'", 实际 "'+inc.actual+'"';
+        errList.appendChild(li);
+      });
+    }
+  }
+  var previewBody=$('wb-preview-body');
+  if(previewBody){
+    previewBody.innerHTML='<div class="placeholder">'+icon('layers')+'<div>800×480 预览</div><div class="muted small mt-4">Frame: '+(active.frameId?truncate(active.frameId,40):'--')+'</div></div>';
+  }
+  var modeBox=$('dash-mode-box');
+  if(modeBox){
+    var modeText='auto';
+    var modeDesc='自动调度 — 由时间 SLOT 调度器自动选择内容';
+    if(ov.active&&ov.type){
+      modeText=ov.type;
+      modeDesc='手动 — 当前内容由管理员指定，到期时间: '+(ov.expiresAt?formatTime(ov.expiresAt):'永不');
+    }
+    modeBox.innerHTML='<div class="mode-title">控制模式: '+esc(modeText)+'</div>'+modeDesc;
+  }
+}
+
+// ═══════════════════════════════════════
+// News
+// ═══════════════════════════════════════
+
 function loadNewsReview(){
   api('/api/admin/news').then(function(d){
     if(!d)return;
     var el=$('news-list');
     if(!el)return;
     el.innerHTML='';
-    var items=(d.selected||[]);
-    NEWS_BASELINE=JSON.parse(JSON.stringify(items));
+    var items=d.selected||[];
+    STATE.news.selected=items;
+    STATE.news.candidates=d.candidates||[];
     if(items.length===0){
-      el.innerHTML='<div class="empty-state">暂无新闻数据。请检查新闻源配置或刷新。</div>';
+      el.innerHTML='<div class="empty-state">暂无新闻。请检查新闻源配置。</div>';
       return;
     }
+    if(SELECTED_NEWS_IDX>=items.length)SELECTED_NEWS_IDX=0;
     items.forEach(function(item,i){
       var card=document.createElement('div');
       card.className='news-card'+(i===SELECTED_NEWS_IDX?' selected':'');
-      var statusBadge='<span class="badge '+(item.translationStatus==='translated'?'badge-status-translated':item.translationStatus==='original'?'badge-status-original':item.translationStatus==='missing-key'?'badge-status-missing-key':item.translationStatus==='failed'?'badge-status-failed':'badge-status-stub')+'">'+(item.translationStatus||'unknown')+'</span>';
-      var isFirst=(i===0);
-      var isLast=(i===items.length-1);
-      var upDisabled=isFirst?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
-      var downDisabled=isLast?' disabled class="btn btn-sm btn-outline btn-disabled"':' class="btn btn-sm btn-outline"';
-      var qualityHtml=renderQualityRules(item);
+      var tsBadge=translationBadge(item.translationStatus);
+      var titleStatusBadge=renderTitleStatusBadge(item);
+      var isFirst=(i===0),isLast=(i===items.length-1);
+      var titleStats='';
+      if(item.rawTitle||item.displayTitle){
+        titleStats='<div class="title-stats">'+
+          'rawTitle: '+esc(truncate(item.rawTitle||item.title,40))+
+          ' | displayTitle: '+esc(truncate(item.displayTitle||item.title,40))+
+          (item.titleWidthPx?' | width: '+item.titleWidthPx+'/'+item.titleMaxWidthPx+'px':'')+
+          ' | '+titleStatusBadge+
+          (item.reviewStatus?' '+badge(item.reviewStatus,item.reviewStatus==='approved'?'approved':'pending'):'')+
+          '</div>';
+      }
       card.innerHTML='<div class="meta">'+
-        '<span class="badge badge-category">'+(item.category||'综合')+'</span>'+
-        statusBadge+
+        '<span class="badge badge-primary">'+(item.category||'综合')+'</span>'+
+        tsBadge+
         '<span class="small muted">'+(item.source||'')+'</span>'+
-        '<span class="small muted">'+(item.titleLen||0)+'字 / '+(item.summaryLen||0)+'字</span>'+
+        '<span class="small muted">'+(item.titleLen||0)+'字</span>'+
         '</div>'+
-        qualityHtml+
-        '<div class="news-title-row">'+esc(item.title||'无标题')+'</div>'+
-        '<div class="news-summary-row">'+esc(item.summary||'无摘要')+'</div>'+
+        titleStats+
+        '<div class="title-row">'+esc(item.displayTitle||item.title||'无标题')+'</div>'+
+        '<div class="summary-row">'+esc(item.displaySummary||item.summary||'')+'</div>'+
         '<div class="actions">'+
-        '<button'+upDisabled+' onclick="event.stopPropagation();moveNews('+i+',-1)">⬆ 上移</button>'+
-        '<button'+downDisabled+' onclick="event.stopPropagation();moveNews('+i+',1)">⬇ 下移</button>'+
-        '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')">移除</button>'+
+        '<button class="btn btn-sm btn-outline" '+(isFirst?'disabled':'')+' onclick="event.stopPropagation();moveNews('+i+',-1)">'+icon('chevron-left')+'上移</button>'+
+        '<button class="btn btn-sm btn-outline" '+(isLast?'disabled':'')+' onclick="event.stopPropagation();moveNews('+i+',1)">下移'+icon('chevron-right')+'</button>'+
+        '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeNews('+i+')">'+icon('trash')+'移除</button>'+
         '<a href="'+(item.url||'#')+'" target="_blank" class="btn btn-sm btn-outline" onclick="event.stopPropagation()">原文</a>'+
         '</div>';
-      card.onclick=function(){selectNews(i);};
+      card.onclick=function(){selectNews(i)};
       el.appendChild(card);
     });
-    STATE.news=d;
-    if(SELECTED_NEWS_IDX>=0&&SELECTED_NEWS_IDX<items.length){
-      renderNewsDetail(items[SELECTED_NEWS_IDX]);
-    }
+    selectNews(SELECTED_NEWS_IDX);
   }).catch(function(e){
     var el=$('news-list');
     if(el)el.innerHTML='<div class="empty-state">新闻加载失败: '+esc(e.message||e)+'</div>';
   });
 }
 
+function translationBadge(status){
+  if(status==='translated')return badge('已翻译','success');
+  if(status==='original')return badge('原文','muted');
+  if(status==='missing-key')return badge('缺Key','warning');
+  if(status==='failed')return badge('失败','danger');
+  return badge(status||'unknown','muted');
+}
+
+function renderTitleStatusBadge(item){
+  var s=item.titleStatus||'';
+  if(s==='fit')return badge('fit','success');
+  if(s==='needs_review')return badge('需复审','needs-review');
+  if(s==='error')return badge('错误','error');
+  return '';
+}
+
 function selectNews(idx){
   SELECTED_NEWS_IDX=idx;
-  var items=(STATE.news&&STATE.news.selected)||[];
-  document.querySelectorAll('#news-list .news-card').forEach(function(c,i){
-    if(i===idx)c.classList.add('selected');
-    else c.classList.remove('selected');
+  var items=STATE.news.selected||[];
+  qsa('#news-list .news-card').forEach(function(c,i){
+    if(i===idx)c.classList.add('selected');else c.classList.remove('selected');
   });
-  if(idx>=0&&idx<items.length){
-    renderNewsDetail(items[idx]);
-  }
+  if(idx>=0&&idx<items.length)renderNewsDetail(items[idx]);
 }
 
 function renderNewsDetail(item){
   var el=$('news-detail');
   if(!el||!item)return;
-  var statusBadge='<span class="badge '+(item.translationStatus==='translated'?'badge-status-translated':item.translationStatus==='original'?'badge-status-original':item.translationStatus==='missing-key'?'badge-status-missing-key':item.translationStatus==='failed'?'badge-status-failed':'badge-status-stub')+'">'+(item.translationStatus||'unknown')+'</span>';
-  var qualityHtml=renderQualityRules(item);
-  var origTitle=item.originalTitle||null;
-  var origSummary=item.originalSummary||null;
-  var hasOrig=!!(origTitle||origSummary);
-  var origContent='';
-  if(hasOrig){
-    origContent='<div><strong>标题:</strong> '+esc(origTitle)+'</div><div><strong>摘要:</strong> '+esc(origSummary)+'</div>';
-  }else{
-    origContent='<em>(原文未提供)</em>';
+  var html='<div class="field"><div class="field-label">分类</div><div class="field-value">'+
+    badge(item.category||'综合','primary')+' '+translationBadge(item.translationStatus)+'</div></div>';
+  if(item.titleStatus){
+    html+='<div class="field"><div class="field-label">标题状态</div><div class="field-value">'+
+      renderTitleStatusBadge(item)+' '+
+      (item.reviewStatus?badge(item.reviewStatus,item.reviewStatus==='approved'?'approved':'pending'):'')+
+      '</div></div>';
   }
-  var originalSection='<div class="detail-field"><div class="detail-label">原文</div><div class="detail-value"><div class="news-original-content" style="display:none">'+origContent+'</div><button class="btn btn-sm btn-outline news-original-toggle" onclick="toggleOriginal()">显示原文</button></div></div>';
-  el.innerHTML=
-    '<div class="detail-field"><div class="detail-label">分类</div><div class="detail-value"><span class="badge badge-category">'+esc(item.category||'综合')+'</span> '+statusBadge+'</div></div>'+
-    qualityHtml+
-    '<div class="detail-field"><div class="detail-label">显示标题</div><div class="detail-value"><input class="news-title" value="'+esc(item.title||'')+'" style="width:100%"></div></div>'+
-    '<div class="detail-field"><div class="detail-label">显示摘要</div><div class="detail-value"><textarea class="news-summary" rows="3" style="width:100%">'+esc(item.summary||'')+'</textarea></div></div>'+
-    originalSection+
-    '<div class="detail-field"><div class="detail-label">来源</div><div class="detail-value">'+esc(item.source||'未知')+'</div></div>'+
-    '<div class="detail-field"><div class="detail-label">发布时间</div><div class="detail-value">'+esc(item.publishedAt||'未知')+'</div></div>'+
-    '<div class="detail-field"><div class="detail-label">原文链接</div><div class="detail-value"><a href="'+esc(item.url||'#')+'" target="_blank">'+esc(item.url||'无链接')+'</a></div></div>'+
-    '<div class="detail-field"><div class="detail-label">字数</div><div class="detail-value">标题 '+(item.titleLen||0)+' 字 / 摘要 '+(item.summaryLen||0)+' 字</div></div>';
-}
-
-function toggleOriginal(){
-  var area=qs('.news-original-content');
-  var btn=qs('.news-original-toggle');
-  if(!area||!btn)return;
-  if(area.style.display==='none'){
-    area.style.display='block';
-    btn.textContent='隐藏原文';
-  }else{
-    area.style.display='none';
-    btn.textContent='显示原文';
-  }
+  html+='<div class="field"><div class="field-label">RAW 标题</div><div class="field-value mono">'+esc(item.rawTitle||item.title||'')+'</div></div>'+
+    '<div class="field"><div class="field-label">显示标题</div><div class="field-value"><input class="news-title" value="'+esc(item.displayTitle||item.title||'')+'" style="width:100%"></div></div>'+
+    (item.titleWidthPx?'<div class="field"><div class="field-label">标题宽度</div><div class="field-value">'+item.titleWidthPx+'px / '+item.titleMaxWidthPx+'px</div></div>':'')+
+    '<div class="field"><div class="field-label">RAW 摘要</div><div class="field-value mono">'+esc(item.rawSummary||item.summary||'')+'</div></div>'+
+    '<div class="field"><div class="field-label">显示摘要</div><div class="field-value"><textarea class="news-summary" rows="3" style="width:100%">'+esc(item.displaySummary||item.summary||'')+'</textarea></div></div>'+
+    '<div class="field"><div class="field-label">来源</div><div class="field-value">'+esc(item.source||'未知')+'</div></div>'+
+    '<div class="field"><div class="field-label">发布时间</div><div class="field-value">'+esc(item.publishedAt||'未知')+'</div></div>'+
+    '<div class="field"><div class="field-label">原文链接</div><div class="field-value"><a href="'+esc(item.url||'#')+'" target="_blank">'+esc(item.url||'无链接')+'</a></div></div>';
+  el.innerHTML=html;
 }
 
 async function saveNewsDraft(){
-  var items=(STATE.news&&STATE.news.selected)||[];
-  var titles=document.querySelectorAll('.news-title');
-  var summaries=document.querySelectorAll('.news-summary');
-  titles.forEach(function(inp,i){if(items[i])items[i].title=inp.value});
-  summaries.forEach(function(inp,i){if(items[i])items[i].summary=inp.value});
-  var changed=false;
-  if(NEWS_BASELINE){
-    for(var i=0;i<items.length;i++){
-      var base=NEWS_BASELINE[i];
-      var cur=items[i];
-      if(base&&cur&&(base.title!==cur.title||base.summary!==cur.summary)){
-        changed=true;
-        break;
-      }
-    }
-  }else{
-    changed=true;
-  }
-  if(!changed){
-    toast('无变更，无需保存','info');
-    return;
-  }
-  var btn=qs('#news-page .panel-actions .btn-primary');
-  if(btn){btn.disabled=true;btn.textContent='保存中...';}
-  try {
-    var r = await api('/api/admin/news/draft',{method:'POST',body:JSON.stringify({items:items})});
-    if(r && r.error) throw new Error(r.error);
+  var items=STATE.news.selected||[];
+  var titles=qsa('.news-title');
+  var summaries=qsa('.news-summary');
+  titles.forEach(function(inp,i){if(items[i])items[i].displayTitle=inp.value;if(items[i]&&!items[i].rawTitle)items[i].rawTitle=inp.value});
+  summaries.forEach(function(inp,i){if(items[i])items[i].displaySummary=inp.value;if(items[i]&&!items[i].rawSummary)items[i].rawSummary=inp.value});
+  var btn=$('save-draft-btn');
+  if(btn){btn.disabled=true;btn.innerHTML=icon('refresh')+'保存中…'}
+  try{
+    var r=await api('/api/admin/news/draft',{method:'POST',body:JSON.stringify({items:items})});
+    if(r&&r.error)throw new Error(r.error);
+    STATE.news.selected=r&&r.items?r.items:items;
     toast('草稿已保存','success');
-    NEWS_BASELINE=JSON.parse(JSON.stringify(items));
+    loadNewsReview();
     return r;
-  } catch(e) {
+  }catch(e){
     toast('保存失败: '+e.message,'error');
     throw e;
-  } finally {
-    if(btn){btn.disabled=false;btn.textContent='💾 保存草稿';}
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML=icon('save')+'保存草稿'}
   }
 }
 
 async function publishNews(){
-  try {
-    var msg=$('publish-msg');
-    if(msg){msg.textContent='正在保存草稿...';msg.style.display='block';}
+  if(!checkConsistent())return;
+  var msg=$('publish-msg');
+  if(msg){msg.style.display='block';msg.textContent='正在保存草稿…';msg.className='msg-area';}
+  try{
     await saveNewsDraft();
-    var items=(STATE.news&&STATE.news.selected)||[];
-    showConfirm('发布新闻','确认发布当前 '+items.length+' 条新闻到电子纸？',async function(){
-      if(msg){msg.textContent='正在发布新闻页...';msg.style.display='block';}
-      try {
-        var r = await api('/api/admin/publish/news',{method:'POST'});
-        if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard();if(msg){msg.textContent='发布成功: '+r.frameId.slice(0,40);}}
-        else{toast('发布失败','error');if(msg){msg.textContent='发布失败';msg.style.background='#f8e0e0';msg.style.borderColor='#f5b3b3';}}
-      } catch(e) { toast('发布失败: '+e.message,'error'); if(msg){msg.textContent='发布失败';msg.style.background='#f8e0e0';msg.style.borderColor='#f5b3b3';} }
-    });
-  } catch(e) {
-    if(msg){msg.textContent='';msg.style.display='none';}
+    if(msg)msg.textContent='正在发布新闻…';
+    var r=await api('/api/admin/publish/news',{method:'POST'});
+    if(r&&r.frameId){
+      await loadAdminState();
+      if(msg)msg.textContent='发布成功: '+truncate(r.frameId,40);
+      toast('新闻已发布: '+truncate(r.frameId,30),'success');
+      loadDashboard();
+    }else{
+      throw new Error(r&&r.error||'发布返回异常');
+    }
+  }catch(e){
+    toast('发布失败: '+e.message,'error');
+    if(msg){msg.textContent='发布失败: '+e.message;msg.style.background='#f8e0e0';msg.style.borderColor='#f5b3b3';}
   }
 }
 
 function moveNews(idx,dir){
-  var items=(STATE.news&&STATE.news.selected)||[];
+  var items=STATE.news.selected||[];
   var target=idx+dir;
   if(target<0||target>=items.length)return;
   var tmp=items[idx];items[idx]=items[target];items[target]=tmp;
@@ -364,258 +365,387 @@ function moveNews(idx,dir){
 }
 
 function removeNews(idx){
-  var items=(STATE.news&&STATE.news.selected)||[];
+  var items=STATE.news.selected||[];
   var item=items[idx];
   if(!item)return;
-  showConfirm('确认移除','确认删除新闻: "'+item.title+'"?',function(){
-    items.splice(idx,1);
-    if(SELECTED_NEWS_IDX===idx)SELECTED_NEWS_IDX=-1;
-    else if(SELECTED_NEWS_IDX>idx)SELECTED_NEWS_IDX--;
-    if(items.length<6&&STATE.news.candidates){
-      var used={};items.forEach(function(it){if(it.url)used[it.url]=true});
-      for(var i=0;i<STATE.news.candidates.length;i++){
-        var c=STATE.news.candidates[i];
-        if(!used[c.url]){items.push(c);break;}
-      }
+  items.splice(idx,1);
+  if(SELECTED_NEWS_IDX===idx)SELECTED_NEWS_IDX=Math.min(idx,items.length-1);
+  else if(SELECTED_NEWS_IDX>idx)SELECTED_NEWS_IDX--;
+  if(items.length<6&&STATE.news.candidates){
+    var used={};items.forEach(function(it){if(it.url)used[it.url]=true});
+    for(var i=0;i<STATE.news.candidates.length;i++){
+      var c=STATE.news.candidates[i];
+      if(!used[c.url]){items.push(c);break;}
     }
-    loadNewsReview();
-  });
+  }
+  loadNewsReview();
 }
 
-// ── Photos ──
-function loadPhotos(){
-  api('/api/admin/photos').then(function(d){
-    if(!d||!d.photos)return;
-    var el=$('photo-grid');
-    if(!el)return;
-    el.innerHTML='';
-    var photos=d.photos||[];
-    var countEl=$('photo-count');
-    if(countEl)countEl.textContent='共 '+photos.length+' 张';
-    // Handle upload availability from server response
-    if(d.uploadAvailable===false){
-      var form=$('photo-upload-form');
-      if(form){
-        var btn=form.querySelector('button[type="submit"]');
-        if(btn){btn.disabled=true;btn.classList.add('btn-disabled');}
-        var existing=form.parentNode.querySelector('.disabled-upload');
-        if(!existing){
-          var msg=document.createElement('div');
-          msg.className='disabled-upload';
-          msg.innerHTML='<div class="disabled-upload-title">上传暂不可用</div><div>'+(d.uploadDisabledReason||'安全分类器未就绪，暂不可上传')+'</div>';
-          form.parentNode.insertBefore(msg,form.nextSibling);
-        }
-      }
-    }
-    if(photos.length===0){
-      el.innerHTML='<div class="empty-state">图片库为空。</div>';
-      return;
-    }
-    photos.forEach(function(p){
-      var item=document.createElement('div');item.className='photo-item';
-      var safetyBadge='<span class="badge '+(p.safetyStatus==='approved'?'badge-safety-approved':p.safetyStatus==='pending'?'badge-safety-pending':p.safetyStatus==='rejected'?'badge-safety-rejected':'badge-safety-pending')+'">'+(p.safetyStatus||'unknown')+'</span>';
-      var thumbUrl='/api/admin/photos/'+p.id+'/thumbnail?'+Date.now();
-      item.innerHTML='<div class="thumb"><img src="'+thumbUrl+'" alt="'+esc(p.title||'')+'" loading="lazy" onerror="this.parentElement.classList.add(\'broken\');this.style.display=\'none\'"></div>'+
-        '<div class="info">'+
-        '<div class="name">'+esc(p.title||p.id.slice(0,12))+'</div>'+
-        '<div class="meta-row"><span>'+esc(p.source||'未知')+' · '+(p.width||0)+'x'+(p.height||0)+'</span>'+safetyBadge+'</div>'+
-        '<div class="actions">'+
-        '<button class="btn btn-sm btn-outline" onclick="openEditor(\''+p.id+'\')">编辑</button>'+
-        '<button class="btn btn-sm btn-primary" onclick="publishPhoto(\''+p.id+'\')">发布</button>'+
-        '<button class="btn btn-sm btn-danger" onclick="deletePhoto(\''+p.id+'\')">删除</button>'+
-        '</div></div>';
-      el.appendChild(item);
-    });
-  }).catch(function(e){
-    var el=$('photo-grid');
-    if(el)el.innerHTML='<div class="empty-state">图片加载失败: '+esc(e.message||e)+'</div>';
-  });
+// ═══════════════════════════════════════
+// Gallery — 4 views
+// ═══════════════════════════════════════
+
+var GALLERY_TAB='learning';
+
+function switchGalleryTab(tab){
+  GALLERY_TAB=tab;
+  qsa('.gallery-tab').forEach(function(t){t.classList.toggle('active',t.getAttribute('data-tab')===tab)});
+  loadGallery();
 }
 
-function checkUploadEnabled(){
-  fetch('/api/admin/photos/upload',{method:'POST'}).then(function(r){
-    if(r.status===503){
-      var btn=qs('#photo-upload-form button[type="submit"]');
-      if(btn){btn.disabled=true;btn.classList.add('btn-disabled');}
-      var form=$('photo-upload-form');
-      if(form){
-        var existing=form.parentNode.querySelector('.disabled-upload');
-        if(!existing){
-          var msg=document.createElement('div');
-          msg.className='disabled-upload';
-          msg.innerHTML='<div class="disabled-upload-title">上传暂不可用</div><div>安全分类器未就绪，暂不可上传</div>';
-          form.parentNode.insertBefore(msg,form.nextSibling);
-        }
-      }
-    }
-  }).catch(function(){});
-}
-
-var photoForm=$('photo-upload-form');
-if(photoForm){
-  photoForm.addEventListener('submit',function(e){
-    e.preventDefault();
-    var fileInput=$('photo-file');
-    if(!fileInput||!fileInput.files[0]){toast('请选择文件','error');return;}
-    var btn=qs('#photo-upload-form button[type="submit"]');
-    if(btn){btn.disabled=true;btn.textContent='上传中...';}
-    var fd=new FormData();fd.append('photo',fileInput.files[0]);
-    fetch('/api/admin/photos/upload',{method:'POST',headers:{},body:fd}).then(function(r){
-      if(r.ok){toast('上传成功','success');fileInput.value='';loadPhotos()}
-      else{
-        r.text().then(function(body){
-          toast('上传失败: HTTP '+r.status+' — '+(body||'未知错误'),'error');
-          if(r.status===503){checkUploadEnabled()}
-        }).catch(function(){
-          toast('上传失败: HTTP '+r.status,'error');
-        });
-      }
-    }).catch(function(e){toast('上传错误: '+e.message,'error')}).finally(function(){
-      if(btn){btn.disabled=false;btn.textContent='📤 上传';}
-    });
-  });
-}
-
-function deletePhoto(id){
-  showConfirm('删除图片','确认删除该图片？此操作不可撤销。',function(){
-    api('/api/admin/photos/'+id,{method:'DELETE'}).then(function(){toast('已删除','info');loadPhotos()}).catch(function(e){toast('删除失败: '+(e.message||e),'error')});
-  });
-}
-
-function publishPhoto(id){
-  api('/api/admin/publish/photo',{method:'POST',body:JSON.stringify({photoId:id})}).then(function(r){
-    if(r&&r.frameId){toast('已发布: '+r.frameId.slice(0,20)+'...','success');loadDashboard()}
-    else toast('发布失败','error');
-  }).catch(function(e){toast('发布失败: '+(e.message||e),'error')});
-}
-
-// ── Photo Editor ──
-var EDITOR_STATE={};
-
-function openEditor(id){
-  switchTab('photo-editor-page');
-  EDITOR_STATE.id=id;
-  EDITOR_STATE.recipe={brightness:1,contrast:1,saturation:1,gamma:1,rotate:0,flipH:false,flipV:false,sharpen:0,blur:0};
-  loadEditorPreview();
-  api('/api/admin/photos/'+id).then(function(d){
-    if(d){$('editor-title').textContent=d.title||id.slice(0,12)}
-  });
-  var editorHeader=$('photo-editor-page').querySelector('h2');
-  if(editorHeader){
-    var closeBtn=editorHeader.parentNode.querySelector('.editor-close-btn');
-    if(!closeBtn){
-      closeBtn=document.createElement('button');
-      closeBtn.className='btn btn-sm btn-outline editor-close-btn';
-      closeBtn.textContent='← 返回图片库';
-      closeBtn.onclick=function(){switchTab('photos-page')};
-      editorHeader.parentNode.insertBefore(closeBtn,editorHeader.nextSibling);
-    }
+function loadGallery(){
+  var el=$('photo-grid');
+  if(!el)return;
+  el.innerHTML='<div class="loading-state">加载中…</div>';
+  var tab=GALLERY_TAB;
+  if(tab==='learning'){
+    api('/api/admin/library?libraryType=LEARNING').then(function(d){renderGalleryAssets(d&&d.assets||[],'学习库')}).catch(function(e){el.innerHTML='<div class="empty-state">加载失败: '+esc(e.message)+'</div>'});
+  }else if(tab==='custom'){
+    api('/api/admin/library?libraryType=CUSTOM').then(function(d){renderGalleryAssets(d&&d.assets||[],'自定义库')}).catch(function(e){el.innerHTML='<div class="empty-state">加载失败: '+esc(e.message)+'</div>'});
+  }else if(tab==='pending'){
+    Promise.all([
+      api('/api/admin/library?libraryType=LEARNING').then(function(d){return d&&d.assets||[]}),
+      api('/api/admin/library?libraryType=CUSTOM').then(function(d){return d&&d.assets||[]})
+    ]).then(function(results){
+      var all=[].concat(results[0],results[1]);
+      var pending=all.filter(function(a){return a.safetyStatus==='PENDING'||a.safetyStatus==='SUSPICIOUS'||a.relevanceStatus==='UNKNOWN'});
+      renderGalleryAssets(pending,'待审核');
+    }).catch(function(e){el.innerHTML='<div class="empty-state">加载失败: '+esc(e.message)+'</div>'});
+  }else if(tab==='rejected'){
+    Promise.all([
+      api('/api/admin/library?libraryType=LEARNING').then(function(d){return d&&d.assets||[]}),
+      api('/api/admin/library?libraryType=CUSTOM').then(function(d){return d&&d.assets||[]})
+    ]).then(function(results){
+      var all=[].concat(results[0],results[1]);
+      var rejected=all.filter(function(a){return a.safetyStatus==='UNSAFE'||a.lifecycleStatus==='BLOCKED'||a.lifecycleStatus==='TOMBSTONED'});
+      renderGalleryAssets(rejected,'已拒绝');
+    }).catch(function(e){el.innerHTML='<div class="empty-state">加载失败: '+esc(e.message)+'</div>'});
   }
 }
 
-function loadEditorPreview(){
-  var id=EDITOR_STATE.id;
-  var recipe=EDITOR_STATE.recipe;
-  var params='?id='+id+'&b='+recipe.brightness+'&c='+recipe.contrast+'&s='+recipe.saturation+'&g='+recipe.gamma+'&r='+recipe.rotate+'&fh='+(recipe.flipH?1:0)+'&fv='+(recipe.flipV?1:0)+'&sh='+recipe.sharpen+'&bl='+recipe.blur;
-  loadPreviewImage('/api/admin/photo-preview'+params+'&t='+Date.now(),'editor-preview','editor-preview-fallback');
-  loadPreviewImage('/api/admin/photo-eink-preview'+params+'&t='+Date.now(),'editor-eink-preview','editor-eink-fallback');
-  api('/api/admin/photo-palette'+params).then(function(d){
-    if(!d)return;
-    var el=$('editor-palette');if(!el)return;
-    el.innerHTML='';
-    var colors={0:'#000',1:'#fff',2:'#ff0',3:'#f00',5:'#00f',6:'#0f0'};
-    var labels={0:'黑',1:'白',2:'黄',3:'红',5:'蓝',6:'绿'};
-    d.palette.forEach(function(p){
-      if(p.pixelCount>0){
-        var item=document.createElement('div');item.className='palette-item';
-        item.innerHTML='<span class="palette-swatch" style="background:'+(colors[p.code]||'#ccc')+'"></span> '+(labels[p.code]||p.code)+': '+p.pixelCount;
-        el.appendChild(item);
-      }
-    });
-    if(d.unsupportedCode4>0){
-      var err=document.createElement('div');err.style.color='#dc3545';err.style.fontWeight='700';
-      err.textContent='警告: 发现 code4 x '+d.unsupportedCode4;
-      el.appendChild(err);
-    }
+function renderGalleryAssets(assets,label){
+  var el=$('photo-grid');
+  if(!el)return;
+  el.innerHTML='';
+  var countEl=$('photo-count');
+  if(countEl)countEl.textContent='共 '+assets.length+' 项';
+  if(assets.length===0){
+    el.innerHTML='<div class="empty-state">'+esc(label)+'为空。</div>';
+    return;
+  }
+  assets.forEach(function(a){
+    var item=document.createElement('div');item.className='photo-item';
+    var safetyCls='safe';
+    if(a.safetyStatus==='PENDING'||a.safetyStatus==='SUSPICIOUS')safetyCls='suspicious';
+    else if(a.safetyStatus==='UNSAFE')safetyCls='unsafe';
+    else if(a.lifecycleStatus==='BLOCKED'||a.lifecycleStatus==='TOMBSTONED')safetyCls='unsafe';
+    var thumbUrl='/api/admin/library/'+a.assetId+'/thumbnail?'+Date.now();
+    item.innerHTML='<div class="thumb">'+
+      '<img src="'+thumbUrl+'" alt="'+esc(a.assetId||'')+'" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.innerHTML=\''+icon('image','40px','40px')+'\'">'+
+      '<span class="safety-overlay badge badge-'+safetyCls+'">'+esc(a.safetyStatus||a.lifecycleStatus||'--')+'</span>'+
+      '</div>'+
+      '<div class="info">'+
+      '<div class="name">'+esc(a.metadata&&a.metadata.title||a.assetId.slice(0,16))+'</div>'+
+      '<div class="meta-row"><span>'+(a.width||'--')+'x'+(a.height||'--')+' · '+esc(a.libraryType||'')+'</span></div>'+
+      '<div class="meta-row"><span class="mono">'+truncate(a.sha256||a.assetId,20)+'</span></div>'+
+      '<div class="actions">'+
+      '<button class="btn btn-sm btn-outline" onclick="openEditor(\''+a.assetId+'\')">'+icon('edit')+'编辑</button>'+
+      '<button class="btn btn-sm btn-success" onclick="oneShotPublish(\''+a.assetId+'\',\''+esc(a.libraryType||'custom')+'\')">'+icon('publish')+'发布</button>'+
+      (a.lifecycleStatus!=='TOMBSTONED'&&a.lifecycleStatus!=='DELETED'?'<button class="btn btn-sm btn-danger" onclick="deleteAsset(\''+a.assetId+'\')">'+icon('trash')+'删除</button>':'')+
+      '</div></div>';
+    el.appendChild(item);
   });
-  var einkWrapper=$('editor-preview-eink');
-  if(einkWrapper)einkWrapper.style.display='block';
 }
 
-function loadPreviewImage(url,imgId,fallbackId){
-  var img=$(imgId);
-  if(!img)return;
-  fetch(url).then(function(r){
-    if(!r.ok){
-      img.style.display='none';
-      var fb=$(fallbackId);
-      if(!fb){
-        fb=document.createElement('div');
-        fb.id=fallbackId;
-        fb.className='empty-state';
-        fb.textContent='图片预览服务未就绪';
-        img.parentNode.insertBefore(fb,img.nextSibling);
-      }else{
-        fb.style.display='block';
-      }
-    }else{
-      var fb=$(fallbackId);
-      if(fb)fb.style.display='none';
-      img.style.display='';
-      r.blob().then(function(b){img.src=URL.createObjectURL(b)});
-    }
-  }).catch(function(){
-    img.style.display='none';
-    var fb=$(fallbackId);
-    if(!fb){
-      fb=document.createElement('div');
-      fb.id=fallbackId;
-      fb.className='empty-state';
-      fb.textContent='图片预览服务未就绪';
-      img.parentNode.insertBefore(fb,img.nextSibling);
-    }else{
-      fb.style.display='block';
-    }
+function deleteAsset(id){
+  if(!checkConsistent())return;
+  showConfirmInline('confirm-area','删除资源','确认删除此资源？需要提供原因。',function(){
+    api('/api/admin/library/'+id,{method:'DELETE',body:JSON.stringify({reason:'POLICY_BLOCKED'})}).then(function(){
+      toast('已删除','info');loadGallery();
+    }).catch(function(e){toast('删除失败: '+(e.message||e),'error')});
   });
+}
+
+function oneShotPublish(assetId,libraryType){
+  if(!checkConsistent())return;
+  api('/api/admin/publish/one-shot',{method:'POST',body:JSON.stringify({contentType:'photo',assetId:assetId,libraryType:libraryType||'custom'})}).then(function(r){
+    if(r&&r.frameId){
+      loadAdminState().then(function(){
+        toast('已发布: '+truncate(r.frameId,30),'success');
+        loadDashboard();
+      });
+    }else toast('发布失败','error');
+  }).catch(function(e){toast('发布失败: '+(e.message||e),'error')});
+}
+
+function icon(name,w,h){w=w||18;h=h||18;return '<svg class="icon icon-'+name+'" viewBox="0 0 24 24" width="'+w+'" height="'+h+'"><use href="#icon-'+name+'"/></svg>'}
+
+// ═══════════════════════════════════════
+// Image Editor
+// ═══════════════════════════════════════
+
+function openEditor(id){
+  if(!id)return;
+  STATE.editor.assetId=id;
+  STATE.editor.zoom=1;STATE.editor.panX=0;STATE.editor.panY=0;
+  STATE.editor.rotation=0;STATE.editor.flipH=false;STATE.editor.flipV=false;
+  STATE.editor.mode='contain';STATE.editor.cropRect=null;
+  STATE.editor.isEinkPreview=false;STATE.editor.saved=false;
+  STATE.editor.transformHistory=[{zoom:1,panX:0,panY:0,rotation:0,flipH:false,flipV:false}];
+  STATE.editor.historyIndex=0;
+  switchTab('photo-editor-page');
+  var titleEl=$('editor-title');
+  if(titleEl)titleEl.textContent='编辑: '+truncate(id,24);
+  loadEditorImage();
+}
+
+function loadEditorImage(){
+  var id=STATE.editor.assetId;
+  if(!id)return;
+  var img=new Image();
+  img.crossOrigin='anonymous';
+  img.onload=function(){
+    STATE.editor.originalImage=img;
+    if($('editor-canvas'))renderEditorCanvas();
+    if($('editor-eink-canvas'))renderEditorEink();
+  };
+  img.onerror=function(){toast('图片加载失败','error')};
+  img.src='/api/admin/library/'+id+'/full?'+Date.now();
+}
+
+function renderEditorCanvas(){
+  var canvas=$('editor-canvas');
+  var wrap=$('editor-canvas-wrap');
+  if(!canvas||!wrap)return;
+  var img=STATE.editor.originalImage;
+  if(!img){return}
+  var rect=wrap.getBoundingClientRect();
+  var cw=rect.width||800,ch=rect.height||480;
+  canvas.width=cw;canvas.height=ch;
+  var ctx=canvas.getContext('2d');
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(0,0,cw,ch);
+  var s=STATE.editor;
+  ctx.save();
+  ctx.translate(cw/2,ch/2);
+  ctx.scale(s.flipH?-1:1,s.flipV?-1:1);
+  ctx.rotate(s.rotation*Math.PI/180);
+  var scale=Math.min(cw/img.width,ch/img.height);
+  if(s.mode==='cover')scale=Math.max(cw/img.width,ch/img.height);
+  var drawW=img.width*scale*s.zoom;
+  var drawH=img.height*scale*s.zoom;
+  ctx.drawImage(img,-drawW/2+s.panX,-drawH/2+s.panY,drawW,drawH);
+  ctx.restore();
+  updateEditorModeBadge();
+  updateEditorZoomLabel();
+}
+
+function renderEditorEink(){
+  var canvas=$('editor-eink-canvas');
+  var wrap=$('editor-eink-canvas-wrap');
+  if(!canvas||!wrap)return;
+  var img=STATE.editor.originalImage;
+  if(!img)return;
+  var rect=wrap.getBoundingClientRect();
+  var cw=rect.width||800,ch=rect.height||480;
+  canvas.width=cw;canvas.height=ch;
+  var ctx=canvas.getContext('2d');
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(0,0,cw,ch);
+  var s=STATE.editor;
+  ctx.save();
+  ctx.translate(cw/2,ch/2);
+  ctx.scale(s.flipH?-1:1,s.flipV?-1:1);
+  ctx.rotate(s.rotation*Math.PI/180);
+  var scale=Math.min(cw/img.width,ch/img.height);
+  if(s.mode==='cover')scale=Math.max(cw/img.width,ch/img.height);
+  var drawW=img.width*scale*s.zoom;
+  var drawH=img.height*scale*s.zoom;
+  ctx.filter='grayscale(1) contrast(1.2)';
+  ctx.drawImage(img,-drawW/2+s.panX,-drawH/2+s.panY,drawW,drawH);
+  ctx.filter='none';
+  ctx.restore();
 }
 
 function updateEditorParam(key,val){
-  EDITOR_STATE.recipe[key]=parseFloat(val);
-  loadEditorPreview();
+  STATE.editor[key]=parseFloat(val);
+  pushEditorHistory();
+  renderEditorCanvas();
 }
 
-function saveEdit(){
-  api('/api/admin/photos/'+EDITOR_STATE.id+'/save-edit',{method:'POST',body:JSON.stringify({recipe:EDITOR_STATE.recipe})}).then(function(){
+function updateSlider(id,val){
+  var label=$(id);
+  if(label)label.textContent=parseFloat(val).toFixed(1);
+}
+
+function pushEditorHistory(){
+  var s=STATE.editor;
+  var state={zoom:s.zoom,panX:s.panX,panY:s.panY,rotation:s.rotation,flipH:s.flipH,flipV:s.flipV,mode:s.mode,cropRect:s.cropRect};
+  s.transformHistory=s.transformHistory.slice(0,s.historyIndex+1);
+  s.transformHistory.push(state);
+  s.historyIndex=s.transformHistory.length-1;
+}
+
+function editorUndo(){
+  var s=STATE.editor;
+  if(s.historyIndex<=0)return;
+  s.historyIndex--;
+  var st=s.transformHistory[s.historyIndex];
+  Object.assign(s,st);
+  renderEditorCanvas();
+}
+
+function editorRedo(){
+  var s=STATE.editor;
+  if(s.historyIndex>=s.transformHistory.length-1)return;
+  s.historyIndex++;
+  var st=s.transformHistory[s.historyIndex];
+  Object.assign(s,st);
+  renderEditorCanvas();
+}
+
+function editorZoomIn(){
+  STATE.editor.zoom=Math.min(5,STATE.editor.zoom*1.2);
+  pushEditorHistory();
+  renderEditorCanvas();
+}
+
+function editorZoomOut(){
+  STATE.editor.zoom=Math.max(0.2,STATE.editor.zoom/1.2);
+  pushEditorHistory();
+  renderEditorCanvas();
+}
+
+function editorRotate(){
+  STATE.editor.rotation=(STATE.editor.rotation+90)%360;
+  pushEditorHistory();
+  renderEditorCanvas();
+}
+
+function editorFlipH(){
+  STATE.editor.flipH=!STATE.editor.flipH;
+  pushEditorHistory();
+  renderEditorCanvas();
+}
+
+function editorFlipV(){
+  STATE.editor.flipV=!STATE.editor.flipV;
+  pushEditorHistory();
+  renderEditorCanvas();
+}
+
+function editorSetMode(mode){
+  STATE.editor.mode=mode;
+  pushEditorHistory();
+  renderEditorCanvas();
+}
+
+function editorTogglePreview(){
+  STATE.editor.isEinkPreview=!STATE.editor.isEinkPreview;
+  var original=$('editor-canvas-area');
+  var eink=$('editor-eink-area');
+  if(STATE.editor.isEinkPreview){
+    if(original)original.style.display='none';
+    if(eink){eink.style.display='block';renderEditorEink()}
+  }else{
+    if(original)original.style.display='block';
+    if(eink)eink.style.display='none';
+  }
+}
+
+function updateEditorModeBadge(){
+  var el=$('editor-mode-badge');
+  if(el)el.textContent='模式: '+STATE.editor.mode+(STATE.editor.rotation?' R'+STATE.editor.rotation:'')+(STATE.editor.flipH?' FH':'')+(STATE.editor.flipV?' FV':'');
+}
+
+function updateEditorZoomLabel(){
+  var el=$('editor-zoom-label');
+  if(el)el.textContent=Math.round(STATE.editor.zoom*100)+'%';
+}
+
+function saveEditor(){
+  api('/api/admin/photos/'+STATE.editor.assetId+'/save-edit',{method:'POST',body:JSON.stringify({recipe:{brightness:1,contrast:1,saturation:1,gamma:1,rotate:STATE.editor.rotation,flipH:STATE.editor.flipH,flipV:STATE.editor.flipV,sharpen:0,blur:0}})}).then(function(){
+    STATE.editor.saved=true;
     toast('编辑已保存','success');
   }).catch(function(e){toast('保存失败: '+(e.message||e),'error')});
 }
 
-// ── Publish History ──
+function publishEditorPhoto(){
+  if(!checkConsistent())return;
+  var id=STATE.editor.assetId;
+  if(!id)return;
+  api('/api/admin/publish/one-shot',{method:'POST',body:JSON.stringify({contentType:'photo',assetId:id,libraryType:'custom'})}).then(function(r){
+    if(r&&r.frameId){
+      loadAdminState().then(function(){
+        toast('已发布: '+truncate(r.frameId,30),'success');
+        loadDashboard();
+      });
+    }else toast('发布失败','error');
+  }).catch(function(e){toast('发布失败: '+(e.message||e),'error')});
+}
+
+// Editor mouse drag for pan
+var EDITOR_DRAGGING=false,EDITOR_DRAG_START={x:0,y:0};
+
+function initEditorDrag(){
+  var wrap=$('editor-canvas-wrap');
+  if(!wrap)return;
+  wrap.addEventListener('mousedown',function(e){
+    if(STATE.editor.mode!=='manual-crop'){
+      EDITOR_DRAGGING=true;
+      EDITOR_DRAG_START={x:e.clientX-STATE.editor.panX,y:e.clientY-STATE.editor.panY};
+      wrap.style.cursor='grabbing';
+    }
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!EDITOR_DRAGGING)return;
+    STATE.editor.panX=e.clientX-EDITOR_DRAG_START.x;
+    STATE.editor.panY=e.clientY-EDITOR_DRAG_START.y;
+    renderEditorCanvas();
+  });
+  document.addEventListener('mouseup',function(){
+    if(EDITOR_DRAGGING){
+      EDITOR_DRAGGING=false;
+      pushEditorHistory();
+      var wrap=$('editor-canvas-wrap');
+      if(wrap)wrap.style.cursor='grab';
+    }
+  });
+  wrap.style.cursor='grab';
+}
+
+// ═══════════════════════════════════════
+// Publish History
+// ═══════════════════════════════════════
+
 function loadPublishHistory(){
-  api('/api/admin/publish-history').then(function(d){
-    if(!d||!d.history)return;
-    var el=$('publish-history-list');
-    if(!el)return;
-    el.innerHTML='';
-    var history=d.history||[];
+  var el=$('publish-history-list');
+  if(!el)return;
+  el.innerHTML='<div class="loading-state">加载中…</div>';
+  api('/api/admin/publications').then(function(d){
+    var history=d&&(d.history||d.publications||d)||[];
+    if(!Array.isArray(history))history=[];
     STATE.publishHistory=history;
+    el.innerHTML='';
     if(history.length===0){
       el.innerHTML='<div class="empty-state">暂无发布记录。</div>';
       return;
     }
     history.forEach(function(h,i){
       var row=document.createElement('div');
-      var isActive=(h.status==='active')||(i===0&&!h.status);
+      var isActive=i===0||h.status==='active';
       row.className='publish-row'+(isActive?' active':'');
-      var frameIdShort=h.frameId?(h.frameId.slice(0,30)+'...'):'--';
-      var snapshotId=h.id||h.snapshotId||'--';
+      row.id='pub-row-'+i;
+      var titleText=h.metadata&&h.metadata.title||h.title||(h.snapshotId||'');
+      if(titleText&&(titleText==='无标题'||titleText==='--'))titleText=h.snapshotId||'';
       row.innerHTML=
-        '<div class="col-time">'+esc((h.publishedAt||'').slice(0,19))+'</div>'+
-        '<div class="col-type">'+esc(h.type||'--')+'</div>'+
-        '<div class="col-snap">'+esc(snapshotId)+'</div>'+
-        '<div class="col-frame">'+esc(frameIdShort)+'</div>'+
-        '<div class="col-status">'+(isActive?'<span class="badge badge-active">active</span>':'<span class="badge badge-archived">'+esc(h.status||'archived')+'</span>')+'</div>'+
-        '<div class="col-actions"><button class="btn btn-sm btn-outline" onclick="rollback(\''+esc(h.id||'')+'\')">恢复此版本</button></div>';
+        '<div class="col-time">'+formatTime(h.publishedAt||h.createdAt)+'</div>'+
+        '<div class="col-type">'+badge(h.mode||h.type||'--',isActive?'active':'archived')+'</div>'+
+        '<div class="col-title" title="'+esc(titleText)+'">'+esc(truncate(titleText,50))+'</div>'+
+        '<div class="col-frame" title="'+(h.frameId||'')+'">'+truncate(h.frameId||'--',24)+'</div>'+
+        '<div class="col-status">'+(isActive?badge('当前','active'):badge('归档','archived'))+'</div>'+
+        '<div class="col-actions"><button class="btn btn-sm btn-outline" onclick="showRestoreConfirm('+i+')">'+icon('history')+'恢复</button></div>'+
+        '<div class="restore-inline" id="restore-inline-'+i+'"></div>';
       el.appendChild(row);
     });
   }).catch(function(e){
@@ -624,135 +754,192 @@ function loadPublishHistory(){
   });
 }
 
-function rollback(id){
+function showRestoreConfirm(idx){
   var entries=STATE.publishHistory||[];
-  var entry=null;
-  for(var i=0;i<entries.length;i++){
-    if(entries[i].id===id||entries[i].snapshotId===id){
-      entry=entries[i];
-      break;
+  var entry=entries[idx];
+  if(!entry)return;
+  var inline=$('restore-inline-'+idx);
+  if(!inline)return;
+  qsa('.restore-inline').forEach(function(el){el.classList.remove('show')});
+  var titleText=entry.metadata&&entry.metadata.title||entry.title||entry.snapshotId||'';
+  if(titleText==='无标题'||titleText==='--')titleText=entry.snapshotId||'';
+  inline.innerHTML='<div class="restore-info"><strong>版本信息</strong><br>'+
+    '类型: '+esc(entry.mode||entry.type||'--')+' | '+
+    '时间: '+formatTime(entry.publishedAt||entry.createdAt)+'<br>'+
+    'Frame: <span class="mono">'+esc(entry.frameId||'--')+'</span><br>'+
+    '内容: '+esc(titleText)+'</div>'+
+    '<div class="restore-actions">'+
+    '<button class="btn btn-danger btn-sm" onclick="confirmRestore(\''+esc(entry.snapshotId||entry.id||'')+'\','+idx+')">'+icon('check')+'确认恢复到此版本</button>'+
+    '<button class="btn btn-outline btn-sm" onclick="closeRestoreInline('+idx+')">取消</button></div>';
+  inline.classList.add('show');
+}
+
+function closeRestoreInline(idx){
+  var inline=$('restore-inline-'+idx);
+  if(inline){inline.classList.remove('show');inline.innerHTML=''}
+}
+
+function confirmRestore(snapshotId,idx){
+  if(!checkConsistent())return;
+  if(!snapshotId){toast('无效的版本ID','error');return}
+  api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:snapshotId})}).then(function(r){
+    if(r&&r.status==='ok'){
+      return loadAdminState().then(function(){
+        toast('版本已恢复','success');
+        closeRestoreInline(idx);
+        loadPublishHistory();
+        loadDashboard();
+      });
+    }else{
+      toast('恢复失败: '+(r&&r.error||'未知错误'),'error');
     }
+  }).catch(function(e){toast('恢复失败: '+(e.message||e),'error')});
+}
+
+// ═══════════════════════════════════════
+// System Status
+// ═══════════════════════════════════════
+
+function loadStatusPage(){
+  var st=STATE.adminState;
+  if(!st){
+    loadAdminState().then(function(){loadStatusPage()});
+    return;
   }
-  var msg='确认恢复到此版本？';
-  if(entry){
-    msg='发布类型: '+(entry.type||'--')+'\n发布时间: '+((entry.publishedAt||'').slice(0,19)||'--')+'\nFrame ID: '+(entry.frameId||'--');
-  }
-  showConfirm('恢复版本',msg,function(){
-    api('/api/admin/rollback',{method:'POST',body:JSON.stringify({publishId:id})}).then(function(r){
-      if(r&&r.frameId){toast('已回滚: '+r.frameId.slice(0,20)+'...','success');loadDashboard();loadPublishHistory()}
-      else toast('回滚失败','error');
-    }).catch(function(e){toast('回滚失败: '+(e.message||e),'error')});
-  });
+  renderConsistencyBanner();
+  var active=st.active||{},ov=st.override||{},sch=st.schedule||{},dev=st.device||{},h=st.health||{},pub=st.lastPublication||{},build=st.build||{};
+  setText('st-generated',formatTime(st.generatedAt),'--');
+  setText('st-contentmode',active.contentMode||'--','--');
+  setText('st-opmode',active.operatingMode||'--','--');
+  setText('st-snapshotid',active.snapshotId||'--','--');
+  var frameIdEl=$('st-frameid');
+  if(frameIdEl)frameIdEl.textContent=active.frameId||'--';
+  setText('st-sha',active.frameSha256||'--','--');
+  setText('st-framelen',active.frameLength?active.frameLength+' bytes':'--','--');
+  setText('st-activated',formatTime(active.activatedAt),'--');
+  setText('st-assetid',active.assetId||'--','--');
+  setText('st-override',ov.type||'none','none');
+  setText('st-override-expires',ov.expiresAt?formatTime(ov.expiresAt):'--','--');
+  setText('st-schedule-mode',sch.currentMode||'--','--');
+  setText('st-nextswitch',sch.nextSwitchAt?formatTime(sch.nextSwitchAt):'--','--');
+  setText('st-lastpub-time',pub.publishedAt?formatTime(pub.publishedAt):'--','--');
+  setText('st-lastpub-snap',pub.snapshotId||'--','--');
+  setText('st-device',dev.connected?'已连接 上次:'+(dev.lastSeen?formatTime(dev.lastSeen):'--'):'未连接','--');
+  setText('st-health',h.status||'--','--');
+  setText('st-uptime',h.uptime?Math.floor(h.uptime/60)+' 分钟':'<1 分钟','<1 分钟');
+  setText('st-build',build.serverVersion||'--','--');
+  setText('st-commit',build.commit?build.commit.slice(0,12):'--','--');
+  setText('st-branch',build.branch||'--','--');
 }
 
-// ── Override ──
-function clearOverride(){
-  showConfirm('退出手动覆盖','确认退出手动覆盖，恢复自动排程？清除当前手动覆盖或焦点锁定后，后续内容由时间 SLOT 调度器自动选择。',function(){
-    api('/api/admin/override',{method:'DELETE'}).then(function(){
-      toast('已恢复自动调度','success');loadDashboard()
-    }).catch(function(e){toast('操作失败: '+(e.message||e),'error')});
-  });
-}
-
-// ── Health checks ──
-function loadHealth(){
-  fetch('/health/live').then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
-    setText('health-live',d.status||(d.ok?'ok':'未知'),'未知');
-  }).catch(function(){setText('health-live','ERROR','ERROR')});
-  fetch('/health/ready').then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
-    setText('health-ready',d.status||(d.ok?'ok':'未知'),'未知');
-  }).catch(function(){setText('health-ready','ERROR','ERROR')});
-}
-
-// ── Status ──
-function loadStatus(){
-  api('/api/health.json').then(function(d){
-    if(!d)return;
-    setText('status-uptime',d.uptimeSeconds?Math.floor(d.uptimeSeconds/60)+' 分钟':'<1 分钟','<1 分钟');
-    setText('status-mode',d.currentMode,'未设置');
-    setText('status-slot',d.currentSlot,'未生成');
-    setText('status-frameid',d.frameId?(d.frameId.slice(0,40)+'...'):'未生成','未生成');
-    var flEl=setText('status-framelen',d.frameLength!==undefined?String(d.frameLength):'暂无','暂无');
-    if(flEl&&(d.frameLength===undefined||d.frameLength===null)){
-      flEl.dataset.emptyReason='接口未返回该字段';
-      addStatusDetail(flEl,'接口未返回该字段','info');
-    }
-    var shaEl=setText('status-sha',d.frameSha256?(d.frameSha256.slice(0,24)+'...'):'暂无','暂无');
-    if(shaEl&&(d.frameSha256===undefined||d.frameSha256===null)){
-      shaEl.dataset.emptyReason='尚未生成 frame';
-      addStatusDetail(shaEl,'尚未生成 frame','info');
-    }
-    setText('status-news',d.newsItemCount!==undefined?String(d.newsItemCount):'暂无','暂无');
-    setText('status-photos',d.photoCount!==undefined?String(d.photoCount):'暂无','暂无');
-    setText('status-cache',d.frameCacheEntries!==undefined?String(d.frameCacheEntries):'0','0');
-    setText('status-render',d.frameRenderCount!==undefined?String(d.frameRenderCount):'0','0');
-    setText('status-state-req',d.stateRequestCount!==undefined?String(d.stateRequestCount):'暂无','暂无');
-    setText('status-frame-req',d.frameRequestCount!==undefined?String(d.frameRequestCount):'暂无','暂无');
-    setText('status-news-refresh',d.newsRefreshCount!==undefined?String(d.newsRefreshCount):'暂无','暂无');
-    setText('status-news-fail',d.newsRefreshFailureCount!==undefined?String(d.newsRefreshFailureCount):'0','0');
-    var mqttEl=setText('status-mqtt',d.mqttEnabled?'enabled':'disabled','disabled');
-    if(mqttEl&&!d.mqttEnabled){
-      mqttEl.dataset.emptyReason='已禁用，设备使用 60 秒 HTTP 轮询';
-      addStatusDetail(mqttEl,'已禁用，设备使用 60 秒 HTTP 轮询','warning');
-    }
-    var transEl=setText('status-translation',d.translationProvider||'none','none');
-    if(transEl&&(!d.translationProvider||d.translationProvider==='none')){
-      transEl.dataset.emptyReason='未配置翻译服务，当前使用缓存译文或原文';
-      addStatusDetail(transEl,'未配置翻译服务，当前使用缓存译文或原文','info');
-    }
-    setText('status-recent-error',d.recentError||'无错误','无错误');
-    setText('status-last-refresh',d.lastNewsRefreshAt||'暂无','暂无');
-    var shaEl=$('sidebar-sha');
-    if(shaEl&&d.buildSha){shaEl.textContent='SHA: '+d.buildSha.slice(0,12);}
-  }).catch(function(e){
-    ['status-uptime','status-mode','status-slot','status-frameid','status-news','status-cache'].forEach(function(id){
-      setText(id,'加载失败','加载失败');
+function renderConsistencyBanner(){
+  var el=$('consistency-banner');
+  if(!el)return;
+  if(CONSISTENT){
+    el.className='consistency-banner ok';
+    el.innerHTML=icon('check','20px','20px')+'<span>系统状态一致</span>';
+  }else{
+    el.className='consistency-banner error';
+    var list='<ul class="errors">';
+    INCONSISTENCIES.forEach(function(inc){
+      list+='<li>'+esc(inc.code)+': 期望 '+esc(inc.expected)+', 实际 '+esc(inc.actual)+'</li>';
     });
+    list+='</ul>';
+    el.innerHTML=icon('alert-triangle','20px','20px')+'<div><strong>系统状态不一致 — 发布/恢复/一次性发布已禁用</strong>'+list+'</div>';
+  }
+}
+
+// ═══════════════════════════════════════
+// Override / One-shot
+// ═══════════════════════════════════════
+
+function clearOverride(){
+  if(!checkConsistent())return;
+  api('/api/admin/focus-lock',{method:'DELETE'}).then(function(){
+    return loadAdminState();
+  }).then(function(){
+    toast('已恢复自动调度','success');
+    loadDashboard();
+  }).catch(function(e){
+    api('/api/admin/override',{method:'DELETE'}).then(function(){
+      return loadAdminState();
+    }).then(function(){
+      toast('已恢复自动调度','success');
+      loadDashboard();
+    }).catch(function(e2){toast('操作失败: '+(e2.message||(e&&e.message)),'error')});
   });
 }
 
-// ── Init ──
+function oneShotPublishNews(){
+  if(!checkConsistent())return;
+  api('/api/admin/publish/one-shot',{method:'POST',body:JSON.stringify({contentType:'news'})}).then(function(r){
+    if(r&&r.frameId){
+      return loadAdminState().then(function(){
+        toast('新闻已一次性发布: '+truncate(r.frameId,30),'success');
+        loadDashboard();
+      });
+    }else throw new Error(r&&r.error||'发布失败');
+  }).catch(function(e){toast('发布失败: '+(e.message||e),'error')});
+}
+
+// ═══════════════════════════════════════
+// Dark mode toggle
+// ═══════════════════════════════════════
+
+function toggleDarkMode(){
+  document.documentElement.classList.toggle('dark');
+  var btn=$('dark-mode-btn');
+  if(btn)btn.innerHTML=document.documentElement.classList.contains('dark')?icon('sun'):icon('moon');
+}
+
+// ═══════════════════════════════════════
+// Init
+// ═══════════════════════════════════════
+
+function loadAll(){
+  loadAdminState().then(function(){
+    loadDashboard();
+    loadNewsReview();
+    loadGallery();
+    loadPublishHistory();
+    loadStatusPage();
+    updateRefreshTime();
+  });
+}
+
+// Init sequence
 try{
-  (function(){
-    var publishBtn=qs('button[onclick="publishNews()"]');
-    if(publishBtn&&!publishBtn.parentNode.querySelector('.publish-helper')){
-      var helper=document.createElement('span');
-      helper.className='muted small publish-helper';
-      helper.style.marginLeft='8px';
-      helper.textContent='保存当前草稿并立即发布到电子纸';
-      publishBtn.parentNode.insertBefore(helper,publishBtn.nextSibling);
+  fetch('/api/admin/access-mode').then(function(r){
+    if(!r.ok)throw new Error('access-mode HTTP '+r.status);
+    return r.json();
+  }).then(function(d){
+    ACCESS_MODE=d.mode||'token';
+    if(ACCESS_MODE==='token'){
+      if($('login-overlay')){
+        showLogin();
+        LOGIN_CALLBACK=function(){loadAll()};
+      }else{
+        showErrorBox('access_mode=token 但登录界面缺失');
+        show($('app'));
+        loadAll();
+      }
+    }else{
+      show($('app'));
+      if($('login-overlay'))hide($('login-overlay'));
+      loadAll();
     }
-  })();
-fetch('/api/admin/access-mode').then(function(r){
-  if(!r.ok)throw new Error('access-mode HTTP '+r.status);
-  return r.json();
-}).then(function(d){
-  ACCESS_MODE=d.mode||'token';
-  if(ACCESS_MODE==='token'){
+  }).catch(function(e){
+    ACCESS_MODE='token';
     if($('login-overlay')){
       showLogin();
       LOGIN_CALLBACK=function(){loadAll()};
     }else{
-      showErrorBox('access_mode=token 但登录界面缺失');
+      showErrorBox('access-mode fetch failed: '+(e&&e.message||e));
       show($('app'));
       loadAll();
     }
-  }else{
-    show($('app'));
-    if($('login-overlay'))hide($('login-overlay'));
-    loadAll();
-  }
-}).catch(function(e){
-  ACCESS_MODE='token';
-  if($('login-overlay')){
-    showLogin();
-    LOGIN_CALLBACK=function(){loadAll()};
-  }else{
-    showErrorBox('access-mode fetch failed: '+(e&&e.message||e));
-    show($('app'));
-    loadAll();checkUploadEnabled();
-  }
-});
+  });
+  initEditorDrag();
 }catch(e){
   showErrorBox('init failed: '+(e&&e.message||e));
   show($('app'));
