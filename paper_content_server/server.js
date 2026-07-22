@@ -13,6 +13,7 @@ const { NewsTitleService } = require('./src/news/news-title-service');
 const { SafeImagePath } = require('./src/files/safe-image-path');
 const { ImageRasterizer } = require('./src/images/image-rasterizer-v2');
 const { ImageRecipeService } = require('./src/images/image-recipe-service');
+const { DeviceRegistryService } = require('./src/devices/device-registry-service');
 
 // R1 bridge — legacy adapter wiring
 var R1_loadConfig = require('./src/config/load-config').loadConfig;
@@ -369,6 +370,7 @@ async function main() {
     adminTrustProxy: TRUST_PROXY,
     adminTrustedProxyCidrs: ADM_TRUSTED_PROXY_CIDRS,
     adminAllowHeaderlessWrite: ADMIN_ALLOW_HEADERLESS_WRITE,
+    renderCount: 0,
   };
 
   var boot = R1_bootstrap({
@@ -422,6 +424,8 @@ async function main() {
   runtime.assetSelectionService = requestContext.assetSelectionService = boot.services.assetSelectionService || null;
   runtime.assetDeleteService = requestContext.assetDeleteService = boot.services.assetDeleteService || null;
   runtime.overridePersistence = requestContext.overridePersistence = boot.services.overridePersistence || null;
+  var devicesJsonStore = new R1_JsonStore(path.join(DATA_DIR, 'devices.json'), { schemaVersion: 1 });
+  runtime.deviceRegistryService = requestContext.deviceRegistryService = new DeviceRegistryService({ jsonStore: devicesJsonStore });
   // Inject late-bound dependencies into publication service (overridePersistence,
   // frameCache are created after the service itself).
   if (runtime.publicationService && typeof runtime.publicationService.setInjections === 'function') {
@@ -3259,7 +3263,8 @@ async function handleRequest(req, res, ctx) {
       return;
     }
 
-    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/pin-state.json') {
+    var isDebugEnabled = ENABLE_DEBUG_ROUTES || (R.config && R.config.debug && R.config.debug.enableDebugRoutes) || process.env.ENABLE_TEST_ENDPOINTS === 'true' || process.env.ENABLE_DEBUG_ROUTES === 'true';
+    if (isDebugEnabled && parsed.pathname === '/debug/pin-state.json') {
       const client = clientKey(req);
       var pinnedId = R.pinStore ? R.pinStore.get(client) : null;
       const body = Buffer.from(JSON.stringify({
@@ -3414,7 +3419,7 @@ async function handleRequest(req, res, ctx) {
 
 
     
-    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/test-instance') {
+    if (isDebugEnabled && parsed.pathname === '/debug/test-instance') {
       var insId = APP_CONFIG.testInstanceId || '';
       var r = Buffer.from(JSON.stringify({ instanceId: insId, pid: process.pid }));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
@@ -4591,6 +4596,121 @@ async function handleRequest(req, res, ctx) {
           respondJson(res, { status: 'unavailable', reason: 'AdminStateService not initialized' });
         }
       } catch(e) { respondJson(res, { status: 'error', error: e.message }); }
+      return;
+    }
+
+    // ── Phase 2.1: Device Registry & Provisioning & Heartbeat API ──
+    if (parsed.pathname === '/api/v2/device-provisioning/register' && req.method === 'POST') {
+      if (!R.deviceRegistryService) { failJson(res, 503, 'device registry service unavailable'); return; }
+      try {
+        var provLen = Number(req.headers['content-length'] || 0);
+        if (provLen > 16384) {
+          res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
+          return;
+        }
+        var provBodyRaw = await readBody(req) || '{}';
+        if (Buffer.byteLength(provBodyRaw, 'utf8') > 16384) {
+          res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
+          return;
+        }
+        var provBody = JSON.parse(provBodyRaw);
+        var provToken = req.headers['x-provisioning-token'] || provBody.provisioningToken;
+        var provObservedIp = req.socket ? req.socket.remoteAddress : null;
+        var provRes = await R.deviceRegistryService.registerDevice(provBody, { provisioningToken: provToken, observedIp: provObservedIp });
+        respondJson(res, provRes);
+      } catch(e) {
+        var pCode = e.code || 'REGISTRATION_FAILED';
+        var pStatus = pCode === 'PROVISIONING_DISABLED' ? 503 : (pCode === 'INVALID_PROVISIONING_TOKEN' ? 403 : (pCode === 'INVALID_DEVICE_ID' ? 400 : 400));
+        res.writeHead(pStatus, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: pCode, message: e.message }));
+      }
+      return;
+    }
+
+    var devHeartbeatMatch = parsed.pathname.match(/^\/api\/v2\/devices\/([^/]+)\/heartbeat$/);
+    if (devHeartbeatMatch && req.method === 'POST') {
+      var devId = devHeartbeatMatch[1];
+      try { devId = decodeURIComponent(devId); } catch(e) { failJson(res, 400, 'invalid deviceId encoding'); return; }
+      if (!devId || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(devId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'INVALID_DEVICE_ID', message: 'invalid deviceId format' }));
+        return;
+      }
+      if (!R.deviceRegistryService) { failJson(res, 503, 'device registry service unavailable'); return; }
+      try {
+        var hbLen = Number(req.headers['content-length'] || 0);
+        if (hbLen > 16384) {
+          res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
+          return;
+        }
+        var hbBodyRaw = await readBody(req) || '{}';
+        if (Buffer.byteLength(hbBodyRaw, 'utf8') > 16384) {
+          res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
+          return;
+        }
+        var hbBody = JSON.parse(hbBodyRaw);
+        var devToken = req.headers['x-device-token'] || (req.headers['authorization'] ? String(req.headers['authorization']).replace(/^Bearer\s+/i, '') : null);
+        var observedIp = req.socket ? req.socket.remoteAddress : null;
+        var updatedDev = await R.deviceRegistryService.heartbeat(devId, hbBody, { deviceToken: devToken, observedIp: observedIp });
+        respondJson(res, { success: true, device: updatedDev });
+      } catch(e) {
+        var hCode = e.code || 'HEARTBEAT_FAILED';
+        var hStatus = 400;
+        if (hCode === 'DEVICE_NOT_REGISTERED') hStatus = 404;
+        else if (hCode === 'UNAUTHORIZED') hStatus = 401;
+        else if (hCode === 'DEVICE_REGISTRY_CORRUPT' || hCode === 'DEVICE_REGISTRY_IO_ERROR') hStatus = 503;
+        else if (hCode === 'UNALLOWED_FIELD' || hCode === 'INVALID_HEARTBEAT_PAYLOAD' || hCode === 'INVALID_DEVICE_ID') hStatus = 400;
+
+        res.writeHead(hStatus, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: hCode, message: e.message }));
+      }
+      return;
+    }
+
+    if (parsed.pathname === '/api/v2/devices' && req.method === 'GET') {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.deviceRegistryService) { failJson(res, 503, 'device registry service unavailable'); return; }
+      try {
+        var devicesList = await R.deviceRegistryService.listDevices();
+        respondJson(res, { success: true, devices: devicesList });
+      } catch(e) {
+        var code = e.code || 'LIST_DEVICES_FAILED';
+        var status = (code === 'DEVICE_REGISTRY_CORRUPT' || code === 'DEVICE_REGISTRY_IO_ERROR') ? 503 : 500;
+        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: code, message: e.message }));
+      }
+      return;
+    }
+
+    var devGetMatch = parsed.pathname.match(/^\/api\/v2\/devices\/([^/]+)$/);
+    if (devGetMatch && req.method === 'GET' && devGetMatch[1] !== 'heartbeat') {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      var targetDevId = devGetMatch[1];
+      try { targetDevId = decodeURIComponent(targetDevId); } catch(e) { failJson(res, 400, 'invalid deviceId encoding'); return; }
+      if (!targetDevId || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(targetDevId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'INVALID_DEVICE_ID', message: 'invalid deviceId format' }));
+        return;
+      }
+      if (!R.deviceRegistryService) { failJson(res, 503, 'device registry service unavailable'); return; }
+      try {
+        var singleDev = await R.deviceRegistryService.getDevice(targetDevId);
+        if (!singleDev) {
+          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'DEVICE_NOT_FOUND', message: 'Device with ID ' + targetDevId + ' not found' }));
+          return;
+        }
+        respondJson(res, { success: true, device: singleDev });
+      } catch(e) {
+        var gCode = e.code || 'GET_DEVICE_FAILED';
+        var gStatus = (gCode === 'DEVICE_REGISTRY_CORRUPT' || gCode === 'DEVICE_REGISTRY_IO_ERROR') ? 503 : 500;
+        res.writeHead(gStatus, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: gCode, message: e.message }));
+      }
       return;
     }
 

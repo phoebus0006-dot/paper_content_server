@@ -39,6 +39,8 @@ function createApplication(options) {
   var { SafeImagePath } = require('../src/files/safe-image-path');
   var { ImageRasterizer } = require('../src/images/image-rasterizer-v2');
   var { ImageRecipeService } = require('../src/images/image-recipe-service');
+  var { DeviceRegistryService } = require('../src/devices/device-registry-service');
+  var R1_JsonStore = require('../src/infra/json-store').JsonStore;
 
   var snapshotStore = R3_SnapshotStore(snapDir, pubDir, lg);
   var snapshotCache = R3_SnapshotCache();
@@ -73,6 +75,13 @@ function createApplication(options) {
   var safeImagePath = new SafeImagePath({ rootDir: path.join(__dirname, '..') });
   var imageRasterizer = new ImageRasterizer();
   var imageRecipeService = new ImageRecipeService();
+  var devicesStore = R1_JsonStore(path.join(dataDir, 'devices.json'), { schemaVersion: 1 });
+  var deviceRegistryService = options.deviceRegistryService || new DeviceRegistryService({
+    jsonStore: devicesStore,
+    provisioningEnabled: options.deviceProvisioningEnabled ?? (process.env.DEVICE_PROVISIONING_ENABLED === 'true'),
+    provisioningToken: options.deviceProvisioningToken || process.env.DEVICE_PROVISIONING_TOKEN || null,
+    clock: options.clock || undefined
+  });
 
   // Build the isolated request context — NOT touching module.exports.runtime.
   // Each createApplication call has its own context with independent services.
@@ -91,6 +100,7 @@ function createApplication(options) {
     imageRasterizer: imageRasterizer,
     overridePersistence: overridePersistence,
     imageRecipeService: imageRecipeService,
+    deviceRegistryService: deviceRegistryService,
     config: {
       features: {
         deletePipelineEnabled: false,

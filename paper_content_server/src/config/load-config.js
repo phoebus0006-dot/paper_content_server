@@ -179,6 +179,12 @@ function loadConfig(opts) {
     enableDebugRoutes: config.server.enableDebugRoutes,
   };
 
+  // Device Provisioning
+  config.deviceProvisioning = {
+    enabled: parseBoolEnv(env.DEVICE_PROVISIONING_ENABLED, false),
+    token: env.DEVICE_PROVISIONING_TOKEN || '',
+  };
+
   // Lifecycle timeouts (ms). Unified across bootstrap and server.js.
   config.lifecycle = {
     shutdownTimeoutMs: Number(env.BOOTSTRAP_SHUTDOWN_TIMEOUT_MS) || 10000,
