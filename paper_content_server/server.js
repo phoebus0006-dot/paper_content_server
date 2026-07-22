@@ -370,6 +370,7 @@ async function main() {
     adminTrustProxy: TRUST_PROXY,
     adminTrustedProxyCidrs: ADM_TRUSTED_PROXY_CIDRS,
     adminAllowHeaderlessWrite: ADMIN_ALLOW_HEADERLESS_WRITE,
+    renderCount: 0,
   };
 
   var boot = R1_bootstrap({
@@ -423,6 +424,7 @@ async function main() {
   runtime.assetSelectionService = requestContext.assetSelectionService = boot.services.assetSelectionService || null;
   runtime.assetDeleteService = requestContext.assetDeleteService = boot.services.assetDeleteService || null;
   runtime.overridePersistence = requestContext.overridePersistence = boot.services.overridePersistence || null;
+  runtime.renderCount = requestContext.renderCount = 0;
   var devicesJsonStore = new R1_JsonStore(path.join(DATA_DIR, 'devices.json'), { schemaVersion: 1 });
   runtime.deviceRegistryService = requestContext.deviceRegistryService = new DeviceRegistryService({ jsonStore: devicesJsonStore });
   // Inject late-bound dependencies into publication service (overridePersistence,
@@ -3417,6 +3419,17 @@ async function handleRequest(req, res, ctx) {
 
 
     
+    if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/pin-state.json') {
+      var debugPinState = {
+        renderCount: R.renderCount !== undefined && R.renderCount !== null ? R.renderCount : 0,
+        frameCacheSize: R.cachedFrames ? R.cachedFrames.size : 0,
+        snapshotCacheSize: R.cachedSnapshots ? R.cachedSnapshots.size : 0,
+        pid: process.pid
+      };
+      respondJson(res, debugPinState);
+      return;
+    }
+
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/test-instance') {
       var insId = APP_CONFIG.testInstanceId || '';
       var r = Buffer.from(JSON.stringify({ instanceId: insId, pid: process.pid }));
