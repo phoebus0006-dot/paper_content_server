@@ -12,6 +12,7 @@ var THROTTLE_WRITE_MS = 30 * 1000; // 30 seconds
 
 var ALLOWED_HEARTBEAT_FIELDS = new Set([
   'firmwareVersion',
+  'deviceReportedIp',
   'reportedIp',
   'rssi',
   'battery',
@@ -231,7 +232,7 @@ class DeviceRegistryService {
           type: params.type || 'esp32-epaper',
           firmwareVersion: params.firmwareVersion || '1.0.0',
           observedIp: options.observedIp || null,
-          reportedIp: params.reportedIp || null,
+          deviceReportedIp: params.deviceReportedIp || params.reportedIp || null,
           rssi: params.rssi ?? null,
           battery: params.battery ?? null,
           lastSeenAt: nowIso,
@@ -287,9 +288,10 @@ class DeviceRegistryService {
           throw err;
         }
       }
-      if (payload.reportedIp !== undefined && payload.reportedIp !== null) {
-        if (typeof payload.reportedIp !== 'string' || payload.reportedIp.length > 64) {
-          const err = new Error('Invalid reportedIp');
+      const reportedIpVal = payload.deviceReportedIp !== undefined ? payload.deviceReportedIp : payload.reportedIp;
+      if (reportedIpVal !== undefined && reportedIpVal !== null) {
+        if (typeof reportedIpVal !== 'string' || reportedIpVal.length > 64) {
+          const err = new Error('Invalid deviceReportedIp');
           err.code = 'INVALID_HEARTBEAT_PAYLOAD';
           throw err;
         }
@@ -365,8 +367,9 @@ class DeviceRegistryService {
         device.firmwareVersion = payload.firmwareVersion;
         criticalChange = true;
       }
-      if (payload.reportedIp !== undefined && payload.reportedIp !== device.reportedIp) {
-        device.reportedIp = payload.reportedIp;
+      const newReportedIp = payload.deviceReportedIp !== undefined ? payload.deviceReportedIp : payload.reportedIp;
+      if (newReportedIp !== undefined && newReportedIp !== device.deviceReportedIp) {
+        device.deviceReportedIp = newReportedIp;
         criticalChange = true;
       }
       if (payload.rssi !== undefined && payload.rssi !== device.rssi) {

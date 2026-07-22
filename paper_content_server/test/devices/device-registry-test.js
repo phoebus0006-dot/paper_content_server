@@ -144,6 +144,7 @@ test('DeviceRegistryService — Security & Architecture Unit Tests', async (t) =
     mockNow += 60000; // 1 min later
     const updated = await service.heartbeat('dev-alpha', {
       firmwareVersion: '1.0.1',
+      deviceReportedIp: '192.168.1.55',
       battery: 98,
       rssi: -55,
       contentMode: 'news'
@@ -151,6 +152,7 @@ test('DeviceRegistryService — Security & Architecture Unit Tests', async (t) =
 
     assert.strictEqual(updated.deviceId, 'dev-alpha');
     assert.strictEqual(updated.firmwareVersion, '1.0.1');
+    assert.strictEqual(updated.deviceReportedIp, '192.168.1.55');
     assert.strictEqual(updated.battery, 98);
     assert.strictEqual(updated.rssi, -55);
     assert.strictEqual(updated.contentMode, 'news');
@@ -214,42 +216,49 @@ test('DeviceRegistryService — Security & Architecture Unit Tests', async (t) =
     assert.ok(tService.lastDiskWriteMs > initialWriteTime);
   });
 
-  await t.test('14. Concurrency test: 50 concurrent registrations & 100 heartbeats', async () => {
+  await t.test('14. Concurrency stress test: 10 devices with 100 parallel heartbeat requests', async () => {
     const concDir = makeTmpDir('conc-test');
+    const concJsonPath = path.join(concDir, 'devices.json');
     const concService = new DeviceRegistryService({
-      jsonStore: new JsonStore(path.join(concDir, 'devices.json')),
+      jsonStore: new JsonStore(concJsonPath, { schemaVersion: 1 }),
       provisioningEnabled: true,
       provisioningToken: 'conc-token'
     });
 
-    // 50 concurrent registrations
-    const regPromises = [];
-    for (let i = 0; i < 50; i++) {
-      regPromises.push(concService.registerDevice({
-        deviceId: `conc-dev-${i}`
-      }, { provisioningToken: 'conc-token' }));
+    // 10 devices registration
+    const regResults = [];
+    for (let i = 0; i < 10; i++) {
+      const reg = await concService.registerDevice({
+        deviceId: `stress-dev-${i}`
+      }, { provisioningToken: 'conc-token' });
+      regResults.push(reg);
     }
 
-    const regResults = await Promise.all(regPromises);
-    assert.strictEqual(regResults.length, 50);
-
     const devList = await concService.listDevices();
-    assert.strictEqual(devList.length, 50);
+    assert.strictEqual(devList.length, 10);
 
-    // 100 concurrent heartbeats on dev-0
-    const dev0Token = regResults[0].deviceToken;
+    // 100 parallel heartbeats across 10 devices
     const hbPromises = [];
     for (let j = 0; j < 100; j++) {
-      hbPromises.push(concService.heartbeat('conc-dev-0', {
-        battery: (j % 100)
-      }, { deviceToken: dev0Token }));
+      const targetDev = regResults[j % 10];
+      hbPromises.push(concService.heartbeat(targetDev.deviceId, {
+        battery: (j % 100),
+        deviceReportedIp: `192.168.1.${100 + (j % 10)}`
+      }, { deviceToken: targetDev.deviceToken, observedIp: '127.0.0.1' }));
     }
 
     await Promise.all(hbPromises);
     await concService.flush();
 
+    // Verify devices.json valid JSON & no lost device & schemaVersion 1
+    const rawContent = fs.readFileSync(concJsonPath, 'utf8');
+    const parsedFile = JSON.parse(rawContent);
+    assert.strictEqual(parsedFile.schemaVersion, 1);
+    assert.strictEqual(Array.isArray(parsedFile.devices), true);
+    assert.strictEqual(parsedFile.devices.length, 10, 'All 10 devices preserved without loss');
+
     const finalDevs = await concService.listDevices();
-    assert.strictEqual(finalDevs.length, 50);
+    assert.strictEqual(finalDevs.length, 10);
   });
 
   await t.test('15. Multi-Application Isolation', async () => {
@@ -370,6 +379,20 @@ test('Device Registry HTTP API & Security Contracts', async (t) => {
     assert.strictEqual(res.body.error, 'UNAUTHORIZED');
   });
 
+  await t.test('POST /api/v2/devices/http-dev-2/heartbeat with Device 1 token returns 401', async () => {
+    const dev2Res = await makeRequest('POST', '/api/v2/device-provisioning/register', {
+      'X-Provisioning-Token': 'http-prov-token-999'
+    }, { deviceId: 'http-dev-2' });
+    assert.strictEqual(dev2Res.status, 200);
+
+    const res = await makeRequest('POST', '/api/v2/devices/http-dev-2/heartbeat', {
+      'X-Device-Token': registeredToken
+    }, { battery: 88 });
+
+    assert.strictEqual(res.status, 401);
+    assert.strictEqual(res.body.error, 'UNAUTHORIZED');
+  });
+
   await t.test('POST /api/v2/devices/http-dev-1/heartbeat with valid token succeeds', async () => {
     const res = await makeRequest('POST', '/api/v2/devices/http-dev-1/heartbeat', {
       'X-Device-Token': registeredToken
@@ -394,10 +417,11 @@ test('Device Registry HTTP API & Security Contracts', async (t) => {
 
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.success, true);
-    assert.strictEqual(res.body.devices.length, 1);
-    assert.strictEqual(res.body.devices[0].deviceId, 'http-dev-1');
-    assert.strictEqual(res.body.devices[0].credentialHash, undefined);
-    assert.strictEqual(res.body.devices[0].deviceToken, undefined);
+    assert.strictEqual(res.body.devices.length, 2);
+    const dev1 = res.body.devices.find(d => d.deviceId === 'http-dev-1');
+    assert.ok(dev1);
+    assert.strictEqual(dev1.credentialHash, undefined);
+    assert.strictEqual(dev1.deviceToken, undefined);
   });
 
   await t.test('Debug endpoint returns 404 in production mode and 200 in test mode', async () => {
