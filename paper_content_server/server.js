@@ -13,6 +13,7 @@ const { NewsTitleService } = require('./src/news/news-title-service');
 const { SafeImagePath } = require('./src/files/safe-image-path');
 const { ImageRasterizer } = require('./src/images/image-rasterizer-v2');
 const { ImageRecipeService } = require('./src/images/image-recipe-service');
+const { DeviceRegistryService } = require('./src/devices/device-registry-service');
 
 // R1 bridge — legacy adapter wiring
 var R1_loadConfig = require('./src/config/load-config').loadConfig;
@@ -422,6 +423,8 @@ async function main() {
   runtime.assetSelectionService = requestContext.assetSelectionService = boot.services.assetSelectionService || null;
   runtime.assetDeleteService = requestContext.assetDeleteService = boot.services.assetDeleteService || null;
   runtime.overridePersistence = requestContext.overridePersistence = boot.services.overridePersistence || null;
+  var devicesJsonStore = new R1_JsonStore(path.join(DATA_DIR, 'devices.json'), { schemaVersion: 1 });
+  runtime.deviceRegistryService = requestContext.deviceRegistryService = new DeviceRegistryService({ jsonStore: devicesJsonStore });
   // Inject late-bound dependencies into publication service (overridePersistence,
   // frameCache are created after the service itself).
   if (runtime.publicationService && typeof runtime.publicationService.setInjections === 'function') {
@@ -4591,6 +4594,55 @@ async function handleRequest(req, res, ctx) {
           respondJson(res, { status: 'unavailable', reason: 'AdminStateService not initialized' });
         }
       } catch(e) { respondJson(res, { status: 'error', error: e.message }); }
+      return;
+    }
+
+    // ── Phase 2.1: Device Registry & Heartbeat API ──
+    var devHeartbeatMatch = parsed.pathname.match(/^\/api\/v2\/devices\/([^/]+)\/heartbeat$/);
+    if (devHeartbeatMatch && req.method === 'POST') {
+      var devId = devHeartbeatMatch[1];
+      try { devId = decodeURIComponent(devId); } catch(e) { failJson(res, 400, 'invalid deviceId encoding'); return; }
+      if (!devId || devId.indexOf('..') >= 0 || devId.indexOf('/') >= 0 || devId.indexOf('\\') >= 0) {
+        failJson(res, 400, 'invalid deviceId'); return;
+      }
+      if (!R.deviceRegistryService) { failJson(res, 503, 'device registry service unavailable'); return; }
+      try {
+        var hbBody = JSON.parse(await readBody(req) || '{}');
+        var updatedDev = await R.deviceRegistryService.heartbeat(devId, hbBody);
+        respondJson(res, { success: true, device: updatedDev });
+      } catch(e) {
+        failJson(res, 400, 'heartbeat failed: ' + e.message);
+      }
+      return;
+    }
+
+    if (parsed.pathname === '/api/v2/devices' && req.method === 'GET') {
+      if (!R.deviceRegistryService) { failJson(res, 503, 'device registry service unavailable'); return; }
+      try {
+        var devicesList = await R.deviceRegistryService.listDevices();
+        respondJson(res, { success: true, devices: devicesList });
+      } catch(e) {
+        failJson(res, 500, 'list devices failed: ' + e.message);
+      }
+      return;
+    }
+
+    var devGetMatch = parsed.pathname.match(/^\/api\/v2\/devices\/([^/]+)$/);
+    if (devGetMatch && req.method === 'GET' && devGetMatch[1] !== 'heartbeat') {
+      var targetDevId = devGetMatch[1];
+      try { targetDevId = decodeURIComponent(targetDevId); } catch(e) { failJson(res, 400, 'invalid deviceId encoding'); return; }
+      if (!R.deviceRegistryService) { failJson(res, 503, 'device registry service unavailable'); return; }
+      try {
+        var singleDev = await R.deviceRegistryService.getDevice(targetDevId);
+        if (!singleDev) {
+          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'DEVICE_NOT_FOUND', message: 'Device with ID ' + targetDevId + ' not found' }));
+          return;
+        }
+        respondJson(res, { success: true, device: singleDev });
+      } catch(e) {
+        failJson(res, 500, 'get device failed: ' + e.message);
+      }
       return;
     }
 

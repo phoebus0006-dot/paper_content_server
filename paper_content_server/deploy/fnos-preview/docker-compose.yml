@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  epaper-admin-preview:
+    container_name: epaper-admin-preview
+    build:
+      context: ../..
+      dockerfile: deploy/fnos-preview/Dockerfile.preview
+    image: epaper-content-admin-preview:latest
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - ADMIN_ACCESS_MODE=lan
+      - ADMIN_ALLOWED_CIDRS=127.0.0.0/8,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
+      - DATA_DIR=/app/data
+    volumes:
+      - /volume1/docker/epaper-admin-preview/data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8787/api/health.json || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

@@ -99,35 +99,35 @@
   </div>
 </div>
 
-<div id="app" class="layout" style="display:none">
-  <aside class="sidebar">
+<div id="app" class="workspace-layout" style="display:none">
+  <header class="workspace-header">
     <div class="brand">
-      <svg class="brand-icon" viewBox="0 0 28 28" width="28" height="28"><use href="#icon-dashboard"/></svg>
-      <span class="brand-name">电子纸</span>
+      <svg class="brand-icon" viewBox="0 0 28 28" width="26" height="26"><use href="#icon-dashboard"/></svg>
+      <span class="brand-name">电子纸工作台</span>
+      <span class="badge badge-success" style="margin-left:8px;font-size:10px">● 在线</span>
     </div>
-    <nav>
-      <a href="#" data-tab="dashboard" class="active"><svg class="nav-icon"><use href="#icon-dashboard"/></svg> 工作台</a>
-      <a href="#" data-tab="news-page"><svg class="nav-icon"><use href="#icon-news"/></svg> 新闻审查</a>
-      <a href="#" data-tab="photos-page"><svg class="nav-icon"><use href="#icon-image"/></svg> 图片库</a>
-      <a href="#" data-tab="photo-editor-page" style="display:none"><svg class="nav-icon"><use href="#icon-edit"/></svg> 图片编辑</a>
-      <a href="#" data-tab="publish-page"><svg class="nav-icon"><use href="#icon-history"/></svg> 发布中心</a>
-      <a href="#" data-tab="status-page"><svg class="nav-icon"><use href="#icon-status"/></svg> 运行状态</a>
-    </nav>
-    <div class="sidebar-footer">
+    <div class="sidebar" style="display:contents">
+      <nav class="top-workspace-nav">
+        <a href="#dashboard" data-tab="dashboard" class="active"><svg class="nav-icon"><use href="#icon-dashboard"/></svg> 工作台</a>
+        <a href="#news-page" data-tab="news-page"><svg class="nav-icon"><use href="#icon-news"/></svg> 新闻审查</a>
+        <a href="#photos-page" data-tab="photos-page"><svg class="nav-icon"><use href="#icon-image"/></svg> 图片库</a>
+        <a href="#photo-editor-page" data-tab="photo-editor-page" style="display:none"><svg class="nav-icon"><use href="#icon-edit"/></svg> 图片编辑</a>
+        <a href="#publish-page" data-tab="publish-page"><svg class="nav-icon"><use href="#icon-history"/></svg> 发布中心</a>
+        <a href="#status-page" data-tab="status-page"><svg class="nav-icon"><use href="#icon-status"/></svg> 运行状态</a>
+      </nav>
+    </div>
+    <div class="workspace-header-actions">
       <div class="env-badge" id="env-badge">admin</div>
-      <div class="small muted" id="sidebar-sha">--</div>
-      <button class="btn btn-ghost btn-sm mt-8" id="dark-mode-btn" onclick="toggleDarkMode()" style="width:100%;color:var(--sidebar-text)"><svg class="nav-icon"><use href="#icon-moon"/></svg> 深色模式</button>
+      <button class="btn btn-ghost btn-sm" id="dark-mode-btn" onclick="toggleDarkMode()" style="color:#fff"><svg class="nav-icon" width="16" height="16"><use href="#icon-moon"/></svg></button>
+      <button class="btn btn-primary btn-sm" onclick="refreshAll()"><svg width="14" height="14"><use href="#icon-refresh"/></svg> 刷新数据</button>
     </div>
-  </aside>
+  </header>
 
-  <main class="main">
-    <header class="page-header">
+  <main class="main" style="margin:0 auto">
+    <header class="page-header" style="display:none">
       <div class="page-header-left">
-        <h2 id="page-title">工作台<svg class="icon" width="18" height="18" style="opacity:.3;margin-left:4px"><use href="#icon-dashboard"/></svg></h2>
+        <h2 id="page-title">工作台</h2>
         <span class="muted small" id="last-refresh">未刷新</span>
-      </div>
-      <div class="page-header-right">
-        <button class="btn btn-outline btn-sm" onclick="refreshAll()"><svg width="14" height="14"><use href="#icon-refresh"/></svg> 刷新</button>
       </div>
     </header>
 

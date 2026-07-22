@@ -1,0 +1,44 @@
+# Dockerfile.preview - Admin UI Visual Preview Deployment Image for fnOS NAS
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci --ignore-scripts
+COPY . .
+ARG BUILD_GIT_SHA=344323e98e4967a7d16e0dbd6ba3dc82d9d464a3
+ARG BUILD_GIT_TREE=clean
+ARG BUILD_DIRTY=false
+ARG BUILD_MODE=preview
+RUN node scripts/generate-build-manifest.js
+
+FROM node:20-alpine AS production
+WORKDIR /app
+RUN apk add --no-cache tini font-noto-cjk
+
+ARG BUILD_GIT_SHA=344323e98e4967a7d16e0dbd6ba3dc82d9d464a3
+ARG BUILD_GIT_TREE=clean
+ARG BUILD_DIRTY=false
+ENV BUILD_GIT_SHA=$BUILD_GIT_SHA BUILD_GIT_TREE=$BUILD_GIT_TREE BUILD_DIRTY=$BUILD_DIRTY
+ENV BUILD_MODE=preview NODE_ENV=production DATA_DIR=/app/data
+
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev
+COPY --from=build /app/build-manifest.json ./
+COPY --from=build /app/server.js ./
+COPY --from=build /app/src ./src/
+COPY --from=build /app/lib ./lib/
+COPY --from=build /app/scripts ./scripts/
+COPY --from=build /app/public ./public/
+COPY --from=build /app/resources ./resources/
+COPY docker-entrypoint.sh /usr/local/bin/
+
+RUN mkdir -p /app/data && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh && \
+    addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app && \
+    node -e "require('sharp'); require('mqtt'); var s = require('./server.js'); console.log('Preview modules loaded')"
+
+USER appuser
+EXPOSE 8787
+ENTRYPOINT ["/sbin/tini", "--", "docker-entrypoint.sh"]
+CMD ["node", "server.js"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8787/api/health.json || exit 1

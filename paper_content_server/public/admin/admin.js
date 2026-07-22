@@ -87,15 +87,26 @@ var TAB_TITLES={dashboard:'工作台','news-page':'新闻审查','photos-page':'
 function switchTab(name){
   if(name==='photo-editor-page'&&!STATE.editor.assetId)return;
   ACTIVE_TAB=name;
+  if(location.hash !== '#' + name) {
+    try { history.replaceState(null, '', '#' + name); } catch(e) {}
+  }
   qsa('.page').forEach(function(p){p.classList.remove('active')});
   var page=$(name);if(page)page.classList.add('active');
-  qsa('.sidebar nav a').forEach(function(a){a.classList.remove('active')});
-  var link=qs('a[data-tab="'+name+'"]');if(link)link.classList.add('active');
+  qsa('.top-workspace-nav a, .sidebar nav a').forEach(function(a){a.classList.remove('active')});
+  var link=qs('.top-workspace-nav a[data-tab="'+name+'"]') || qs('.sidebar nav a[data-tab="'+name+'"]');
+  if(link)link.classList.add('active');
   var titleEl=$('page-title');
   if(titleEl&&TAB_TITLES[name])titleEl.textContent=TAB_TITLES[name];
 }
 
-qsa('.sidebar nav a').forEach(function(a){
+window.addEventListener('hashchange', function(){
+  var hash = location.hash.replace('#', '');
+  if(hash && TAB_TITLES[hash]) {
+    switchTab(hash);
+  }
+});
+
+qsa('.top-workspace-nav a, .sidebar nav a').forEach(function(a){
   a.addEventListener('click',function(e){e.preventDefault();switchTab(a.getAttribute('data-tab'))});
 });
 
