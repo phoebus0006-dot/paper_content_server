@@ -84,4 +84,3 @@ build
 1. **Register (注册)**：设备首次发送心跳包时自动写入注册表。
 2. **Heartbeat (心跳)**：设备定期上报最新 `lastSeen`、`ip`、`firmware` 与 `currentFrame`，维持 `online` 状态。
 3. **Offline Detection (离线判定)**：若 `now - lastSeen >= 5分钟 (300,000 ms)`，系统动态标记该设备状态为 `offline`。
-

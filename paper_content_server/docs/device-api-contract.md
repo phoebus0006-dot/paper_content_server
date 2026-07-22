@@ -1,8 +1,8 @@
 # Device API Contract (v2)
 
-> **版本**：v2.0  
-> **更新时间**：2026-07-22  
-> **基线**：Phase 2.1 (Device Registry & Heartbeat Foundation)  
+> **版本**：v2.0
+> **更新时间**：2026-07-22
+> **基线**：Phase 2.1 (Device Registry & Heartbeat Foundation)
 
 ---
 
