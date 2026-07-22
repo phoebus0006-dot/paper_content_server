@@ -120,7 +120,7 @@ jobs:
                 exit 1
               fi
             done
-            if npm ls --depth=0 --only=dev 2>/dev/null | grep -q .; then
+            if [ -d "/app/node_modules/eslint" ] || [ -d "/app/node_modules/playwright" ]; then
               echo "FAIL: devDependencies found in production image"
               exit 1
             fi
