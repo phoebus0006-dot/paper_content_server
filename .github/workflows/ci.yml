@@ -21,6 +21,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: paper_content_server/package-lock.json
       - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
       - run: npm run check
       - run: npm run test:unit
       - run: npm run test:integration
@@ -46,8 +48,6 @@ jobs:
       - run: npm run r11:test
       - run: npm run r12:all
       - run: npm run admin:test
-      - name: Install Playwright Chromium for admin browser test
-        run: npx playwright install --with-deps chromium
       - run: node test/admin/admin-browser-p0-test.js
       - run: npm run lifecycle:test
       - run: npm run mqtt:port-test
