@@ -1,5 +1,5 @@
 # ---- Build stage ----
-FROM node:20-alpine AS build # AS builder
+FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --ignore-scripts
@@ -22,7 +22,7 @@ RUN npm run check
 RUN node --check server.js && node --check scripts/container-selftest.js
 
 # ---- Production stage ----
-FROM node:20-alpine AS production # AS runtime
+FROM node:20-alpine AS production
 WORKDIR /app
 RUN apk add --no-cache tini fonts-noto-cjk
 
