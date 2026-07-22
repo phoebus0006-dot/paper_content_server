@@ -1,5 +1,5 @@
 # ---- Build stage ----
-FROM node:20-alpine AS build
+FROM node:20-alpine AS build # AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --ignore-scripts
@@ -22,9 +22,9 @@ RUN npm run check
 RUN node --check server.js && node --check scripts/container-selftest.js
 
 # ---- Production stage ----
-FROM node:20-alpine AS production
+FROM node:20-alpine AS production # AS runtime
 WORKDIR /app
-RUN apk add --no-cache tini
+RUN apk add --no-cache tini fonts-noto-cjk
 
 # Re-declare ARGs (stage-scoped) and persist as ENV so docker inspect
 # shows BUILD_GIT_SHA / BUILD_GIT_TREE / BUILD_DIRTY in the final image.

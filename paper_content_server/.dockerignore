@@ -10,3 +10,6 @@ qa/manifest.json
 data/
 deploy/
 .gitkeep
+test/
+.env
+config.h
