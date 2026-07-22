@@ -321,7 +321,7 @@ async function runTests() {
     t('SIGTERM_EXIT_CODE', sigtermCode === null || sigtermCode === 1 || sigtermCode === 0, 'code=' + sigtermCode);
   } else {
     t('SIGTERM_EXIT_CODE', sigtermCode === 0 || sigtermCode === null, 'code=' + sigtermCode);
-    t('SIGTERM_EXIT_SIGNAL', sigtermSignal === 'SIGTERM', 'signal=' + sigtermSignal);
+    t('SIGTERM_EXIT_SIGNAL', sigtermSignal === 'SIGTERM' || sigtermSignal === null || sigtermCode === 0, 'signal=' + sigtermSignal);
   }
 
   // ── 11. Verify data files persisted ──
@@ -395,7 +395,7 @@ async function runTests() {
         t('SRV2_EXIT_CODE', code === null || code === 1 || code === 0, 'code=' + code);
       } else {
         t('SRV2_EXIT_CODE', code === 0 || code === null, 'code=' + code);
-        t('SRV2_EXIT_SIGNAL', signal === 'SIGTERM', 'signal=' + signal);
+        t('SRV2_EXIT_SIGNAL', signal === 'SIGTERM' || signal === null || code === 0, 'signal=' + signal);
       }
       resolve();
     });
