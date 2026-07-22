@@ -101,6 +101,7 @@ t('NO_PLACEHOLDER_COMPLETION_CLAIMS',
 // flag any that appear inside a failJson/respondJson/res.end call.
 var serverSrc = readRepo('server.js') || '';
 if (serverSrc) {
+  serverSrc = serverSrc.replace(/\r\n/g, '\n');
   var serverCode = stripFullLineComments(serverSrc);
   // Match POSIX absolute path literals in string quotes OR Windows drive paths.
   // Excludes URL routes (/api/, /health, /admin, /debug) and lone slashes.

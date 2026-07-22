@@ -90,7 +90,7 @@ function loadConfig(opts) {
   config.server = {
     port: Number(env.PORT || fileConfig.port || 8787),
     timezone: String(env.TZ || fileConfig.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
-    enableDebugRoutes: String(env.ENABLE_DEBUG_ROUTES || '').toLowerCase() === 'true',
+    enableDebugRoutes: parseBoolEnv(env.ENABLE_DEBUG_ROUTES, false) || parseBoolEnv(env.ENABLE_TEST_ENDPOINTS, false),
     testInstanceId: env.TEST_INSTANCE_ID || '',
   };
 

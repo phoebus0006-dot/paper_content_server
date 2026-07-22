@@ -3263,7 +3263,7 @@ async function handleRequest(req, res, ctx) {
       return;
     }
 
-    var isDebugEnabled = ENABLE_DEBUG_ROUTES || (R.config && R.config.debug && R.config.debug.enableDebugRoutes) || process.env.ENABLE_TEST_ENDPOINTS === 'true' || process.env.ENABLE_DEBUG_ROUTES === 'true';
+    var isDebugEnabled = ENABLE_DEBUG_ROUTES || (R.config && R.config.debug && R.config.debug.enableDebugRoutes);
     if (isDebugEnabled && parsed.pathname === '/debug/pin-state.json') {
       const client = clientKey(req);
       var pinnedId = R.pinStore ? R.pinStore.get(client) : null;
