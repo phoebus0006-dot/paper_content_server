@@ -86,16 +86,23 @@ jobs:
             --build-arg BUILD_DIRTY=false \
             --target production -t paper-content-server:production .
       - name: Start production container
-        run: docker run -d --name pcs -p 8787:8787 paper-content-server:production
+        run: docker run -d --name pcs -p 8787:8787 -e ADMIN_ACCESS_MODE=lan -e ADMIN_ALLOWED_CIDRS=127.0.0.0/8,::1/128,172.17.0.0/16 paper-content-server:production
       - name: Wait for /api/health.json
         run: |
+          READY=0
           for i in $(seq 1 30); do
-            if curl -s http://localhost:8787/api/health.json > /dev/null 2>&1; then
+            if curl -s -f http://localhost:8787/api/health.json > /dev/null 2>&1; then
               echo "Server is ready"
+              READY=1
               break
             fi
             sleep 2
           done
+          if [ $READY -ne 1 ]; then
+            echo "Server failed to start within 60s"
+            docker logs pcs
+            exit 1
+          fi
       - name: Request /api/admin/state
         run: curl -s http://localhost:8787/api/admin/state
       - name: Request /api/state.json

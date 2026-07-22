@@ -44,7 +44,8 @@ COPY --from=build /app/scripts ./scripts/
 COPY --from=build /app/public ./public/
 COPY --from=build /app/resources ./resources/
 COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
+RUN mkdir -p /app/data && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh && \
     addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app && \
     node -e "require('sharp'); require('mqtt'); var s = require('./server.js'); console.log('All production modules loaded')"
 ENV DATA_DIR=/app/data
