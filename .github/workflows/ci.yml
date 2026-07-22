@@ -86,7 +86,7 @@ jobs:
             --build-arg BUILD_DIRTY=false \
             --target production -t paper-content-server:production .
       - name: Start production container
-        run: docker run -d --name pcs -p 8787:8787 -e ADMIN_ACCESS_MODE=lan -e ADMIN_ALLOWED_CIDRS=127.0.0.0/8,::1/128,172.17.0.0/16 paper-content-server:production
+        run: docker run -d --name pcs -p 8787:8787 -e ADMIN_ACCESS_MODE=lan -e ADMIN_ALLOWED_CIDRS=127.0.0.0/8,172.17.0.0/16 paper-content-server:production
       - name: Wait for /api/health.json
         run: |
           READY=0
