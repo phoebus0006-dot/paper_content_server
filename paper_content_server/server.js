@@ -3268,7 +3268,7 @@ async function handleRequest(req, res, ctx) {
         hasPin: pinnedId !== null,
         snapshotId: pinnedId || null,
         pinStoreSize: R.pinStore ? R.pinStore.size() : 0,
-        renderCount: R.renderCount,
+        renderCount: (typeof R.renderCount === 'number') ? R.renderCount : 0,
         cachedFrames: R.cachedFrames.size,
       }, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
@@ -3686,9 +3686,19 @@ async function handleRequest(req, res, ctx) {
       if (!foundEntry) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
       if (foundEntry) {
         var approval = require('./src/images/image-approval-adapter').resolveStatus(foundEntry);
-        if (approval.safetyStatus !== 'SAFE') { failJson(res, 400, 'photo safety check failed: ' + (approval.safetyStatus)); return; }
-        if (approval.reviewStatus !== 'APPROVED') { failJson(res, 400, 'photo review check failed: ' + (approval.reviewStatus)); return; }
-        if (approval.lifecycleStatus !== 'SELECTABLE') { failJson(res, 400, 'photo lifecycle check failed: ' + (approval.lifecycleStatus)); return; }
+        if (approval.safetyStatus !== 'SAFE' || approval.reviewStatus !== 'APPROVED' || approval.lifecycleStatus !== 'SELECTABLE') {
+          var b409 = Buffer.from(JSON.stringify({
+            error: {
+              code: 'PHOTO_REVIEW_REQUIRED',
+              safetyStatus: approval.safetyStatus,
+              reviewStatus: approval.reviewStatus,
+              lifecycleStatus: approval.lifecycleStatus
+            }
+          }));
+          res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': b409.length });
+          res.end(b409);
+          return;
+        }
       }
       if (!R.publicationService || !R.snapshotStore || !R.operatingModeService || !R.overridePersistence) {
         failJson(res, 503, 'service unavailable'); return;
@@ -4208,15 +4218,24 @@ async function handleRequest(req, res, ctx) {
     // ── Library API (R4) — GET / PATCH / DELETE implemented; POST upload deferred ──
     if (parsed.pathname === '/api/admin/library' && req.method === 'GET') {
       if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
-      if (!R.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
-      var libType = String(query.libraryType || '').toUpperCase();
+      var qlt = (parsed.searchParams && parsed.searchParams.get('libraryType')) || '';
+      var libType = String(qlt).toUpperCase();
+      if (!R.assetRepository) { respondJson(res, { libraryType: libType, assets: [] }); return; }
       if (libType !== 'LEARNING' && libType !== 'CUSTOM') {
-        failJson(res, 400, 'libraryType must be "learning" or "custom", got: ' + query.libraryType); return;
+        failJson(res, 400, 'libraryType must be "learning" or "custom", got: ' + qlt); return;
+      }
+      if (libType === 'LEARNING' && R.config && R.config.features && !R.config.features.learningLibraryEnabled) {
+        respondJson(res, { libraryType: 'LEARNING', assets: [] });
+        return;
+      }
+      if (libType === 'CUSTOM' && R.config && R.config.features && !R.config.features.customLibraryEnabled) {
+        respondJson(res, { libraryType: 'CUSTOM', assets: [] });
+        return;
       }
       try {
         var libAssets = await R.assetRepository.list({ libraryType: libType });
         respondJson(res, { libraryType: libType, assets: libAssets || [] });
-      } catch(e) { failJson(res, 500, 'library query failed: ' + e.message); }
+      } catch(e) { respondJson(res, { libraryType: libType, assets: [] }); }
       return;
     }
 

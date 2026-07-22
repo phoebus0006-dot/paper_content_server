@@ -458,17 +458,10 @@ function renderGalleryAssets(assets,label){
       '<div class="actions">'+
       '<button class="btn btn-sm btn-outline" onclick="openEditor(\''+a.assetId+'\')">'+icon('edit')+'编辑</button>'+
       '<button class="btn btn-sm btn-success" onclick="oneShotPublish(\''+a.assetId+'\',\''+esc(a.libraryType||'custom')+'\')">'+icon('publish')+'发布</button>'+
-      (a.lifecycleStatus!=='TOMBSTONED'&&a.lifecycleStatus!=='DELETED'?'<button class="btn btn-sm btn-danger" onclick="deleteAssetClick(\''+a.assetId+'\')">'+icon('trash')+'删除</button>':'')+
       '</div></div>';
     el.appendChild(item);
   });
 }
-
-function deleteAssetClick(id){
-  if(!checkConsistent())return;
-  toast('删除功能未启用 (FEATURE_DISABLED)','warning');
-}
-
 
 function oneShotPublish(assetId,libraryType){
   if(!checkConsistent())return;
