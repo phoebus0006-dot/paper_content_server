@@ -102,6 +102,9 @@ function createApplication(options) {
     imageRecipeService: imageRecipeService,
     deviceRegistryService: deviceRegistryService,
     config: {
+      debug: {
+        enableDebugRoutes: (process.env.ENABLE_DEBUG_ROUTES === 'true') || (process.env.ENABLE_TEST_ENDPOINTS === 'true'),
+      },
       features: {
         deletePipelineEnabled: false,
         customLibraryEnabled: false,
