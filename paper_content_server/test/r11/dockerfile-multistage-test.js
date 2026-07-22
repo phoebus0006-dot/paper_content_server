@@ -12,7 +12,7 @@ t('NPM_CI_OMIT_DEV', dockerfile.indexOf('npm ci --omit=dev') >= 0, '');
 t('NON_ROOT_USER_APPUSER', dockerfile.indexOf('USER appuser') >= 0, '');
 t('NO_COPY_NODE_MODULES', dockerfile.indexOf('COPY node_modules') < 0, 'must not copy host node_modules');
 t('MULTISTAGE_BUILD', (dockerfile.indexOf('AS builder') >= 0 || dockerfile.indexOf('AS build') >= 0) && (dockerfile.indexOf('AS runtime') >= 0 || dockerfile.indexOf('AS production') >= 0), '');
-t('FONTS_NOTO_CJK', dockerfile.indexOf('fonts-noto-cjk') >= 0, '');
+t('FONTS_NOTO_CJK', dockerfile.indexOf('font-noto-cjk') >= 0 || dockerfile.indexOf('fonts-noto-cjk') >= 0, '');
 
 // --- .dockerignore checks ---
 var dockerignore = fs.readFileSync(path.join(ROOT, '.dockerignore'), 'utf8');

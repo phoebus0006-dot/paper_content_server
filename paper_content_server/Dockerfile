@@ -24,7 +24,7 @@ RUN node --check server.js && node --check scripts/container-selftest.js
 # ---- Production stage ----
 FROM node:20-alpine AS production
 WORKDIR /app
-RUN apk add --no-cache tini fonts-noto-cjk
+RUN apk add --no-cache tini font-noto-cjk
 
 # Re-declare ARGs (stage-scoped) and persist as ENV so docker inspect
 # shows BUILD_GIT_SHA / BUILD_GIT_TREE / BUILD_DIRTY in the final image.
