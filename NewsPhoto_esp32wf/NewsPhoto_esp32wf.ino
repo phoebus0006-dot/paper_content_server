@@ -136,9 +136,26 @@ String sha256Hex(const uint8_t *data, size_t len) {
   char hex[65];
   mbedtls_sha256_context ctx;
   mbedtls_sha256_init(&ctx);
-  mbedtls_sha256_starts_ret(&ctx, 0);
-  mbedtls_sha256_update_ret(&ctx, data, len);
-  mbedtls_sha256_finish_ret(&ctx, digest);
+  mbedtls_sha256_starts(&ctx, 0);
+  mbedtls_sha256_update(&ctx, data, len);
+  mbedtls_sha256_finish(&ctx, digest);
+  mbedtls_sha256_free(&ctx);
+  for (int i = 0; i < 32; i++) {
+    sprintf(hex + (i * 2), "%02x", digest[i]);
+  }
+  hex[64] = '\0';
+  return String(hex);
+}
+
+String sha256Hex2(const uint8_t *a, size_t aLen, const uint8_t *b, size_t bLen) {
+  uint8_t digest[32];
+  char hex[65];
+  mbedtls_sha256_context ctx;
+  mbedtls_sha256_init(&ctx);
+  mbedtls_sha256_starts(&ctx, 0);
+  mbedtls_sha256_update(&ctx, a, aLen);
+  mbedtls_sha256_update(&ctx, b, bLen);
+  mbedtls_sha256_finish(&ctx, digest);
   mbedtls_sha256_free(&ctx);
   for (int i = 0; i < 32; i++) {
     sprintf(hex + (i * 2), "%02x", digest[i]);
@@ -310,10 +327,11 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
 
   http.end();
 
-  // SHA256 verification: compute hash of frame payload and compare
+  // SHA256 verification: server frameSha256 is the full EPF1 frame hash
+  // (10-byte header + 192000-byte payload), not just the display payload.
   if (expectedSha.length() == 64) {
-    Serial.printf("SHA256: computing hash of %ld bytes\n", payloadLen);
-    String computedSha = sha256Hex(frame, (size_t)payloadLen);
+    Serial.printf("SHA256: computing full EPF1 hash of %ld bytes\n", expectedLen);
+    String computedSha = sha256Hex2(header, sizeof(header), frame, (size_t)payloadLen);
     if (computedSha != expectedSha) {
       Serial.printf("FRAME_SHA256_MISMATCH: computed=%s expected=%s\n",
                     computedSha.c_str(), expectedSha.c_str());
