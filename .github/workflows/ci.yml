@@ -73,8 +73,18 @@ jobs:
         working-directory: paper_content_server
     steps:
       - uses: actions/checkout@v7
-      - run: docker build --target test -t paper-content-server:test .
-      - run: docker build --target production -t paper-content-server:production .
+      - run: |
+          docker build \
+            --build-arg BUILD_GIT_SHA=$(git rev-parse HEAD) \
+            --build-arg BUILD_GIT_TREE=$(git rev-parse HEAD^{tree}) \
+            --build-arg BUILD_DIRTY=false \
+            --target test -t paper-content-server:test .
+      - run: |
+          docker build \
+            --build-arg BUILD_GIT_SHA=$(git rev-parse HEAD) \
+            --build-arg BUILD_GIT_TREE=$(git rev-parse HEAD^{tree}) \
+            --build-arg BUILD_DIRTY=false \
+            --target production -t paper-content-server:production .
       - name: Start production container
         run: docker run -d --name pcs -p 8787:8787 paper-content-server:production
       - name: Wait for /api/health.json
