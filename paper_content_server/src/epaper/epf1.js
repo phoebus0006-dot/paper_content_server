@@ -53,6 +53,52 @@ function encodeFrame(codes) {
   return Buffer.concat([header, payload]);
 }
 
+function parseHeader(buffer) {
+  if (buffer.length < EPF1_CONSTANTS.HEADER_BYTES) {
+    throw new Error('Buffer too short for EPF1 header: got ' + buffer.length + ' bytes, need ' + EPF1_CONSTANTS.HEADER_BYTES);
+  }
+  var magic = buffer.toString('ascii', 0, 4);
+  var width = buffer.readUInt16LE(4);
+  var height = buffer.readUInt16LE(6);
+  var panel = buffer.readUInt8(8);
+  var version = buffer.readUInt8(9);
+  return {
+    magic: magic,
+    width: width,
+    height: height,
+    panel: panel,
+    version: version,
+    headerLength: EPF1_CONSTANTS.HEADER_BYTES,
+    payloadLength: EPF1_CONSTANTS.PAYLOAD_BYTES,
+    frameLength: EPF1_CONSTANTS.TOTAL_BYTES
+  };
+}
+
+function decodeFrame(frameBuffer) {
+  var header = parseHeader(frameBuffer);
+  var payload = frameBuffer.slice(header.headerLength, header.headerLength + header.payloadLength);
+  var totalPixels = header.width * header.height;
+  var pixels = Buffer.alloc(totalPixels * 3);
+
+  for (var i = 0; i < totalPixels; i++) {
+    var byteIdx = Math.floor(i / 2);
+    var nibble = i % 2 === 0
+      ? (payload[byteIdx] >> 4) & 0x0F
+      : payload[byteIdx] & 0x0F;
+    var color = palette.getPaletteColor(nibble);
+    var rgb = color ? color.rgb : [255, 255, 255];
+    pixels[i * 3] = rgb[0];
+    pixels[i * 3 + 1] = rgb[1];
+    pixels[i * 3 + 2] = rgb[2];
+  }
+
+  return {
+    width: header.width,
+    height: header.height,
+    pixels: pixels
+  };
+}
+
 function hexPreview(buf, bytes) {
   bytes = bytes || 32;
   var parts = [];
@@ -66,6 +112,8 @@ module.exports = {
   EPF1_CONSTANTS: EPF1_CONSTANTS,
   packPixels: packPixels,
   buildHeader: buildHeader,
+  parseHeader: parseHeader,
+  decodeFrame: decodeFrame,
   encodePayload: encodePayload,
   encodeFrame: encodeFrame,
   hexPreview: hexPreview,

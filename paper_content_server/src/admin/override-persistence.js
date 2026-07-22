@@ -102,9 +102,32 @@ function createOverridePersistence(stateFile, logger) {
     }
   }
 
-  // async 验证:资产仍安全、可选、文件存在
-  async function validateOverrideAsync(state, assetRepository) {
-    if (!state || !state.assetId) return { valid: false, reason: 'NO_ASSET_ID' };
+  // async 验证：
+  // - 有 assetId → 资产仍安全、可选、文件存在（已有逻辑）
+  // - 无 assetId（no-asset one-shot）→ 通过 snapshotStore 验证 snapshot/frame 完整性、未过期
+  async function validateOverrideAsync(state, assetRepository, snapshotStore) {
+    if (!state) return { valid: false, reason: 'NO_STATE' };
+
+    // No-asset path: snapshot-only validation
+    if (!state.assetId && state.snapshotId) {
+      if (!snapshotStore) return { valid: false, reason: 'NO_SNAPSHOT_STORE' };
+      try {
+        var loaded = await snapshotStore.load(state.snapshotId);
+        if (!loaded) return { valid: false, reason: 'SNAPSHOT_NOT_FOUND' };
+        // Check expiry: if saved expiresAt is past, treat as expired
+        if (state.expiresAt) {
+          var now = new Date();
+          var expiry = new Date(state.expiresAt);
+          if (now >= expiry) return { valid: false, reason: 'OVERRIDE_EXPIRED' };
+        }
+        return { valid: true, snapshot: loaded };
+      } catch (e) {
+        var reason = e.code === 'SNAPSHOT_INTEGRITY_ERROR' ? 'SNAPSHOT_INTEGRITY_ERROR' : 'SNAPSHOT_VALIDATION_FAILED';
+        return { valid: false, reason: reason, detail: e.message };
+      }
+    }
+
+    if (!state.assetId) return { valid: false, reason: 'NO_ASSET_ID' };
 
     var asset = await assetRepository.get(state.assetId);
     if (!asset) return { valid: false, reason: 'ASSET_NOT_FOUND' };

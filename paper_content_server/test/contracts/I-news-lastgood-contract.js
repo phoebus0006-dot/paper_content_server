@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // I-news-lastgood-contract: last-good behavior via real production pipeline
-var path=require('path'),http=require('http'),fs=require('fs');
-var ROOT=path.join(__dirname,'..','..'),PORT=8797,BASE='http://127.0.0.1:'+PORT;
-var TMPDIR=path.join(ROOT,'test_lg_'+Date.now()),ec=0,pass=0,fail=0;
+var path=require('path'),http=require('http'),fs=require('fs'),os=require('os');
+var ROOT=path.join(__dirname,'..','..'),PORT=18700+Math.floor(Math.random()*1000),BASE='http://127.0.0.1:'+PORT;
+var TMPDIR=path.join(os.tmpdir(),'test_lg_'+Date.now()),ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
 function s(n,st,d){console.log('STATUS '+n+'='+st+(d?': '+d:''));}
 function sha256(b){return require('crypto').createHash('sha256').update(b).digest('hex');}
@@ -93,7 +93,7 @@ async function main(){
   
   s('FinalNewsUniqueness','PARTIAL','URL/title dedup exists; article identity/event-level not proven');
   
-  try{fs.rmdirSync(TMPDIR,{recursive:true})}catch(e){}
+  try{fs.rmSync(TMPDIR,{recursive:true,force:true})}catch(e){}
   console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec);
 }
 main().catch(function(e){console.log('FATAL:'+e.message);process.exit(1)});

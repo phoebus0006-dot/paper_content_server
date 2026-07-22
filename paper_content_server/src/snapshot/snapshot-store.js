@@ -137,6 +137,11 @@ function SnapshotStore(snapshotsDir, publicationDir, logger) {
     });
   }
 
+  function clearActive() {
+    var activeFile = path.join(publicationDir, 'active-snapshot.json');
+    return writeFileAtomic(activeFile, JSON.stringify({ activeSnapshotId: null, frameSha256: null }, null, 2) + '\n', { encoding: 'utf8' });
+  }
+
   function readActive() {
     var activeFile = path.join(publicationDir, 'active-snapshot.json');
     return fsp.readFile(activeFile, 'utf8').then(function(text) {
@@ -178,6 +183,7 @@ function SnapshotStore(snapshotsDir, publicationDir, logger) {
     save: save,
     load: load,
     activate: activate,
+    clearActive: clearActive,
     readActive: readActive,
     listSnapshots: listSnapshots,
     deleteAll: deleteAll,

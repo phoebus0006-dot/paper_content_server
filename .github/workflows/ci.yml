@@ -21,6 +21,29 @@ jobs:
           cache: 'npm'
           cache-dependency-path: paper_content_server/package-lock.json
       - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - run: npm run check
+      - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npm run test:security
+      - run: npm run test:e2e
+      - run: npm run test:visual
+      - run: npm run test:contract
+      - run: npm run mutation:test
+      - run: npm run test:all
+      - name: Enforce Zero Skips and Zero Todos in Test Suites
+        run: |
+          node -e '
+            const { execSync } = require("child_process");
+            const out = execSync("npm run test:all", { encoding: "utf8" });
+            console.log(out);
+            if (/\bskipped\s+[1-9]\d*/i.test(out) || /\bskip\s+[1-9]\d*/i.test(out) || /\btodo\s+[1-9]\d*/i.test(out)) {
+              console.error("CI REJECTED: Found skipped or todo tests in test:all output!");
+              process.exit(1);
+            }
+            console.log("SUCCESS: Zero skipped and zero todo tests verified.");
+          '
       - run: node --check server.js
       - run: npm run docs:check
       - run: npm run contracts:test
@@ -37,8 +60,6 @@ jobs:
       - run: npm run r11:test
       - run: npm run r12:all
       - run: npm run admin:test
-      - name: Install Playwright Chromium for admin browser test
-        run: npx playwright install --with-deps chromium
       - run: node test/admin/admin-browser-p0-test.js
       - run: npm run lifecycle:test
       - run: npm run mqtt:port-test
@@ -55,3 +76,72 @@ jobs:
       - run: npm run v5:classifier
       - run: npm run v5:concurrency
       - run: npm run hygiene:check
+      - name: Upload Playwright Admin Screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-admin-screenshots
+          path: paper_content_server/screenshots/
+          retention-days: 7
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: paper_content_server
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          docker build \
+            --build-arg BUILD_GIT_SHA=$(git rev-parse HEAD) \
+            --build-arg BUILD_GIT_TREE=$(git rev-parse HEAD^{tree}) \
+            --build-arg BUILD_DIRTY=false \
+            --target test -t paper-content-server:test .
+      - run: |
+          docker build \
+            --build-arg BUILD_GIT_SHA=$(git rev-parse HEAD) \
+            --build-arg BUILD_GIT_TREE=$(git rev-parse HEAD^{tree}) \
+            --build-arg BUILD_DIRTY=false \
+            --target production -t paper-content-server:production .
+      - name: Start production container
+        run: docker run -d --name pcs -p 8787:8787 -e ADMIN_ACCESS_MODE=lan -e ADMIN_ALLOWED_CIDRS=127.0.0.0/8,172.17.0.0/16 paper-content-server:production
+      - name: Wait for /api/health.json
+        run: |
+          READY=0
+          for i in $(seq 1 30); do
+            if curl -s -f http://localhost:8787/api/health.json > /dev/null 2>&1; then
+              echo "Server is ready"
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+          if [ $READY -ne 1 ]; then
+            echo "Server failed to start within 60s"
+            docker logs pcs
+            exit 1
+          fi
+      - name: Request /api/admin/state
+        run: curl -s http://localhost:8787/api/admin/state
+      - name: Request /api/state.json
+        run: curl -s http://localhost:8787/api/state.json
+      - name: Request /api/frame.bin
+        run: curl -s -o /dev/null -w "%{http_code}" http://localhost:8787/api/frame.bin
+      - name: Stop container
+        run: docker stop pcs
+      - name: Verify production image doesn't contain dev/test artifacts
+        run: |
+          docker run --rm --entrypoint sh paper-content-server:production -c '
+            for dir in qa test audit cleanup-audit; do
+              if [ -d "/app/$dir" ]; then
+                echo "FAIL: $dir/ directory found in production image"
+                exit 1
+              fi
+            done
+            if [ -d "/app/node_modules/eslint" ] || [ -d "/app/node_modules/playwright" ]; then
+              echo "FAIL: devDependencies found in production image"
+              exit 1
+            fi
+            echo "Production image verification passed"
+          '

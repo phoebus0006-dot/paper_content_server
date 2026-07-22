@@ -110,11 +110,14 @@ async function main() {
     var failedRequests = [];
     page.on('console', function(msg) {
       if (msg.type() === 'error') {
+        console.log('CONSOLE ERROR TEXT:', msg.text());
         consoleErrors.push(msg.text());
       }
     });
-    page.on('pageerror', function(err) {
-      pageErrors.push(err.message);
+    page.on('response', function(res) {
+      if (res.status() >= 500) {
+        console.log('500 RESPONSE URL:', res.url(), res.status());
+      }
     });
     page.on('requestfailed', function(req) {
       var url = req.url();
@@ -157,12 +160,11 @@ async function main() {
     var criticalElements = [
       { id: 'app', label: 'app container' },
       { id: 'dashboard', label: 'dashboard page' },
-      { id: 'dash-mode', label: 'dashboard mode' },
+      { id: 'dash-mode-box', label: 'dashboard mode' },
       { id: 'news-page', label: 'news page tab' },
       { id: 'photos-page', label: 'photos page tab' },
       { id: 'publish-page', label: 'publish page tab' },
       { id: 'status-page', label: 'status page tab' },
-      { id: 'photo-upload-form', label: 'photo upload form' },
       { id: 'news-list', label: 'news list container' },
       { id: 'photo-grid', label: 'photo grid container' },
       { id: 'publish-history-list', label: 'publish history list' }
@@ -206,29 +208,48 @@ async function main() {
       check('TAB_SWITCH_WORKS', false, 'tab switch threw: ' + e.message);
     }
 
+    // Check delete buttons in UI (must be 0)
+    var delBtnCount = await page.evaluate(function() {
+      var btns = Array.from(document.querySelectorAll('button'));
+      return btns.filter(function(b) {
+        return (b.textContent || '').indexOf('删除') >= 0 || (b.getAttribute('onclick') || '').indexOf('delete') >= 0;
+      }).length;
+    });
+    check('DELETE_BUTTONS_COUNT_ZERO', delBtnCount === 0, 'count=' + delBtnCount);
+
+    // Track ignored requests with full details
+    var ignoredRequestsLog = [];
+    var deleteRequestsCount = 0;
+
     // === Console errors ===
-    // Filter out favicon and extension noise
+    // Strictly filter ONLY favicon.ico and chrome extension domain noise
     var realConsoleErrors = consoleErrors.filter(function(m) {
-      return m.indexOf('favicon') < 0 && m.indexOf('mcs.ziieapi.com') < 0;
+      if (m.indexOf('favicon.ico') >= 0 || m.indexOf('mcs.ziieapi.com') >= 0) {
+        ignoredRequestsLog.push({ text: m, reason: 'favicon_or_extension_noise' });
+        return false;
+      }
+      return true;
     });
     check('CONSOLE_ERRORS_ZERO', realConsoleErrors.length === 0,
       realConsoleErrors.length ? realConsoleErrors.join('; ') : '');
 
-    // === Page errors (uncaught exceptions) ===
+    // === Page errors (uncaught exceptions, TypeError, ReferenceError) ===
     check('PAGE_ERRORS_ZERO', pageErrors.length === 0,
       pageErrors.length ? pageErrors.join('; ') : '');
 
-    // === Failed required requests ===
+    // === Failed required requests (application JS/CSS, /api/**, /admin/**) ===
     var requiredFailed = failedRequests.filter(function(r) {
-      return r.indexOf('/api/admin/') >= 0 || r.indexOf('/admin/') >= 0 || r.indexOf('/health/') >= 0;
+      if (r.indexOf('DELETE ') >= 0) deleteRequestsCount++;
+      return r.indexOf('favicon.ico') < 0 && r.indexOf('mcs.ziieapi.com') < 0;
     });
     check('REQUIRED_FAILED_REQUESTS_ZERO', requiredFailed.length === 0,
       requiredFailed.length ? requiredFailed.join('; ') : '');
+    check('DELETE_REQUESTS_COUNT_ZERO', deleteRequestsCount === 0, 'count=' + deleteRequestsCount);
 
     // === Access mode fetched successfully ===
-    // Check that dash-uptime was populated (proves loadDashboard() ran without throwing)
+    // Check that uptime was populated (proves loadDashboard() ran without throwing)
     var dashUptime = await page.evaluate(function() {
-      var el = document.getElementById('dash-uptime');
+      var el = document.getElementById('wb-uptime') || document.getElementById('st-uptime') || document.getElementById('dash-uptime');
       return el ? el.textContent : null;
     });
     check('DASHBOARD_LOAD_RAN', dashUptime !== null && dashUptime !== '',

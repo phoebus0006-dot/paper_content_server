@@ -8,7 +8,85 @@
 </head>
 <body>
 
-<!-- Login overlay (stripped by server in LAN mode; only present in token mode) -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" id="svg-icons">
+  <symbol id="icon-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+    <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+  </symbol>
+  <symbol id="icon-news" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0V6"/><path d="M10 8h6"/><path d="M10 12h6"/><path d="M10 16h4"/>
+  </symbol>
+  <symbol id="icon-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+  </symbol>
+  <symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </symbol>
+  <symbol id="icon-publish" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+  </symbol>
+  <symbol id="icon-status" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+  </symbol>
+  <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+  </symbol>
+  <symbol id="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+  </symbol>
+  <symbol id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+  </symbol>
+  <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+  </symbol>
+  <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </symbol>
+  <symbol id="icon-alert-triangle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+  </symbol>
+  <symbol id="icon-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </symbol>
+  <symbol id="icon-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
+  </symbol>
+  <symbol id="icon-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="15 18 9 12 15 6"/>
+  </symbol>
+  <symbol id="icon-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="9 18 15 12 9 6"/>
+  </symbol>
+  <symbol id="icon-rotate-cw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+  </symbol>
+  <symbol id="icon-flip-h" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 12h18"/><path d="M7 16l-4-4 4-4"/><path d="M17 8l4 4-4 4"/>
+  </symbol>
+  <symbol id="icon-flip-v" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3v18"/><path d="M8 7l-4 4 4 4"/><path d="M16 17l4-4-4-4"/>
+  </symbol>
+  <symbol id="icon-crop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/>
+  </symbol>
+  <symbol id="icon-zoom-in" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+  </symbol>
+  <symbol id="icon-zoom-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/>
+  </symbol>
+  <symbol id="icon-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+  </symbol>
+  <symbol id="icon-redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+  </symbol>
+  <symbol id="icon-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+  </symbol>
+</svg>
+
 <div id="login-overlay" class="login-overlay" style="display:none">
   <div class="login-box">
     <h2>电子纸管理后台</h2>
@@ -22,365 +100,296 @@
 </div>
 
 <div id="app" class="layout" style="display:none">
-  <!-- Sidebar -->
   <aside class="sidebar">
     <div class="brand">
-      <span class="brand-icon">📋</span>
+      <svg class="brand-icon" viewBox="0 0 28 28" width="28" height="28"><use href="#icon-dashboard"/></svg>
       <span class="brand-name">电子纸</span>
     </div>
     <nav>
-      <a href="#" data-tab="dashboard" class="active">📊 总览</a>
-      <a href="#" data-tab="news-page">📰 新闻审查</a>
-      <a href="#" data-tab="photos-page">🖼️ 图片库</a>
-      <a href="#" data-tab="photo-editor-page" style="display:none">✏️ 图片编辑</a>
-      <a href="#" data-tab="publish-page">📤 发布中心</a>
-      <a href="#" data-tab="status-page">⚙️ 运行状态</a>
+      <a href="#" data-tab="dashboard" class="active"><svg class="nav-icon"><use href="#icon-dashboard"/></svg> 工作台</a>
+      <a href="#" data-tab="news-page"><svg class="nav-icon"><use href="#icon-news"/></svg> 新闻审查</a>
+      <a href="#" data-tab="photos-page"><svg class="nav-icon"><use href="#icon-image"/></svg> 图片库</a>
+      <a href="#" data-tab="photo-editor-page" style="display:none"><svg class="nav-icon"><use href="#icon-edit"/></svg> 图片编辑</a>
+      <a href="#" data-tab="publish-page"><svg class="nav-icon"><use href="#icon-history"/></svg> 发布中心</a>
+      <a href="#" data-tab="status-page"><svg class="nav-icon"><use href="#icon-status"/></svg> 运行状态</a>
     </nav>
     <div class="sidebar-footer">
-      <div class="env-badge" id="env-badge">staging</div>
+      <div class="env-badge" id="env-badge">admin</div>
       <div class="small muted" id="sidebar-sha">--</div>
+      <button class="btn btn-ghost btn-sm mt-8" id="dark-mode-btn" onclick="toggleDarkMode()" style="width:100%;color:var(--sidebar-text)"><svg class="nav-icon"><use href="#icon-moon"/></svg> 深色模式</button>
     </div>
   </aside>
 
-  <!-- Main content -->
   <main class="main">
     <header class="page-header">
       <div class="page-header-left">
-        <h2 id="page-title">总览</h2>
+        <h2 id="page-title">工作台<svg class="icon" width="18" height="18" style="opacity:.3;margin-left:4px"><use href="#icon-dashboard"/></svg></h2>
         <span class="muted small" id="last-refresh">未刷新</span>
       </div>
       <div class="page-header-right">
-        <button class="btn btn-outline btn-sm" onclick="refreshAll()">🔄 刷新</button>
+        <button class="btn btn-outline btn-sm" onclick="refreshAll()"><svg width="14" height="14"><use href="#icon-refresh"/></svg> 刷新</button>
       </div>
     </header>
 
-    <!-- ───────── Dashboard ───────── -->
+    <!-- ═══════════ Workbench ═══════════ -->
     <section id="dashboard" class="page active">
-      <!-- Row 1: Key metrics -->
+
+      <div class="workbench-preview">
+        <div class="workbench-preview-header">
+          <span>800×480 实时预览</span>
+          <span class="muted small" id="wb-opmode">--</span>
+        </div>
+        <div class="workbench-preview-body" id="wb-preview-body">
+          <div class="placeholder">
+            <svg class="big-icon" viewBox="0 0 24 24" width="64" height="64"><use href="#icon-layers"/></svg>
+            <div>加载中…</div>
+          </div>
+        </div>
+        <div class="workbench-controls">
+          <button class="btn btn-primary btn-sm" onclick="publishNews()"><svg width="14" height="14"><use href="#icon-publish"/></svg> 发布新闻</button>
+          <button class="btn btn-success btn-sm" onclick="oneShotPublishNews()"><svg width="14" height="14"><use href="#icon-publish"/></svg> 一次性发布</button>
+          <button class="btn btn-outline btn-sm" onclick="clearOverride()">退出手动覆盖</button>
+          <span class="small muted" id="wb-override" style="margin-left:auto">auto</span>
+        </div>
+      </div>
+
       <div class="card">
-        <h3 class="card-title">关键指标</h3>
+        <h3 class="card-title"><svg width="14" height="14"><use href="#icon-status"/></svg> 关键指标</h3>
         <div class="stat-grid stat-grid-6">
-          <div class="stat-item">
-            <div class="stat-label">当前模式</div>
-            <div class="stat-value" id="dash-mode">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">当前 Slot</div>
-            <div class="stat-value" id="dash-slot">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">新闻数量</div>
-            <div class="stat-value" id="dash-news">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">当前 frameId</div>
-            <div class="stat-value stat-mono stat-truncate" id="dash-frameid">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">Frame 缓存</div>
-            <div class="stat-value" id="dash-cache">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">运行时间</div>
-            <div class="stat-value" id="dash-uptime">加载中…</div>
-          </div>
+          <div class="stat-item"><div class="stat-label">内容模式</div><div class="stat-value" id="wb-mode">--</div></div>
+          <div class="stat-item"><div class="stat-label">Frame ID</div><div class="stat-value stat-mono frame-id-display" id="wb-frameid">--</div></div>
+          <div class="stat-item"><div class="stat-label">SHA256</div><div class="stat-value stat-mono stat-truncate" id="wb-sha">--</div></div>
+          <div class="stat-item"><div class="stat-label">下次切换</div><div class="stat-value" id="wb-nextswitch">--</div></div>
+          <div class="stat-item"><div class="stat-label">设备状态</div><div class="stat-value" id="wb-device">--</div></div>
+          <div class="stat-item"><div class="stat-label">运行时间</div><div class="stat-value" id="wb-uptime">--</div></div>
         </div>
       </div>
 
-      <!-- Row 2: System summary -->
       <div class="card">
-        <h3 class="card-title">系统摘要</h3>
-        <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">手动覆盖</div>
-            <div class="stat-value" id="dash-override">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">覆盖过期</div>
-            <div class="stat-value" id="dash-override-expires">--</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">最近发布时间</div>
-            <div class="stat-value" id="dash-lastpublish">加载中…</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">下次切换</div>
-            <div class="stat-value" id="dash-nextswitch">--</div>
-          </div>
+        <h3 class="card-title"><svg width="14" height="14"><use href="#icon-alert-triangle"/></svg> 系统一致性</h3>
+        <div class="stat-grid stat-grid-3">
+          <div class="stat-item"><div class="stat-label">一致</div><div class="stat-value" id="wb-consistent">--</div></div>
+          <div class="stat-item"><div class="stat-label">覆盖类型</div><div class="stat-value" id="wb-override-expires">--</div></div>
+          <div class="stat-item"><div class="stat-label">上次发布</div><div class="stat-value" id="wb-lastpub">--</div></div>
         </div>
+        <ul id="wb-inconsistencies" style="margin-top:8px;color:var(--danger);font-size:12px"></ul>
       </div>
 
-      <!-- Row 3: Control mode info -->
       <div class="card">
-        <h3 class="card-title">控制方式说明</h3>
-        <div id="control-mode-info" class="control-mode-box">加载中…</div>
+        <h3 class="card-title">控制模式</h3>
+        <div id="dash-mode-box" class="mode-box"><div class="mode-title">加载中…</div></div>
       </div>
 
-      <!-- Row 4: Quick actions -->
       <div class="card">
         <h3 class="card-title">快捷操作</h3>
         <div class="actions">
-          <button class="btn btn-primary" onclick="publishNews()">📰 立即发布所选新闻</button>
-          <button class="btn btn-outline" onclick="clearOverride()">🔁 退出手动覆盖，恢复自动排程</button>
-          <button class="btn btn-outline" onclick="switchTab('photos-page')">🖼️ 前往图片库</button>
-          <button class="btn btn-outline" onclick="refreshAll()">🔄 刷新状态</button>
+          <button class="btn btn-primary" onclick="publishNews()"><svg width="16" height="16"><use href="#icon-publish"/></svg> 发布新闻</button>
+          <button class="btn btn-success" onclick="oneShotPublishNews()"><svg width="16" height="16"><use href="#icon-publish"/></svg> 一次性发布</button>
+          <button class="btn btn-outline" onclick="clearOverride()">退出手动覆盖</button>
+          <button class="btn btn-outline" onclick="switchTab('photos-page')"><svg width="16" height="16"><use href="#icon-image"/></svg> 前往图片库</button>
+          <button class="btn btn-outline" onclick="switchTab('status-page')"><svg width="16" height="16"><use href="#icon-status"/></svg> 运行状态</button>
         </div>
-        <div id="publish-msg" class="msg-area" style="display:none"></div>
-        <div id="confirm-dialog-area" style="margin-top:8px"></div>
+        <div id="publish-msg" class="msg-area" style="display:none;margin-top:8px;padding:8px 12px;background:#f0f8f0;border-radius:6px;font-size:13px;border:1px solid #c3e6cb"></div>
       </div>
     </section>
 
-    <!-- ───────── News Review ───────── -->
+    <!-- ═══════════ News Review ═══════════ -->
     <section id="news-page" class="page">
       <div class="news-layout">
-        <!-- Left: News list -->
         <div class="news-list-panel">
-          <div class="panel-header">
-            <h3 class="card-title">新闻列表</h3>
-            <div class="panel-actions">
-              <button class="btn btn-sm btn-outline" onclick="loadNewsReview()">🔄 刷新</button>
-              <button class="btn btn-sm btn-primary" onclick="saveNewsDraft()">💾 保存草稿</button>
+          <div class="panel-header flex items-center justify-between" style="padding-bottom:10px;border-bottom:1px solid var(--border-light);margin-bottom:12px">
+            <h3 class="card-title" style="margin:0">新闻列表 (6项)</h3>
+            <div class="actions">
+              <button class="btn btn-sm btn-outline" onclick="loadNewsReview()"><svg width="12" height="12"><use href="#icon-refresh"/></svg> 刷新</button>
+              <button class="btn btn-sm btn-primary" id="save-draft-btn" onclick="saveNewsDraft()"><svg width="12" height="12"><use href="#icon-save"/></svg> 保存草稿</button>
             </div>
           </div>
           <div id="news-list" class="news-list">
             <div class="empty-state">加载中…</div>
           </div>
         </div>
-        <!-- Right: News detail -->
         <div class="news-detail-panel">
-          <div class="panel-header">
-            <h3 class="card-title">新闻详情</h3>
+          <div class="panel-header flex items-center justify-between" style="padding-bottom:10px;border-bottom:1px solid var(--border-light);margin-bottom:12px">
+            <h3 class="card-title" style="margin:0">新闻详情</h3>
+            <button class="btn btn-sm btn-success" onclick="publishNews()"><svg width="12" height="12"><use href="#icon-publish"/></svg> 发布</button>
           </div>
           <div id="news-detail" class="news-detail">
-            <div class="empty-state">从左侧列表选择一条新闻查看详情</div>
+            <div class="empty-state">从左侧列表选择一条新闻</div>
           </div>
-          <!-- Quality rules -->
-          <div id="quality-rules-section" style="margin-top:12px">
-            <h4 style="font-size:13px;color:#666;margin-bottom:6px">质量规则检查</h4>
-            <div id="quality-rules"></div>
-          </div>
-          <!-- Toggle original button -->
-          <div style="margin-top:12px">
-            <button class="btn btn-sm btn-outline" onclick="toggleOriginal()" id="btn-toggle-original">📄 显示原文</button>
-          </div>
-          <!-- Original text (hidden by default) -->
-          <div id="original-text" class="card" style="display:none;margin-top:12px">
-            <div class="detail-field"><div class="detail-label">原文标题</div><div class="detail-value" id="orig-title"></div></div>
-            <div class="detail-field"><div class="detail-label">原文摘要</div><div class="detail-value" id="orig-summary"></div></div>
-          </div>
+        </div>
+      </div>
+      <div class="news-preview-box">
+        <div class="preview-header">
+          <span>800×480 新闻预览</span>
+          <span class="muted small">正式电子纸渲染效果</span>
+        </div>
+        <div class="preview-body">
+          <div class="placeholder">选择新闻后此处显示 800×480 预览<br><span class="muted small">(从 /api/admin/news/render 或 /api/admin/state 获取)</span></div>
         </div>
       </div>
     </section>
 
-    <!-- ───────── Photos / Image Library ───────── -->
+    <!-- ═══════════ Gallery ═══════════ -->
     <section id="photos-page" class="page">
-      <div class="card">
-        <h3 class="card-title">上传图片</h3>
-        <form id="photo-upload-form" class="upload-form">
-          <input type="file" id="photo-file" accept="image/jpeg,image/png,image/webp">
-          <button type="submit" class="btn btn-primary btn-sm">📤 上传</button>
-        </form>
-        <div id="upload-disabled-info" class="disabled-upload" style="display:none"></div>
-        <div class="muted small" style="margin-top:6px">支持 JPEG / PNG / WebP,推荐 800×480 比例</div>
+      <div class="gallery-tabs">
+        <button class="gallery-tab active" data-tab="learning" onclick="switchGalleryTab('learning')">学习库</button>
+        <button class="gallery-tab" data-tab="custom" onclick="switchGalleryTab('custom')">自定义库</button>
+        <button class="gallery-tab" data-tab="pending" onclick="switchGalleryTab('pending')">待审核</button>
+        <button class="gallery-tab" data-tab="rejected" onclick="switchGalleryTab('rejected')">已拒绝</button>
       </div>
+      <div id="confirm-area" style="margin-bottom:8px"></div>
       <div class="card">
-        <div class="panel-header">
-          <h3 class="card-title">图片库</h3>
+        <div class="panel-header flex items-center justify-between" style="padding-bottom:10px;border-bottom:1px solid var(--border-light);margin-bottom:12px">
+          <h3 class="card-title" style="margin:0">图片列表</h3>
           <span class="muted small" id="photo-count">--</span>
         </div>
         <div id="photo-grid" class="photo-grid">
-          <div class="empty-state">加载中…</div>
+          <div class="loading-state">加载中…</div>
         </div>
       </div>
     </section>
 
-    <!-- ───────── Photo Editor (hidden by default) ───────── -->
+    <!-- ═══════════ Editor ═══════════ -->
     <section id="photo-editor-page" class="page">
-      <h2 id="editor-title">图片编辑</h2>
+      <div style="margin-bottom:12px">
+        <button class="btn btn-sm btn-outline" onclick="switchTab('photos-page')"><svg width="12" height="12"><use href="#icon-chevron-left"/></svg> 返回图片库</button>
+        <span id="editor-title" style="font-size:16px;font-weight:600;margin-left:8px">图片编辑</span>
+      </div>
       <div class="editor-layout">
-        <div class="preview">
-          <div class="preview-container"><img id="editor-preview" alt="预览"></div>
-          <h3 style="margin-top:12px">六色效果</h3>
-          <div class="preview-container"><img id="editor-eink-preview" alt="电子纸预览"></div>
-          <h3 style="margin-top:12px">颜色统计</h3>
-          <div id="editor-palette" class="palette-bar"></div>
+        <div class="editor-toolbar">
+          <span class="tool-label">变换</span>
+          <button class="btn btn-sm btn-ghost btn-icon" onclick="editorUndo()" title="撤销"><svg width="16" height="16"><use href="#icon-undo"/></svg></button>
+          <button class="btn btn-sm btn-ghost btn-icon" onclick="editorRedo()" title="重做"><svg width="16" height="16"><use href="#icon-redo"/></svg></button>
+          <div class="divider"></div>
+          <button class="btn btn-sm btn-ghost btn-icon" onclick="editorZoomIn()" title="放大"><svg width="16" height="16"><use href="#icon-zoom-in"/></svg></button>
+          <button class="btn btn-sm btn-ghost btn-icon" onclick="editorZoomOut()" title="缩小"><svg width="16" height="16"><use href="#icon-zoom-out"/></svg></button>
+          <span class="small muted" id="editor-zoom-label" style="min-width:44px">100%</span>
+          <div class="divider"></div>
+          <button class="btn btn-sm btn-ghost btn-icon" onclick="editorRotate()" title="旋转"><svg width="16" height="16"><use href="#icon-rotate-cw"/></svg></button>
+          <button class="btn btn-sm btn-ghost btn-icon" onclick="editorFlipH()" title="水平翻转"><svg width="16" height="16"><use href="#icon-flip-h"/></svg></button>
+          <button class="btn btn-sm btn-ghost btn-icon" onclick="editorFlipV()" title="垂直翻转"><svg width="16" height="16"><use href="#icon-flip-v"/></svg></button>
+          <div class="divider"></div>
+          <span class="tool-label">模式</span>
+          <div class="btn-group">
+            <button class="btn btn-sm btn-outline" onclick="editorSetMode('contain')" style="background:var(--accent);color:#fff">Contain</button>
+            <button class="btn btn-sm btn-outline" onclick="editorSetMode('cover')">Cover</button>
+          </div>
+          <div class="divider"></div>
+          <button class="btn btn-sm btn-outline" onclick="editorTogglePreview()"><svg width="14" height="14"><use href="#icon-eye"/></svg> E-ink预览</button>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-sm btn-primary" onclick="saveEditor()"><svg width="14" height="14"><use href="#icon-save"/></svg> 保存</button>
+            <button class="btn btn-sm btn-success" onclick="publishEditorPhoto()"><svg width="14" height="14"><use href="#icon-publish"/></svg> 发布</button>
+          </div>
         </div>
-        <div class="controls">
-          <h3>调整</h3>
-          <label>亮度</label>
-          <input type="range" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('brightness',this.value)">
-          <span class="value" id="val-brightness">1.0</span>
-          <label>对比度</label>
-          <input type="range" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('contrast',this.value)">
-          <span class="value" id="val-contrast">1.0</span>
-          <label>饱和度</label>
-          <input type="range" min="0" max="2" step="0.05" value="1" oninput="updateEditorParam('saturation',this.value)">
-          <span class="value" id="val-saturation">1.0</span>
-          <label>Gamma</label>
-          <input type="range" min="0.5" max="2" step="0.05" value="1" oninput="updateEditorParam('gamma',this.value)">
-          <span class="value" id="val-gamma">1.0</span>
-          <label>旋转</label>
-          <select onchange="updateEditorParam('rotate',this.value)">
-            <option value="0">0°</option>
-            <option value="90">90°</option>
-            <option value="180">180°</option>
-            <option value="270">270°</option>
-          </select>
-          <div class="actions" style="margin-top:12px">
-            <button class="btn btn-primary" onclick="saveEdit()">💾 保存编辑</button>
-            <button class="btn btn-success" onclick="publishPhoto(EDITOR_STATE.id)">📤 发布到电子纸</button>
+        <div class="editor-body">
+          <div class="editor-canvas-area" id="editor-canvas-area">
+            <div class="editor-canvas-wrap" id="editor-canvas-wrap">
+              <canvas id="editor-canvas"></canvas>
+              <span class="mode-badge" id="editor-mode-badge">模式: contain</span>
+              <span class="zoom-indicator" id="editor-zoom-label2">100%</span>
+              <div class="crop-overlay" id="crop-overlay"></div>
+            </div>
+          </div>
+          <div class="editor-canvas-area" id="editor-eink-area" style="display:none">
+            <div class="editor-canvas-wrap" id="editor-eink-canvas-wrap">
+              <canvas id="editor-eink-canvas"></canvas>
+              <span class="mode-badge">E-ink 效果预览</span>
+            </div>
+          </div>
+          <div class="editor-panel">
+            <div class="editor-panel-section">
+              <div class="section-title">调整参数</div>
+              <label>亮度</label>
+              <div class="range-row"><input type="range" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('brightness',this.value);updateSlider('val-brightness',this.value)"><span class="val" id="val-brightness">1.0</span></div>
+              <label>对比度</label>
+              <div class="range-row"><input type="range" min="0.5" max="1.5" step="0.05" value="1" oninput="updateEditorParam('contrast',this.value);updateSlider('val-contrast',this.value)"><span class="val" id="val-contrast">1.0</span></div>
+              <label>饱和度</label>
+              <div class="range-row"><input type="range" min="0" max="2" step="0.05" value="1" oninput="updateEditorParam('saturation',this.value);updateSlider('val-saturation',this.value)"><span class="val" id="val-saturation">1.0</span></div>
+              <label>旋转角度</label>
+              <select onchange="updateEditorParam('rotation',this.value)"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select>
+            </div>
+            <div class="editor-panel-section">
+              <div class="section-title">操作</div>
+              <div class="panel-actions">
+                <button class="btn btn-sm btn-primary" onclick="saveEditor()"><svg width="12" height="12"><use href="#icon-save"/></svg> 保存编辑</button>
+                <button class="btn btn-sm btn-success" onclick="publishEditorPhoto()"><svg width="12" height="12"><use href="#icon-publish"/></svg> 发布</button>
+              </div>
+            </div>
+            <div class="editor-panel-section">
+              <div class="section-title">提示</div>
+              <div class="small muted">拖拽画布可平移图片<br>Contain: 完整显示图片<br>Cover: 裁剪填充画面</div>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ───────── Publish Center ───────── -->
+    <!-- ═══════════ Publish History ═══════════ -->
     <section id="publish-page" class="page">
       <div class="card">
-        <p class="small muted">这里记录每次新闻或图片发布生成的版本。"恢复此版本"会把所选历史版本重新设为当前显示版本，不会修改原始新闻或图片。</p>
-      </div>
-      <div class="card" id="rollback-preview" style="display:none">
-        <h3 class="card-title">版本恢复预览</h3>
-        <div id="rollback-preview-content"></div>
-        <div class="actions" style="margin-top:10px">
-          <button class="btn btn-danger" onclick="confirmRollback()">确认恢复</button>
-          <button class="btn btn-outline" onclick="closeRollbackPreview()">取消</button>
-        </div>
+        <p class="small muted">每次发布生成一个版本。点击"恢复"可查看版本详情并选择恢复到此版本，不会修改原始新闻或图片数据。</p>
       </div>
       <div class="card">
-        <div class="panel-header">
-          <h3 class="card-title">发布记录</h3>
-          <button class="btn btn-sm btn-outline" onclick="loadPublishHistory()">🔄 刷新</button>
+        <div class="panel-header flex items-center justify-between" style="padding-bottom:10px;border-bottom:1px solid var(--border-light);margin-bottom:12px">
+          <h3 class="card-title" style="margin:0">发布记录</h3>
+          <button class="btn btn-sm btn-outline" onclick="loadPublishHistory()"><svg width="12" height="12"><use href="#icon-refresh"/></svg> 刷新</button>
         </div>
         <div id="publish-history-list"><div class="empty-state">加载中…</div></div>
       </div>
     </section>
 
-    <!-- ───────── Runtime Status ───────── -->
+    <!-- ═══════════ System Status ═══════════ -->
     <section id="status-page" class="page">
-      <div class="card">
-        <h3 class="card-title">健康检查</h3>
+      <div id="consistency-banner" class="consistency-banner ok"><svg width="20" height="20"><use href="#icon-check"/></svg><span>加载中…</span></div>
+
+      <div class="status-section">
+        <div class="section-header"><svg class="icon"><use href="#icon-status"/></svg> 系统状态</div>
         <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">/health/live</div>
-            <div class="stat-value" id="health-live">加载中…</div>
-            <div class="status-hint small muted" id="hint-health-live" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">/health/ready</div>
-            <div class="stat-value" id="health-ready">加载中…</div>
-            <div class="status-hint small muted" id="hint-health-ready" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">运行时间</div>
-            <div class="stat-value" id="status-uptime">加载中…</div>
-            <div class="status-hint small muted" id="hint-uptime" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">模式</div>
-            <div class="stat-value" id="status-mode">加载中…</div>
-            <div class="status-hint small muted" id="hint-mode" style="margin-top:2px;font-size:11px"></div>
-          </div>
+          <div class="stat-item"><div class="stat-label">生成时间</div><div class="stat-value small" id="st-generated">--</div></div>
+          <div class="stat-item"><div class="stat-label">内容模式</div><div class="stat-value" id="st-contentmode">--</div></div>
+          <div class="stat-item"><div class="stat-label">操作模式</div><div class="stat-value" id="st-opmode">--</div></div>
+          <div class="stat-item"><div class="stat-label">Snapshot ID</div><div class="stat-value stat-mono frame-id-display" id="st-snapshotid">--</div></div>
         </div>
       </div>
-      <div class="card">
-        <h3 class="card-title">Frame 状态</h3>
+
+      <div class="status-section">
+        <div class="section-header"><svg class="icon"><use href="#icon-layers"/></svg> Frame 详情</div>
         <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">当前 frameId</div>
-            <div class="stat-value stat-mono stat-truncate" id="status-frameid">加载中…</div>
-            <div class="status-hint small muted" id="hint-frameid" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">frameLength</div>
-            <div class="stat-value" id="status-framelen">--</div>
-            <div class="status-hint small muted" id="hint-framelen" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">frameSha256</div>
-            <div class="stat-value stat-mono stat-truncate" id="status-sha">--</div>
-            <div class="status-hint small muted" id="hint-sha" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">当前 Slot</div>
-            <div class="stat-value" id="status-slot">加载中…</div>
-            <div class="status-hint small muted" id="hint-slot" style="margin-top:2px;font-size:11px"></div>
-          </div>
+          <div class="stat-item"><div class="stat-label">Frame ID</div><div class="stat-value stat-mono frame-id-display" id="st-frameid">--</div></div>
+          <div class="stat-item"><div class="stat-label">SHA256</div><div class="stat-value stat-mono frame-id-display" id="st-sha">--</div></div>
+          <div class="stat-item"><div class="stat-label">长度</div><div class="stat-value" id="st-framelen">--</div></div>
+          <div class="stat-item"><div class="stat-label">激活时间</div><div class="stat-value small" id="st-activated">--</div></div>
         </div>
       </div>
-      <div class="card">
-        <h3 class="card-title">内容与缓存</h3>
+
+      <div class="status-section">
+        <div class="section-header"><svg class="icon"><use href="#icon-alert-triangle"/></svg> 覆盖 & 调度</div>
         <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">新闻数量</div>
-            <div class="stat-value" id="status-news">加载中…</div>
-            <div class="status-hint small muted" id="hint-news" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">图片数量</div>
-            <div class="stat-value" id="status-photos">--</div>
-            <div class="status-hint small muted" id="hint-photos" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">Frame 缓存</div>
-            <div class="stat-value" id="status-cache">加载中…</div>
-            <div class="status-hint small muted" id="hint-cache" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">渲染次数</div>
-            <div class="stat-value" id="status-render">--</div>
-            <div class="status-hint small muted" id="hint-render" style="margin-top:2px;font-size:11px"></div>
-          </div>
+          <div class="stat-item"><div class="stat-label">覆盖类型</div><div class="stat-value" id="st-override">--</div></div>
+          <div class="stat-item"><div class="stat-label">覆盖过期</div><div class="stat-value small" id="st-override-expires">--</div></div>
+          <div class="stat-item"><div class="stat-label">调度模式</div><div class="stat-value" id="st-schedule-mode">--</div></div>
+          <div class="stat-item"><div class="stat-label">下次切换</div><div class="stat-value small" id="st-nextswitch">--</div></div>
         </div>
       </div>
-      <div class="card">
-        <h3 class="card-title">请求统计</h3>
+
+      <div class="status-section">
+        <div class="section-header"><svg class="icon"><use href="#icon-history"/></svg> 最近发布</div>
         <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">/api/state 请求</div>
-            <div class="stat-value" id="status-state-req">--</div>
-            <div class="status-hint small muted" id="hint-state-req" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">/api/frame 请求</div>
-            <div class="stat-value" id="status-frame-req">--</div>
-            <div class="status-hint small muted" id="hint-frame-req" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">新闻刷新次数</div>
-            <div class="stat-value" id="status-news-refresh">--</div>
-            <div class="status-hint small muted" id="hint-news-refresh" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">新闻刷新失败</div>
-            <div class="stat-value" id="status-news-fail">--</div>
-            <div class="status-hint small muted" id="hint-news-fail" style="margin-top:2px;font-size:11px"></div>
-          </div>
+          <div class="stat-item"><div class="stat-label">发布时间</div><div class="stat-value small" id="st-lastpub-time">--</div></div>
+          <div class="stat-item"><div class="stat-label">Snapshot</div><div class="stat-value stat-mono frame-id-display" id="st-lastpub-snap">--</div></div>
+          <div class="stat-item"><div class="stat-label">Asset ID</div><div class="stat-value stat-mono frame-id-display" id="st-assetid">--</div></div>
+          <div class="stat-item"><div class="stat-label">设备</div><div class="stat-value small" id="st-device">--</div></div>
         </div>
       </div>
-      <div class="card">
-        <h3 class="card-title">服务配置</h3>
+
+      <div class="status-section">
+        <div class="section-header"><svg class="icon"><use href="#icon-status"/></svg> 健康 & 构建</div>
         <div class="stat-grid stat-grid-4">
-          <div class="stat-item">
-            <div class="stat-label">MQTT 状态</div>
-            <div class="stat-value" id="status-mqtt">--</div>
-            <div class="status-hint small muted" id="hint-mqtt" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">Translation Provider</div>
-            <div class="stat-value" id="status-translation">--</div>
-            <div class="status-hint small muted" id="hint-translation" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">最近错误</div>
-            <div class="stat-value" id="status-recent-error">无</div>
-            <div class="status-hint small muted" id="hint-recent-error" style="margin-top:2px;font-size:11px"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">最近刷新时间</div>
-            <div class="stat-value" id="status-last-refresh">--</div>
-            <div class="status-hint small muted" id="hint-last-refresh" style="margin-top:2px;font-size:11px"></div>
-          </div>
+          <div class="stat-item"><div class="stat-label">健康状态</div><div class="stat-value" id="st-health">--</div></div>
+          <div class="stat-item"><div class="stat-label">运行时间</div><div class="stat-value" id="st-uptime">--</div></div>
+          <div class="stat-item"><div class="stat-label">版本</div><div class="stat-value" id="st-build">--</div></div>
+          <div class="stat-item"><div class="stat-label">Commit</div><div class="stat-value stat-mono" id="st-commit">--</div></div>
+          <div class="stat-item"><div class="stat-label">删除管道</div><div class="stat-value small" style="color:var(--text-muted)">删除功能未启用 (FEATURE_DISABLED)</div></div>
         </div>
       </div>
     </section>

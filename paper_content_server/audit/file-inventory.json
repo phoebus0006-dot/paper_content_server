@@ -1,0 +1,2662 @@
+[
+  {
+    "path": ".commit-msg.txt",
+    "size": 595,
+    "ext": ".txt"
+  },
+  {
+    "path": ".dockerignore",
+    "size": 304,
+    "ext": ".dockerignore"
+  },
+  {
+    "path": ".env.example",
+    "size": 180,
+    "ext": ".example"
+  },
+  {
+    "path": ".gitignore",
+    "size": 24,
+    "ext": ".gitignore"
+  },
+  {
+    "path": "config.json",
+    "size": 299,
+    "ext": ".json"
+  },
+  {
+    "path": "docker-compose.yml",
+    "size": 499,
+    "ext": ".yml"
+  },
+  {
+    "path": "Dockerfile",
+    "size": 1943,
+    "ext": ""
+  },
+  {
+    "path": "empty.js",
+    "size": 2,
+    "ext": ".js"
+  },
+  {
+    "path": "feeds.json",
+    "size": 4076,
+    "ext": ".json"
+  },
+  {
+    "path": "package-lock.json",
+    "size": 53120,
+    "ext": ".json"
+  },
+  {
+    "path": "package.json",
+    "size": 5454,
+    "ext": ".json"
+  },
+  {
+    "path": "README_CN.md",
+    "size": 8498,
+    "ext": ".md"
+  },
+  {
+    "path": "server.js",
+    "size": 182361,
+    "ext": ".js"
+  },
+  {
+    "path": ".github\\workflows\\secret-scan.yml",
+    "size": 451,
+    "ext": ".yml"
+  },
+  {
+    "path": "audit\\file-inventory.json",
+    "size": 0,
+    "ext": ".json"
+  },
+  {
+    "path": "audit\\remote-state.json",
+    "size": 537,
+    "ext": ".json"
+  },
+  {
+    "path": "audit\\source-reconciliation.json",
+    "size": 542,
+    "ext": ".json"
+  },
+  {
+    "path": "config\\photo_sources.json",
+    "size": 3829,
+    "ext": ".json"
+  },
+  {
+    "path": "data\\.gitkeep",
+    "size": 0,
+    "ext": ".gitkeep"
+  },
+  {
+    "path": "data\\image_index.json",
+    "size": 3,
+    "ext": ".json"
+  },
+  {
+    "path": "data\\library_state.json",
+    "size": 204,
+    "ext": ".json"
+  },
+  {
+    "path": "data\\news_cache.json",
+    "size": 24429,
+    "ext": ".json"
+  },
+  {
+    "path": "data\\news_rotation_state.json",
+    "size": 8939,
+    "ext": ".json"
+  },
+  {
+    "path": "data\\raw_index.json",
+    "size": 813,
+    "ext": ".json"
+  },
+  {
+    "path": "data\\fallback_study\\fb-color.epf",
+    "size": 192000,
+    "ext": ".epf"
+  },
+  {
+    "path": "data\\fallback_study\\fb-color.png",
+    "size": 12681,
+    "ext": ".png"
+  },
+  {
+    "path": "data\\fallback_study\\fb-dialogue-ms.epf",
+    "size": 192000,
+    "ext": ".epf"
+  },
+  {
+    "path": "data\\fallback_study\\fb-dialogue-ms.png",
+    "size": 12343,
+    "ext": ".png"
+  },
+  {
+    "path": "data\\fallback_study\\fb-dialogue-sb.epf",
+    "size": 192000,
+    "ext": ".epf"
+  },
+  {
+    "path": "data\\fallback_study\\fb-dialogue-sb.png",
+    "size": 14549,
+    "ext": ".png"
+  },
+  {
+    "path": "data\\fallback_study\\fb-ensemble-sb.epf",
+    "size": 192000,
+    "ext": ".epf"
+  },
+  {
+    "path": "data\\fallback_study\\fb-ensemble-sb.png",
+    "size": 13682,
+    "ext": ".png"
+  },
+  {
+    "path": "data\\fallback_study\\fb-ensemble.epf",
+    "size": 192000,
+    "ext": ".epf"
+  },
+  {
+    "path": "data\\fallback_study\\fb-ensemble.png",
+    "size": 12149,
+    "ext": ".png"
+  },
+  {
+    "path": "data\\fallback_study\\fb-entrance.epf",
+    "size": 192000,
+    "ext": ".epf"
+  },
+  {
+    "path": "data\\fallback_study\\fb-entrance.png",
+    "size": 15017,
+    "ext": ".png"
+  },
+  {
+    "path": "data\\fallback_study\\fb-night.epf",
+    "size": 192000,
+    "ext": ".epf"
+  },
+  {
+    "path": "data\\fallback_study\\fb-night.png",
+    "size": 11878,
+    "ext": ".png"
+  },
+  {
+    "path": "data\\fallback_study\\fb-wideshot.epf",
+    "size": 192000,
+    "ext": ".epf"
+  },
+  {
+    "path": "data\\fallback_study\\fb-wideshot.png",
+    "size": 15979,
+    "ext": ".png"
+  },
+  {
+    "path": "deploy\\nas\\.env.example",
+    "size": 649,
+    "ext": ".example"
+  },
+  {
+    "path": "deploy\\nas\\backup.sh",
+    "size": 897,
+    "ext": ".sh"
+  },
+  {
+    "path": "deploy\\nas\\build-staging.sh",
+    "size": 3396,
+    "ext": ".sh"
+  },
+  {
+    "path": "deploy\\nas\\deploy-staging.sh",
+    "size": 2465,
+    "ext": ".sh"
+  },
+  {
+    "path": "deploy\\nas\\docker-compose.yml",
+    "size": 842,
+    "ext": ".yml"
+  },
+  {
+    "path": "deploy\\nas\\preflight.sh",
+    "size": 1011,
+    "ext": ".sh"
+  },
+  {
+    "path": "deploy\\nas\\README.md",
+    "size": 4454,
+    "ext": ".md"
+  },
+  {
+    "path": "deploy\\nas\\rollback.sh",
+    "size": 1575,
+    "ext": ".sh"
+  },
+  {
+    "path": "deploy\\nas\\verify.sh",
+    "size": 7896,
+    "ext": ".sh"
+  },
+  {
+    "path": "docs\\ACCEPTANCE_CRITERIA.md",
+    "size": 3346,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\API_CONTRACT.md",
+    "size": 6628,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\AUDIT_PROTOCOL.md",
+    "size": 1732,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\BASELINE_INVARIANTS.md",
+    "size": 2125,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\CONTENT_SAFETY.md",
+    "size": 1058,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\CURRENT_IMPLEMENTATION_MAP.md",
+    "size": 9711,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\CURRENT_STATE_BASELINE.md",
+    "size": 14936,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\DATA_STORAGE.md",
+    "size": 816,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\DEPLOYMENT_RUNBOOK.md",
+    "size": 1033,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\DOCUMENT_CONTROL.md",
+    "size": 1538,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\DOMAIN_MODEL.md",
+    "size": 2897,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\FEATURE_ENABLEMENT_MATRIX.md",
+    "size": 4070,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\GLOBAL_ARCHITECTURE_AUDIT.md",
+    "size": 2130,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\GLOBAL_REFACTOR_BASELINE.md",
+    "size": 2898,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\GLOBAL_REFACTOR_ROADMAP.md",
+    "size": 6369,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\IMAGE_LIBRARY_ARCHITECTURE.md",
+    "size": 2293,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\INDEPENDENT_AUDIT_HANDOFF.md",
+    "size": 2590,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\KNOWN_INCIDENTS_AND_LESSONS.md",
+    "size": 3114,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\MQTT_CONTRACT.md",
+    "size": 2763,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\NEWS_PIPELINE.md",
+    "size": 1680,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\NPM_AUDIT_2026-07-14.md",
+    "size": 1219,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\PHASE_GATE_STANDARD.md",
+    "size": 1070,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\PRODUCT_REQUIREMENTS.md",
+    "size": 7132,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\PROJECT_GOVERNANCE.md",
+    "size": 790,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\README.md",
+    "size": 2358,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\REFACTOR_ROADMAP.md",
+    "size": 1443,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\RENDERING_AND_EPF1.md",
+    "size": 708,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\REVIEW_GUIDE.md",
+    "size": 1404,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\SYSTEM_ARCHITECTURE.md",
+    "size": 4757,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\TEST_STRATEGY.md",
+    "size": 1682,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\TRACEABILITY_MATRIX.md",
+    "size": 5275,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\adr\\0001-mqtt-notification-http-source-of-truth.md",
+    "size": 485,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\adr\\0002-dual-image-library-architecture.md",
+    "size": 364,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\adr\\0003-strict-nsfw-deletion.md",
+    "size": 342,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\adr\\0004-news-fidelity-before-compression.md",
+    "size": 254,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\adr\\0005-operating-modes.md",
+    "size": 256,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\adr\\0006-learning-value-first.md",
+    "size": 285,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\checklists\\RELEASE_CHECKLIST.md",
+    "size": 480,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\checklists\\REVIEW_CHECKLIST.md",
+    "size": 959,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\templates\\CURRENT_STATE_REPORT_TEMPLATE.md",
+    "size": 595,
+    "ext": ".md"
+  },
+  {
+    "path": "docs\\templates\\EXECUTOR_REPORT_TEMPLATE.md",
+    "size": 607,
+    "ext": ".md"
+  },
+  {
+    "path": "lib\\schedule.js",
+    "size": 1244,
+    "ext": ".js"
+  },
+  {
+    "path": "lib\\sequence.js",
+    "size": 1173,
+    "ext": ".js"
+  },
+  {
+    "path": "lib\\wikimedia.js",
+    "size": 5630,
+    "ext": ".js"
+  },
+  {
+    "path": "public\\admin\\admin.css",
+    "size": 8057,
+    "ext": ".css"
+  },
+  {
+    "path": "public\\admin\\admin.js",
+    "size": 13115,
+    "ext": ".js"
+  },
+  {
+    "path": "public\\admin\\build-info.json",
+    "size": 174,
+    "ext": ".json"
+  },
+  {
+    "path": "public\\admin\\index.html",
+    "size": 12795,
+    "ext": ".html"
+  },
+  {
+    "path": "qa\\manifest.json",
+    "size": 70183,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\admin-browser-p0-test.js",
+    "size": 10888,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\admin-cidr-policy-unit-test.js",
+    "size": 4671,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\admin-cross-origin-test.js",
+    "size": 3268,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\admin-csrf-policy-unit-test.js",
+    "size": 6733,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\admin-lan-direct-access-test.js",
+    "size": 4241,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\admin-network-cidr-test.js",
+    "size": 4806,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\admin-redesign-browser-test.js",
+    "size": 18282,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\admin-token-mode-compatibility-test.js",
+    "size": 2706,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\admin-ui-no-login-test.js",
+    "size": 2757,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\asset-selection-service-test.js",
+    "size": 9812,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\compose-services-translation-test.js",
+    "size": 3747,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\override-concurrency-test.js",
+    "size": 10286,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\admin\\override-persistence-test.js",
+    "size": 11543,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\app\\graceful-shutdown-test.js",
+    "size": 13274,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\assets\\asset-delete-service-test.js",
+    "size": 24689,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\composition\\delete-service-composition-test.js",
+    "size": 12585,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\composition\\render-shadow-composition-test.js",
+    "size": 7416,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\config\\admin-config-validation-test.js",
+    "size": 3633,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\config\\feature-flag-truth-test.js",
+    "size": 22853,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\config\\learning-config-propagation-test.js",
+    "size": 9514,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\config\\server-no-direct-env-test.js",
+    "size": 3372,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\config\\translation-config-validation-test.js",
+    "size": 4892,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\A-schedule-contract.js",
+    "size": 1219,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\B-epf1-contract.js",
+    "size": 2064,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\C-state-frame-contract.js",
+    "size": 2702,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\D-schedule-night-contract.js",
+    "size": 3126,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\E-news-contract.js",
+    "size": 2015,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\F-news-render-contract.js",
+    "size": 1950,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\G-photo-contract.js",
+    "size": 3070,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\H-safety-contract.js",
+    "size": 3249,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\I-news-lastgood-contract.js",
+    "size": 5391,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\J-admin-contract.js",
+    "size": 4823,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\K-operating-modes-contract.js",
+    "size": 3179,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\contracts\\run-contracts.js",
+    "size": 3319,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\custom-library\\classifier-chain-test.js",
+    "size": 17079,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\custom-library\\custom-upload-security-test.js",
+    "size": 17737,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\custom-library\\streaming-upload-test.js",
+    "size": 17376,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\features\\feature-readiness-test.js",
+    "size": 5813,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\learning\\hyatt-image.json",
+    "size": 1321,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\mqtt\\mqtt-invalid-sha.json",
+    "size": 188,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\mqtt\\mqtt-missing-version.json",
+    "size": 189,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\mqtt\\mqtt-v0-invalid.json",
+    "size": 210,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\mqtt\\mqtt-v1-valid.json",
+    "size": 210,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\mqtt\\mqtt-v2-unknown-reason.json",
+    "size": 266,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\mqtt\\mqtt-v2-valid.json",
+    "size": 236,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\mqtt\\mqtt-v3-invalid.json",
+    "size": 209,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\checkerboard.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\gradient.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\manifest.json",
+    "size": 7176,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\real-photo.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\rgba-semi.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\rgba-solid.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\rgba-transparent.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\solid-black.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\solid-blue.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\solid-green.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\solid-red.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\solid-white.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\fixtures\\r2\\golden\\solid-yellow.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\archive\\unverified\\integration\\v3-production-path-test.js",
+    "size": 33022,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\learning\\learning-downloader-harden-test.js",
+    "size": 9811,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\learning\\learning-ingestion-production-test.js",
+    "size": 18145,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\learning\\learning-policy-test.js",
+    "size": 7901,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\learning\\learning-scheduler-test.js",
+    "size": 4503,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\learning\\wikimedia-source-adapter-test.js",
+    "size": 8509,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\mqtt\\mqtt-client-port-test.js",
+    "size": 3009,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r0\\r0-http-behavior-test.js",
+    "size": 7982,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r0\\r0-restart-persistence-test.js",
+    "size": 6493,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r0\\r0-static-contract-test.js",
+    "size": 4638,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r0\\run-r0-tests.js",
+    "size": 1366,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r1\\app-shell-test.js",
+    "size": 1095,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r1\\atomic-file-test.js",
+    "size": 1323,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r1\\clock-test.js",
+    "size": 1401,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r1\\config-parity-test.js",
+    "size": 1697,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r1\\dependency-boundary-test.js",
+    "size": 1464,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r1\\http-client-test.js",
+    "size": 808,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r1\\json-store-test.js",
+    "size": 2036,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r1\\logger-test.js",
+    "size": 1173,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r1\\production-integration-test.js",
+    "size": 8224,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r10\\admin-asset-query-test.js",
+    "size": 1150,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r10\\admin-feature-flags-test.js",
+    "size": 649,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r10\\admin-publication-query-test.js",
+    "size": 1288,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r10\\admin-read-only-http-test.js",
+    "size": 7103,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r10\\admin-secret-redaction-test.js",
+    "size": 735,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r10\\admin-system-status-test.js",
+    "size": 1212,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r10\\dependency-boundary-test.js",
+    "size": 1193,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r10\\run-r10-tests.js",
+    "size": 810,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r11\\build-manifest-test.js",
+    "size": 2629,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r11\\clean-build-artifacts-test.js",
+    "size": 16273,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r11\\dockerfile-manifest-failclosed-test.js",
+    "size": 952,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r11\\dockerfile-multistage-test.js",
+    "size": 1617,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r11\\frame-validator-cli-test.js",
+    "size": 2763,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r11\\nas-verify-script-test.js",
+    "size": 3084,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r11\\run-r11-tests.js",
+    "size": 821,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r11\\workflow-location-test.js",
+    "size": 979,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r11\\workflow-working-directory-test.js",
+    "size": 1237,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r12\\mqtt-frame-sha256-test.js",
+    "size": 7429,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r12\\run-r12-tests.js",
+    "size": 568,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r2\\dependency-boundary-test.js",
+    "size": 1956,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r2\\epf1-test.js",
+    "size": 4031,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r2\\frame-validator-test.js",
+    "size": 2756,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r2\\image-frame-parity-test.js",
+    "size": 9887,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r2\\palette-test.js",
+    "size": 3558,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r2\\quantizer-test.js",
+    "size": 2655,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r2\\run-r2-tests.js",
+    "size": 1032,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\admin-publication-integration-test.js",
+    "size": 2943,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\dependency-boundary-test.js",
+    "size": 2571,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\full-frame-integrity-test.js",
+    "size": 4771,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\history-failure-test.js",
+    "size": 4235,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\notification-port-test.js",
+    "size": 1155,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\operating-mode-service-test.js",
+    "size": 3330,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\pin-store-test.js",
+    "size": 2570,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\publication-atomicity-test.js",
+    "size": 3088,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\publication-concurrency-test.js",
+    "size": 2263,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\publication-history-test.js",
+    "size": 2332,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\publication-lock-test.js",
+    "size": 2255,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\publication-service-test.js",
+    "size": 6038,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\restart-recovery-test.js",
+    "size": 2310,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\rollback-history-failure-test.js",
+    "size": 2868,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\rollback-integration-test.js",
+    "size": 3270,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\run-r3-tests.js",
+    "size": 1651,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\snapshot-cache-test.js",
+    "size": 2432,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\snapshot-corruption-test.js",
+    "size": 2643,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\snapshot-model-test.js",
+    "size": 4126,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\snapshot-store-test.js",
+    "size": 5700,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r3\\state-frame-snapshot-test.js",
+    "size": 2535,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\active-asset-delete-test.js",
+    "size": 3419,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\active-replacement-integration-test.js",
+    "size": 3591,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\active-replacement-runtime-test.js",
+    "size": 3520,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\asset-model-test.js",
+    "size": 2404,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\asset-reference-index-test.js",
+    "size": 1800,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\asset-repository-test.js",
+    "size": 3255,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\async-cleanup-order-test.js",
+    "size": 1110,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\cleanup-error-blocks-unlink-test.js",
+    "size": 3509,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\delete-dry-run-test.js",
+    "size": 2962,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\delete-failure-atomicity-test.js",
+    "size": 1429,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\delete-idempotency-test.js",
+    "size": 2840,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\delete-pipeline-test.js",
+    "size": 1895,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\dependency-boundary-test.js",
+    "size": 1816,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\failure-audit-test.js",
+    "size": 1305,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\history-reference-filter-test.js",
+    "size": 1726,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\history-reference-identity-test.js",
+    "size": 1575,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\legacy-asset-adapter-test.js",
+    "size": 2965,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\r4-history-type-filter-test.js",
+    "size": 2841,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\r4-original-symlink-test.js",
+    "size": 1658,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\r4-path-relative-test.js",
+    "size": 1315,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\r4-replacement-short-circuit-test.js",
+    "size": 2088,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\real-delete-integration-test.js",
+    "size": 3507,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\real-delete-runtime-test.js",
+    "size": 2872,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\reference-accuracy-test.js",
+    "size": 4085,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\reference-cleaner-integration-test.js",
+    "size": 1756,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\reference-error-semantics-test.js",
+    "size": 2338,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\rollback-error-boundary-test.js",
+    "size": 2263,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\rollback-invalidation-test.js",
+    "size": 2661,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\rollback-rejection-integration-test.js",
+    "size": 2534,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\run-r4-tests.js",
+    "size": 1760,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\stable-asset-identity-test.js",
+    "size": 2138,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\tombstone-test.js",
+    "size": 1923,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r4\\unsafe-delete-path-test.js",
+    "size": 1072,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\article-identity-test.js",
+    "size": 1535,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\dependency-boundary-test.js",
+    "size": 1463,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\last-good-store-test.js",
+    "size": 1142,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\news-deduplicator-test.js",
+    "size": 753,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\news-http-integration-test.js",
+    "size": 6920,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\news-normalizer-test.js",
+    "size": 942,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\news-pipeline-parity-test.js",
+    "size": 1330,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\news-production-parity-test.js",
+    "size": 905,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\news-production-wiring-test.js",
+    "size": 6834,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\run-r5-tests.js",
+    "size": 914,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r5\\translation-gate-integration-test.js",
+    "size": 1221,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\dependency-boundary-test.js",
+    "size": 1427,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\mqtt-config-test.js",
+    "size": 735,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\mqtt-message-test.js",
+    "size": 1863,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\mqtt-publication-integration-test.js",
+    "size": 1112,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\mqtt-publisher-test.js",
+    "size": 929,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\mqtt-real-broker-test.js",
+    "size": 3240,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\mqtt-real-client-test.js",
+    "size": 813,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\mqtt-reconnect-test.js",
+    "size": 665,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\mqtt-shared-fixture-test.js",
+    "size": 9886,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\mqtt-topic-test.js",
+    "size": 866,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\notification-adapter-test.js",
+    "size": 1142,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\notification-contract-test.js",
+    "size": 729,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r6\\run-r6-tests.js",
+    "size": 957,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r7\\dependency-boundary-test.js",
+    "size": 1331,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r7\\learning-candidate-test.js",
+    "size": 725,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r7\\learning-dedup-test.js",
+    "size": 3331,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r7\\learning-gates-test.js",
+    "size": 879,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r7\\learning-ingestion-test.js",
+    "size": 1520,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r7\\learning-source-registry-test.js",
+    "size": 730,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r7\\run-r7-tests.js",
+    "size": 750,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\custom-dedup-test.js",
+    "size": 832,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\custom-file-store-test.js",
+    "size": 1034,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\custom-library-service-test.js",
+    "size": 1909,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\custom-selector-test.js",
+    "size": 713,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\custom-upload-model-test.js",
+    "size": 737,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\custom-validator-test.js",
+    "size": 829,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\dependency-boundary-test.js",
+    "size": 1350,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\r8-decoded-metadata-test.js",
+    "size": 1762,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\r8-final-orphan-cleanup-test.js",
+    "size": 2274,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\r8-missing-repository-test.js",
+    "size": 1881,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\r8-required-safety-gate-test.js",
+    "size": 2515,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\r8-spoofed-dimensions-test.js",
+    "size": 2036,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r8\\run-r8-tests.js",
+    "size": 982,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\dependency-boundary-test.js",
+    "size": 1252,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\legacy-render-adapter-test.js",
+    "size": 443,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\render-frame-validator-test.js",
+    "size": 694,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\render-golden-parity-test.js",
+    "size": 3564,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\render-orchestrator-test.js",
+    "size": 607,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\render-profile-test.js",
+    "size": 711,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\render-request-test.js",
+    "size": 671,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\render-shadow-mismatch-test.js",
+    "size": 907,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\render-shadow-test.js",
+    "size": 770,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\render-validator-test.js",
+    "size": 691,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\r9\\run-r9-tests.js",
+    "size": 899,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\analysis-card-test.js",
+    "size": 7444,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\cjk-glyph-test.js",
+    "size": 16587,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\comparison-pair-test.js",
+    "size": 7994,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\deterministic-test.js",
+    "size": 5183,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\image-rasterizer-test.js",
+    "size": 5962,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\production-chain-test.js",
+    "size": 6081,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\render-shadow-meaningful-test.js",
+    "size": 10223,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\sequence-2x2-test.js",
+    "size": 8568,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\shadow-independent-test.js",
+    "size": 8361,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\render\\text-rasterizer-test.js",
+    "size": 7072,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\safety\\classifier-readiness-truth-test.js",
+    "size": 13159,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\safety\\model-loader-registry-test.js",
+    "size": 12632,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\safety\\nsfw-safety-gate-test.js",
+    "size": 8116,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\safety\\safety-classifier-lifecycle-test.js",
+    "size": 21513,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\archive\\unverified\\safety\\safety-classifier-port-test.js",
+    "size": 11128,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\learning\\hyatt-image.json",
+    "size": 1321,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\mqtt\\mqtt-invalid-sha.json",
+    "size": 188,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\mqtt\\mqtt-missing-version.json",
+    "size": 189,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\mqtt\\mqtt-v0-invalid.json",
+    "size": 210,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\mqtt\\mqtt-v1-valid.json",
+    "size": 210,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\mqtt\\mqtt-v2-unknown-reason.json",
+    "size": 266,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\mqtt\\mqtt-v2-valid.json",
+    "size": 236,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\mqtt\\mqtt-v3-invalid.json",
+    "size": 209,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\checkerboard.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\gradient.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\manifest.json",
+    "size": 7176,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\real-photo.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\rgba-semi.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\rgba-solid.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\rgba-transparent.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\solid-black.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\solid-blue.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\solid-green.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\solid-red.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\solid-white.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\r2\\golden\\solid-yellow.epf1",
+    "size": 192010,
+    "ext": ".epf1"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\duplicate\\t1.js",
+    "size": 0,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\duplicate\\t2.js",
+    "size": 0,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\duplicate\\qa\\manifest.json",
+    "size": 103,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\duplicate\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\empty\\qa\\manifest.json",
+    "size": 2,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\empty\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\fail\\fail.js",
+    "size": 25,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\fail\\qa\\manifest.json",
+    "size": 57,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\fail\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\missing\\qa\\manifest.json",
+    "size": 60,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\missing\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\no-active\\qa\\manifest.json",
+    "size": 58,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\no-active\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\pass-exit-1\\pass.js",
+    "size": 37,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\pass-exit-1\\qa\\manifest.json",
+    "size": 57,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\pass-exit-1\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\residual\\residual.js",
+    "size": 115,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\residual\\qa\\manifest.json",
+    "size": 76,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\residual\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\signal\\signal.js",
+    "size": 37,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\signal\\qa\\manifest.json",
+    "size": 59,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\signal\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\skip\\skip.js",
+    "size": 58,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\skip\\qa\\manifest.json",
+    "size": 57,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\skip\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\timeout\\timeout.js",
+    "size": 27,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\timeout\\qa\\manifest.json",
+    "size": 74,
+    "ext": ".json"
+  },
+  {
+    "path": "qa\\fixtures\\runner-tests\\timeout\\scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\tests\\e2e\\publication-workflows.test.js",
+    "size": 2144,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\tests\\integration\\runtime-cleanup.test.js",
+    "size": 1122,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\tests\\integration\\state-management.test.js",
+    "size": 2717,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\tests\\mutation\\fault-injections.test.js",
+    "size": 2084,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\tests\\security\\system-security.test.js",
+    "size": 1890,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\tests\\unit\\runner-faults.test.js",
+    "size": 5695,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\tests\\unit\\test-runner.test.js",
+    "size": 166,
+    "ext": ".js"
+  },
+  {
+    "path": "qa\\tests\\visual\\news-title.test.js",
+    "size": 894,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\_check_quality.js",
+    "size": 4023,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\_cleanup.js",
+    "size": 1699,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\_fix_ia.js",
+    "size": 887,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\_fix_ia2.js",
+    "size": 887,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\_fix_wm.js",
+    "size": 1397,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\admin-test.js",
+    "size": 6745,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\check_frame.js",
+    "size": 3783,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\coherence-test.js",
+    "size": 16578,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\container-selftest.js",
+    "size": 1730,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\dependency-selftest.js",
+    "size": 2611,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\docs-consistency-check.js",
+    "size": 35275,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\fetch-images.js",
+    "size": 29002,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\frame-selftest.js",
+    "size": 2073,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\generate-build-info.js",
+    "size": 853,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\generate-build-manifest.js",
+    "size": 2364,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\generate-r2-golden.js",
+    "size": 7985,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\import-images.js",
+    "size": 6141,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\news-render-readability-test.js",
+    "size": 13412,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\photo-audit.js",
+    "size": 9221,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\photo-safety-test.js",
+    "size": 7477,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\process-images.js",
+    "size": 10955,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\production-hygiene-check.js",
+    "size": 7852,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\refactor-server.js",
+    "size": 4758,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\repo-hygiene.js",
+    "size": 2993,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\restart-test.js",
+    "size": 10988,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\rotation-test.js",
+    "size": 17252,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\rss-selftest.js",
+    "size": 3448,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\run-active-tests.js",
+    "size": 3291,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\schedule-test.js",
+    "size": 2544,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\sharp-channels.js",
+    "size": 534,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\soak-test.js",
+    "size": 5367,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\storyboard-source-test.js",
+    "size": 14157,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\test-schedule.js",
+    "size": 2030,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\translation-quality-test.js",
+    "size": 6425,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\validate-frame.js",
+    "size": 1537,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\verify-clean.js",
+    "size": 778,
+    "ext": ".js"
+  },
+  {
+    "path": "scripts\\verify-production-image.js",
+    "size": 1443,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\admin-csrf-policy.js",
+    "size": 5195,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\admin-network-policy.js",
+    "size": 4392,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\admin-query-service.js",
+    "size": 3361,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\admin-routes.js",
+    "size": 6003,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\admin-state-service.js",
+    "size": 5738,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\asset-selection-service.js",
+    "size": 3451,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\asset-view.js",
+    "size": 607,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\feature-flag-view.js",
+    "size": 6670,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\override-persistence.js",
+    "size": 5603,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\publication-view.js",
+    "size": 618,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\admin\\system-status-view.js",
+    "size": 1073,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\app\\bootstrap.js",
+    "size": 7154,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\app\\compose-services.js",
+    "size": 19584,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\app\\create-app.js",
+    "size": 1942,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\assets\\asset-delete-service.js",
+    "size": 3873,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\assets\\asset-model.js",
+    "size": 3106,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\assets\\asset-reference-index.js",
+    "size": 6141,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\assets\\asset-repository.js",
+    "size": 3884,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\assets\\asset-status.js",
+    "size": 3220,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\assets\\legacy-asset-adapter.js",
+    "size": 3313,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\config\\load-config.js",
+    "size": 14364,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\custom-library\\custom-deduplicator.js",
+    "size": 408,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\custom-library\\custom-file-store.js",
+    "size": 11563,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\custom-library\\custom-library-service.js",
+    "size": 16370,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\custom-library\\custom-selector.js",
+    "size": 354,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\custom-library\\custom-upload-model.js",
+    "size": 676,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\custom-library\\custom-validator.js",
+    "size": 1154,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\epaper\\epf1.js",
+    "size": 2157,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\epaper\\frame-validator.js",
+    "size": 2195,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\epaper\\image-frame.js",
+    "size": 1934,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\epaper\\palette.js",
+    "size": 1623,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\epaper\\quantizer.js",
+    "size": 1733,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\features\\feature-readiness-service.js",
+    "size": 9949,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\files\\safe-image-path.js",
+    "size": 1514,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\images\\image-rasterizer-v2.js",
+    "size": 3361,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\images\\image-recipe-service.js",
+    "size": 3590,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\infra\\atomic-file.js",
+    "size": 933,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\infra\\clock.js",
+    "size": 766,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\infra\\http-client.js",
+    "size": 1268,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\infra\\json-store.js",
+    "size": 2187,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\infra\\logger.js",
+    "size": 1034,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\learning-candidate-model.js",
+    "size": 766,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\learning-deduplicator.js",
+    "size": 715,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\learning-downloader.js",
+    "size": 5456,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\learning-ingestion-service.js",
+    "size": 9580,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\learning-policy.js",
+    "size": 3079,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\learning-scheduler.js",
+    "size": 2477,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\learning-source-port.js",
+    "size": 338,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\learning-source-registry.js",
+    "size": 1595,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\learning-validator.js",
+    "size": 959,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\learning\\wikimedia-source-adapter.js",
+    "size": 4045,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\mqtt\\mqtt-client-port.js",
+    "size": 6726,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\mqtt\\mqtt-config.js",
+    "size": 874,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\mqtt\\mqtt-message.js",
+    "size": 1231,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\mqtt\\mqtt-notification-adapter.js",
+    "size": 676,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\mqtt\\mqtt-publisher.js",
+    "size": 718,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\mqtt\\mqtt-reconnect-policy.js",
+    "size": 614,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\mqtt\\mqtt-topic.js",
+    "size": 606,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\news\\article-identity.js",
+    "size": 1089,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\news\\last-good-store.js",
+    "size": 748,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\news\\news-deduplicator.js",
+    "size": 456,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\news\\news-editor.js",
+    "size": 698,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\news\\news-layout.js",
+    "size": 532,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\news\\news-normalizer.js",
+    "size": 829,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\news\\news-pipeline.js",
+    "size": 3796,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\news\\news-title-service.js",
+    "size": 3399,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\news\\translation-gate.js",
+    "size": 559,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\publication\\notification-port.js",
+    "size": 241,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\publication\\operating-mode-service.js",
+    "size": 4330,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\publication\\publication-history-adapter.js",
+    "size": 1611,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\publication\\publication-history.js",
+    "size": 2108,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\publication\\publication-lock.js",
+    "size": 500,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\publication\\publication-service.js",
+    "size": 5637,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\analysis-card-renderer.js",
+    "size": 7834,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\comparison-pair-renderer.js",
+    "size": 7626,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\font-detector.js",
+    "size": 6303,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\image-rasterizer.js",
+    "size": 3941,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\image-recipe.js",
+    "size": 1860,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\legacy-render-adapter.js",
+    "size": 1263,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\legacy-shadow-adapter.js",
+    "size": 6462,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\orchestrator-shadow-adapter.js",
+    "size": 3029,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\render-budget.js",
+    "size": 291,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\render-orchestrator.js",
+    "size": 999,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\render-profile.js",
+    "size": 427,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\render-request.js",
+    "size": 417,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\render-result-validator.js",
+    "size": 526,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\render-shadow.js",
+    "size": 9363,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\renderer-port.js",
+    "size": 252,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\sequence-2x2-renderer.js",
+    "size": 6924,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\render\\text-rasterizer.js",
+    "size": 21448,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\safety\\asset-delete-service.js",
+    "size": 6614,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\safety\\model-loader-registry.js",
+    "size": 26645,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\safety\\nsfw-safety-gate.js",
+    "size": 5302,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\safety\\reference-cleaner.js",
+    "size": 3530,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\safety\\safe-image-path.js",
+    "size": 1040,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\safety\\safety-audit-log.js",
+    "size": 1175,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\safety\\safety-classifier-port.js",
+    "size": 15788,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\safety\\safety-decision.js",
+    "size": 1153,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\safety\\tombstone-store.js",
+    "size": 1871,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\snapshot\\pin-store.js",
+    "size": 1776,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\snapshot\\snapshot-cache.js",
+    "size": 1040,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\snapshot\\snapshot-model.js",
+    "size": 2715,
+    "ext": ".js"
+  },
+  {
+    "path": "src\\snapshot\\snapshot-store.js",
+    "size": 7319,
+    "ext": ".js"
+  },
+  {
+    "path": "test_data_r1_1784561156604\\history.json",
+    "size": 291,
+    "ext": ".json"
+  },
+  {
+    "path": "test_data_r1_1784561156604\\publication\\active-snapshot.json",
+    "size": 295,
+    "ext": ".json"
+  },
+  {
+    "path": "test_data_r1_1784561156604\\snapshots\\snap_mrtdmx4r_1381f048.bin",
+    "size": 192010,
+    "ext": ".bin"
+  },
+  {
+    "path": "test_data_r1_1784561156604\\snapshots\\snap_mrtdmx4r_1381f048.json",
+    "size": 843,
+    "ext": ".json"
+  },
+  {
+    "path": "test_data_r1_1784561170744\\history.json",
+    "size": 291,
+    "ext": ".json"
+  },
+  {
+    "path": "test_data_r1_1784561170744\\publication\\active-snapshot.json",
+    "size": 295,
+    "ext": ".json"
+  },
+  {
+    "path": "test_data_r1_1784561170744\\snapshots\\snap_mrtdn80v_c79efdf2.bin",
+    "size": 192010,
+    "ext": ".bin"
+  },
+  {
+    "path": "test_data_r1_1784561170744\\snapshots\\snap_mrtdn80v_c79efdf2.json",
+    "size": 843,
+    "ext": ".json"
+  }
+]

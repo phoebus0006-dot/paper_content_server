@@ -1,0 +1,20 @@
+{
+  "server.js": {
+    "size": 175231,
+    "lines": 4044,
+    "sha256": "ebcfb40b36976ac73b712daddd039f49f471354aeebcc8cecc67903903a3d5ec"
+  },
+  "src/publication/publication-service.js": {
+    "size": 4945,
+    "lines": 128,
+    "sha256": "488042ffe82b79a4217da5e8968518801954cf5304d50bba0a2f1a5372da0211"
+  },
+  "src/publication/publication-history-adapter.js": null,
+  "src/admin/admin-state-service.js": null,
+  "src/admin/admin-routes.js": null,
+  "src/files/safe-image-path.js": null,
+  "src/images/image-rasterizer-v2.js": null,
+  "src/images/image-recipe-service.js": null,
+  "src/news/news-title-service.js": null,
+  "scripts/generate-build-info.js": null
+}

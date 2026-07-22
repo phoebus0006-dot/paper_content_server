@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // D-schedule-night-contract: night stability via debug clock injection
-var path=require('path'),http=require('http'),fs=require('fs');
-var ROOT=path.join(__dirname,'..','..'),PORT=8797,BASE='http://127.0.0.1:'+PORT;
-var TMPDIR=path.join(ROOT,'test_night_'+Date.now()),ec=0,pass=0,fail=0;
+var path=require('path'),http=require('http'),fs=require('fs'),os=require('os');
+var ROOT=path.join(__dirname,'..','..'),PORT=18700+Math.floor(Math.random()*1000),BASE='http://127.0.0.1:'+PORT;
+var TMPDIR=path.join(os.tmpdir(),'test_night_'+Date.now()),ec=0,pass=0,fail=0;
 function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
 function fetch(method,p,body){
   return new Promise(function(r,e){
@@ -13,7 +13,7 @@ function fetch(method,p,body){
   });
 }
 fs.mkdirSync(TMPDIR,{recursive:true});
-var env=Object.assign({},process.env,{PORT:String(PORT),TZ:'Europe/Paris',TRANSLATION_PROVIDER:'none',DATA_DIR:TMPDIR,ENABLE_DEBUG_ROUTES:'true',ADMIN_ACCESS_MODE:'lan',ADMIN_ALLOWED_CIDRS:'127.0.0.0/8'});
+var env=Object.assign({},process.env,{PORT:String(PORT),TZ:'Europe/Paris',TRANSLATION_PROVIDER:'none',DATA_DIR:TMPDIR,FEEDS_FILE:path.join(TMPDIR,'feeds.json'),NEWS_CACHE_FILE:path.join(TMPDIR,'news_cache.json'),LIBRARY_STATE_FILE:path.join(TMPDIR,'library_state.json'),NEWS_ROTATION_FILE:path.join(TMPDIR,'news_rotation_state.json'),IMAGE_INDEX_FILE:path.join(TMPDIR,'image_index.json'),LAST_GOOD_NEWS_FILE:path.join(TMPDIR,'last_good_news.json'),ENABLE_DEBUG_ROUTES:'true',ADMIN_ACCESS_MODE:'lan',ADMIN_ALLOWED_CIDRS:'127.0.0.0/8'});
 var cp=require('child_process');
 var srv=cp.spawn(process.execPath,[path.join(ROOT,'server.js')],{env:env,cwd:ROOT,stdio:['ignore','pipe','pipe']});
 async function main(){
@@ -44,6 +44,6 @@ async function main(){
   
   // Reset clock
   try{await fetch('GET','/debug/clock?reset=1')}catch(e){}
-  srv.kill();setTimeout(function(){try{fs.rmdirSync(TMPDIR,{recursive:true})}catch(e){}console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec)},1000);
+  srv.kill();setTimeout(function(){try{fs.rmSync(TMPDIR,{recursive:true,force:true})}catch(e){}console.log('=== Summary: '+pass+' passed, '+fail+' failed ===');process.exit(ec)},1000);
 }
 main().catch(function(e){console.log('FATAL:'+e.message);srv.kill();process.exit(1)});

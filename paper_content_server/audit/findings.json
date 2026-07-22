@@ -1,0 +1,122 @@
+[
+  {
+    "id": "P0-001",
+    "severity": "P0",
+    "path": "server.js",
+    "line": 3261,
+    "type": "UNIFIED_STATE_VIOLATION",
+    "description": "dashboard route uses Array.from(runtime.cachedFrames.values())[0] and runtime.manualOverride instead of AdminStateService",
+    "impact": "Dashboard state inconsistent with admin state",
+    "fix": "Call adminStateService.getAdminState() and derive response from it"
+  },
+  {
+    "id": "P0-002",
+    "severity": "P0",
+    "path": "server.js",
+    "line": 1225,
+    "type": "TITLE_TRUNCATION",
+    "description": "cleanupTitle function uses .slice(0,55), .slice(0,bestCut), and .slice(0,20) for direct truncation without semantic processing",
+    "impact": "Titles may be cut mid-word, losing meaning",
+    "fix": "Replace with NewsTitleService.normalizeTitle(); preserve rawTitle"
+  },
+  {
+    "id": "P0-003",
+    "severity": "P0",
+    "path": "server.js",
+    "line": 3308,
+    "type": "HARD_TITLE_LIMIT",
+    "description": "News draft route rejects titles longer than 24 chars with hard error, bypassing NewsTitleService",
+    "impact": "Users cannot submit long titles for semantic processing",
+    "fix": "Remove hard limit; use NewsTitleService for normalization"
+  },
+  {
+    "id": "P0-004",
+    "severity": "P0",
+    "path": "server.js",
+    "line": 9,
+    "type": "DEAD_IMPORT",
+    "description": "handleAdminRoutes imported but never called in request handler. GET /api/admin/state does not exist.",
+    "impact": "AdminStateService not accessible via API",
+    "fix": "Call handleAdminRoutes for admin paths or integrate GET /api/admin/state"
+  },
+  {
+    "id": "P0-005",
+    "severity": "P0",
+    "path": "server.js",
+    "line": 3319,
+    "type": "MISSING_READBACK",
+    "description": "News draft route returns {status:'ok'} without returning processed items from server. Frontend cannot sync state.",
+    "impact": "Frontend has outdated local state after save",
+    "fix": "Return processed items after NewsTitleService normalization"
+  },
+  {
+    "id": "P1-001",
+    "severity": "P1",
+    "path": "server.js",
+    "line": 3641,
+    "type": "DUAL_PATH_VALIDATOR",
+    "description": "Photo thumbnail uses old validateSafeImagePath from src/safety/ instead of new SafeImagePath from src/files/",
+    "impact": "Dual validation implementations, inconsistent security",
+    "fix": "Use SafeImagePath from src/files/safe-image-path.js"
+  },
+  {
+    "id": "P1-002",
+    "severity": "P1",
+    "path": "server.js",
+    "line": 1921,
+    "type": "DIRECT_SHARP_CALL",
+    "description": "resize(FRAME_WIDTH, FRAME_HEIGHT, {fit:'fill'}) bypasses ImageRecipeService",
+    "impact": "Image pipeline not unified, recipe/processing hashes not generated",
+    "fix": "Route through ImageRecipeService"
+  },
+  {
+    "id": "P1-003",
+    "severity": "P1",
+    "path": "server.js",
+    "line": 3709,
+    "type": "UNIFIED_STATE_VIOLATION",
+    "description": "system/status route uses adminQueryService instead of AdminStateService",
+    "impact": "System page uses different state source from dashboard",
+    "fix": "Use adminStateService.getAdminState()"
+  },
+  {
+    "id": "P1-004",
+    "severity": "P1",
+    "path": "server.js",
+    "line": 3691,
+    "type": "NO_READBACK_AFTER_RESTORE",
+    "description": "AUTO restore returns {status:'ok'} without read-back verification",
+    "impact": "Frontend reports success even if restore failed silently",
+    "fix": "Verify state after restore, return state or error"
+  },
+  {
+    "id": "P2-001",
+    "severity": "P2",
+    "path": "src/publication/publication-service.js",
+    "line": 31,
+    "type": "INCOMPLETE_ROLLBACK",
+    "description": "Read-back failure in doPublish throws error but activation is already committed; no rollback mechanism",
+    "impact": "State inconsistency on read-back failure",
+    "fix": "Add rollback on read-back failure"
+  },
+  {
+    "id": "P2-002",
+    "severity": "P2",
+    "path": "src/admin/admin-state-service.js",
+    "line": 135,
+    "type": "INCONSISTENCY_MISMATCH",
+    "description": "checkConsistency has comment for lastPublication vs snapshotId mismatch but doesn't flag it as inconsistency",
+    "impact": "Hidden inconsistencies not reported",
+    "fix": "Flag with _addInconsistency"
+  },
+  {
+    "id": "P2-003",
+    "severity": "P2",
+    "path": "server.js",
+    "line": 3282,
+    "type": "FIELD_NAME_ISSUE",
+    "description": "news route uses zhTitle/zhSummary field names instead of displayTitle/rawTitle",
+    "impact": "Frontend may show truncated or wrong title field",
+    "fix": "Use displayTitle from NewsTitleService"
+  }
+]

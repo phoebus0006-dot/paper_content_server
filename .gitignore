@@ -6,7 +6,8 @@
 **/data/import_images/
 **/data/quarantine_*/
 **/data/quarantine_*
-**/images/
+# DO NOT block src/images source code - added individually
+# **/images/
 **/*.bin
 **/*.log
 **/backup*/

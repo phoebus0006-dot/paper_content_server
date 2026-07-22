@@ -13,7 +13,7 @@
 ## 快速启动
 
 ```bash
-cd /d D:\开发板\paper_content_server
+cd paper_content_server
 copy .env.example .env
 npm install
 npm run check
@@ -44,11 +44,22 @@ OPENAI_MODEL=gpt-4o-mini
 DEEPL_API_KEY=
 DEEPL_API_URL=https://api-free.deepl.com/v2/translate
 DITHERING=0
+
+# Admin 访问配置（二选一）：
+# 选项 A（推荐局域网）：ADMIN_ACCESS_MODE=lan + 严格 CIDR
+# 选项 B（外部访问）：ADMIN_ACCESS_MODE=token + ADMIN_TOKEN=你的密钥
+# 安全警告：永远不要使用占位符或默认密钥！
+ADMIN_ACCESS_MODE=lan
+ADMIN_ALLOWED_CIDRS=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+TRUST_PROXY=false
 ```
 
 - `TZ`：服务时区，决定整点/半点切换点。
 - `TRANSLATION_PROVIDER`：`none`、`openai` 或 `deepl`。
 - `DITHERING`：`1` 开启抖动，`0` 关闭（默认关闭，避免墨水屏脏点）。
+- `ADMIN_ACCESS_MODE`：Admin 面板访问模式。`lan` 为局域网模式（需 CIDR）；`token` 为 Bearer Token 模式（需设置 `ADMIN_TOKEN`）。
+- `ADMIN_ALLOWED_CIDRS`：LAN 模式下允许访问的 CIDR 白名单（逗号分隔）。
+- `ADMIN_TOKEN`：Token 模式下 Bearer Token 值。内容自定义，建议用 UUID/复杂随机字符串。
 
 图片来源在 `config/photo_sources.json` 中配置。默认启用：
 
@@ -124,13 +135,32 @@ node scripts/process-images.js
 - `http://127.0.0.1:8787/debug/photo-info.json` — 当前图片元数据
 - `http://127.0.0.1:8787/debug/news.png` — 当前新闻预览
 
-## Docker / NAS 部署
+## Docker 构建
+
+项目支持两种构建模式：
+
+### 开发构建（docker compose，本地快速启动）
 
 ```bash
-cd /d D:\开发板\paper_content_server
+cd paper_content_server
 docker compose up -d --build
 docker compose logs --tail=100
 ```
+
+构建时自动传 `BUILD_MODE=development`，不要求真实 git SHA。manifest 中 `dirty=true` 且 `buildMode=development`。`container-selftest` 允许 dirty。
+
+### 正式发布构建（NAS 部署，严格验证）
+
+```bash
+# 由 deploy/nas/build-staging.sh 调用，传真实 SHA/TREE
+docker build --no-cache \
+  --build-arg BUILD_GIT_SHA=$(git rev-parse HEAD) \
+  --build-arg BUILD_GIT_TREE=$(git rev-parse HEAD^{tree}) \
+  --build-arg BUILD_DIRTY=false \
+  -t paper-content-server:$(git rev-parse --short=12 HEAD) .
+```
+
+正式构建拒绝 unknown/dirty。production stage 的 `docker inspect` 可查到 `BUILD_GIT_SHA`、`BUILD_GIT_TREE`、`BUILD_DIRTY`。
 
 检查：
 
@@ -213,13 +243,13 @@ images/
 
 ```bash
 # 从本地目录导入电影截图到 shots/夜景
-node scripts/import-images.js --from "D:\素材\电影截图" --kind shot --theme 夜景
+node scripts/import-images.js --from "./素材/电影截图" --kind shot --theme 夜景
 
 # 从本地目录导入分镜稿到 storyboard/双人对话
-node scripts/import-images.js --from "D:\素材\分镜" --kind storyboard --theme 双人对话
+node scripts/import-images.js --from "./素材/分镜" --kind storyboard --theme 双人对话
 
 # 只预览不复制
-node scripts/import-images.js --from "D:\素材" --dry-run
+node scripts/import-images.js --from "./素材" --dry-run
 
 # 查看帮助
 node scripts/import-images.js --help

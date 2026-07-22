@@ -26,6 +26,12 @@ var srcFiles = walkDir(path.join(ROOT, 'src'));
 srcFiles = srcFiles.concat(walkDir(path.join(ROOT, 'test')));
 srcFiles = srcFiles.concat(walkDir(path.join(ROOT, 'scripts')));
 
+var optionalModules = new Set([
+  'onnxruntime-node',
+  'onnxruntime',
+  '@tensorflow/tfjs-node',
+]);
+
 var builtinModules = new Set([
   'fs', 'path', 'http', 'https', 'os', 'crypto', 'url', 'stream', 'buffer',
   'util', 'events', 'assert', 'child_process', 'net', 'dns', 'tls', 'querystring',
@@ -49,6 +55,7 @@ for (var i = 0; i < srcFiles.length; i++) {
 
 var failures = [];
 for (var mod of foundModules) {
+  if (optionalModules.has(mod)) continue;
   if (!allDeps.has(mod)) {
     failures.push('Missing dependency: ' + mod);
     ec = 1;
@@ -56,7 +63,9 @@ for (var mod of foundModules) {
 }
 
 for (var mod of foundModules) {
-  if (deps.has(mod)) {
+  if (optionalModules.has(mod)) {
+    console.log('OPTIONAL_NOT_INSTALLED: ' + mod);
+  } else if (deps.has(mod)) {
     console.log('OK runtime: ' + mod);
   } else if (devDeps.has(mod)) {
     console.log('OK dev: ' + mod);

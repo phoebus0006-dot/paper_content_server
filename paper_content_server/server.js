@@ -7,6 +7,12 @@ const crypto = require('crypto');
 const { URL } = require('url');
 
 const sharp = require('sharp');
+const { AdminStateService } = require('./src/admin/admin-state-service');
+const { handleAdminRoutes } = require('./src/admin/admin-routes');
+const { NewsTitleService } = require('./src/news/news-title-service');
+const { SafeImagePath } = require('./src/files/safe-image-path');
+const { ImageRasterizer } = require('./src/images/image-rasterizer-v2');
+const { ImageRecipeService } = require('./src/images/image-recipe-service');
 
 // R1 bridge — legacy adapter wiring
 var R1_loadConfig = require('./src/config/load-config').loadConfig;
@@ -212,7 +218,7 @@ const IMPORT_IMAGES_DIR = resolveConfiguredPath(APP_CONFIG.importImagesDir || pa
 const LAST_GOOD_NEWS_FILE = resolveConfiguredPath(APP_CONFIG.lastGoodNewsFile || path.join(DATA_DIR, 'last_good_news.json'));
 const FALLBACK_STUDY_DIR = resolveConfiguredPath(APP_CONFIG.fallbackStudyDir || path.join(DATA_DIR, 'fallback_study'));
 
-const runtime = {
+let runtime = {
   feeds: null,
   feedsLoadedAt: 0,
   newsCache: { version: 1, updatedAt: null, translations: {} },
@@ -255,7 +261,68 @@ const runtime = {
   learningLastIngestAt: null,
   overridePersistence: null,
   safetyClassifierPort: null,
+  DATA_DIR: DATA_DIR,
+  IMAGE_INDEX_FILE: IMAGE_INDEX_FILE,
+  LIBRARY_STATE_FILE: LIBRARY_STATE_FILE,
+  NEWS_CACHE_FILE: NEWS_CACHE_FILE,
+  NEWS_ROTATION_FILE: NEWS_ROTATION_FILE,
+  FEEDS_FILE: FEEDS_FILE,
+  LAST_GOOD_NEWS_FILE: LAST_GOOD_NEWS_FILE,
+  FALLBACK_STUDY_DIR: FALLBACK_STUDY_DIR,
+  TIMEZONE: TIMEZONE,
+  NEWS_REFRESH_MINUTES: NEWS_REFRESH_MINUTES,
+  PHOTO_QUANT_MODE: PHOTO_QUANT_MODE,
+  DITHERING_ENABLED: DITHERING_ENABLED,
+  FRAME_WIDTH: FRAME_WIDTH,
+  FRAME_HEIGHT: FRAME_HEIGHT,
+  adminAccessMode: ADMIN_ACCESS_MODE,
+  adminToken: ADMIN_TOKEN,
+  adminAllowedCidrs: ADM_PARSED_CIDRS,
+  adminTrustProxy: TRUST_PROXY,
+  adminTrustedProxyCidrs: ADM_TRUSTED_PROXY_CIDRS,
+  adminAllowHeaderlessWrite: ADMIN_ALLOW_HEADERLESS_WRITE,
 };
+
+function createApplication(options) {
+  options = options || {};
+  var ctx = options.context;
+  if (!ctx) {
+    ctx = Object.assign({}, runtime, {
+      cachedFrames: new Map(),
+      cachedSnapshots: new Map(),
+      imageIndex: [],
+      libraryState: { themeCursor: 0, currentTheme: null, currentImageIndex: 0, remainingThemeSlots: 1, lastSlotKey: null, lastSwitchDate: null, patternIndex: 0, currentKind: null },
+      renderCount: 0,
+      serverStartTime: Date.now(),
+      lastNewsRefreshAt: 0,
+      feedsLoadedAt: 0,
+      newsCache: { version: 1, updatedAt: null, translations: {} },
+      newsRotation: { version: 1, updatedAt: null, shown: [] },
+      DATA_DIR: DATA_DIR,
+      IMAGE_INDEX_FILE: IMAGE_INDEX_FILE,
+      LIBRARY_STATE_FILE: LIBRARY_STATE_FILE,
+      NEWS_CACHE_FILE: NEWS_CACHE_FILE,
+      NEWS_ROTATION_FILE: NEWS_ROTATION_FILE,
+      FEEDS_FILE: FEEDS_FILE,
+      LAST_GOOD_NEWS_FILE: LAST_GOOD_NEWS_FILE,
+      FALLBACK_STUDY_DIR: FALLBACK_STUDY_DIR,
+      TIMEZONE: TIMEZONE,
+      NEWS_REFRESH_MINUTES: NEWS_REFRESH_MINUTES,
+      adminAccessMode: ADMIN_ACCESS_MODE,
+      adminToken: ADMIN_TOKEN,
+      adminAllowedCidrs: ADM_PARSED_CIDRS,
+      adminTrustProxy: TRUST_PROXY,
+      adminTrustedProxyCidrs: ADM_TRUSTED_PROXY_CIDRS,
+      adminAllowHeaderlessWrite: ADMIN_ALLOW_HEADERLESS_WRITE,
+    });
+  }
+  var h = options.handler || createHandler(ctx);
+  return {
+    handler: h,
+    context: ctx,
+    close: options.close || function() { return Promise.resolve(); },
+  };
+}
 
 async function main() {
   r1Logger.info('Starting NewsPhoto content server via R1 bootstrap');
@@ -280,8 +347,32 @@ async function main() {
     }
   }
 
+  // Create the request context — populated after bootstrap, but the handler
+  // captures it by reference so mutations are visible to incoming requests.
+  var requestContext = {
+    cachedFrames: new Map(),
+    cachedSnapshots: new Map(),
+    serverStartTime: Date.now(),
+    DATA_DIR: DATA_DIR,
+    IMAGE_INDEX_FILE: IMAGE_INDEX_FILE,
+    LIBRARY_STATE_FILE: LIBRARY_STATE_FILE,
+    NEWS_CACHE_FILE: NEWS_CACHE_FILE,
+    NEWS_ROTATION_FILE: NEWS_ROTATION_FILE,
+    FEEDS_FILE: FEEDS_FILE,
+    LAST_GOOD_NEWS_FILE: LAST_GOOD_NEWS_FILE,
+    FALLBACK_STUDY_DIR: FALLBACK_STUDY_DIR,
+    TIMEZONE: TIMEZONE,
+    NEWS_REFRESH_MINUTES: NEWS_REFRESH_MINUTES,
+    adminAccessMode: ADMIN_ACCESS_MODE,
+    adminToken: ADMIN_TOKEN,
+    adminAllowedCidrs: ADM_PARSED_CIDRS,
+    adminTrustProxy: TRUST_PROXY,
+    adminTrustedProxyCidrs: ADM_TRUSTED_PROXY_CIDRS,
+    adminAllowHeaderlessWrite: ADMIN_ALLOW_HEADERLESS_WRITE,
+  };
+
   var boot = R1_bootstrap({
-    handler: handleRequest,
+    handler: createHandler(requestContext),
     env: process.env,
     cwd: ROOT_DIR,
     listen: true,
@@ -294,36 +385,54 @@ async function main() {
   await ensureDir(DATA_DIR);
   await ensureDir(IMAGES_DIR);
 
-  // Load persisted runtime state
-  runtime.feeds = await readJson(FEEDS_FILE, []);
-  runtime.newsCache = await readJson(NEWS_CACHE_FILE, { version: 1, updatedAt: null, translations: {} });
-  runtime.newsRotation = await readJson(NEWS_ROTATION_FILE, { version: 1, updatedAt: null, shown: [] });
-  runtime.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
-  runtime.imageIndex = await loadImageIndex();
-  runtime.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
+  // Load persisted runtime state into both module-level runtime (for helper
+  // functions) and requestContext (for the handler closure).
+  runtime.feeds = requestContext.feeds = await readJson(FEEDS_FILE, []);
+  runtime.newsCache = requestContext.newsCache = await readJson(NEWS_CACHE_FILE, { version: 1, updatedAt: null, translations: {} });
+  runtime.newsRotation = requestContext.newsRotation = await readJson(NEWS_ROTATION_FILE, { version: 1, updatedAt: null, shown: [] });
+  runtime.libraryState = requestContext.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
+  runtime.imageIndex = requestContext.imageIndex = await loadImageIndex();
+  runtime.lastGoodNews = requestContext.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
 
   // Wire R3 snapshot/publication services from single composition root
-  runtime.snapshotStore = boot.deps.snapshotStore;
-  runtime.snapshotCache = boot.deps.snapshotCache;
-  runtime.pinStore = boot.deps.pinStore;
-  runtime.publicationLock = boot.deps.publicationLock;
-  runtime.operatingModeService = boot.deps.operatingModeService;
-  runtime.publicationHistory = boot.deps.publicationHistory;
-  runtime.notificationPort = boot.deps.notificationPort;
-  runtime.publicationService = boot.services.publicationService;
-  runtime.adminQueryService = boot.services.adminQueryService || null;
-  runtime.featureFlagView = boot.services.featureFlagView || null;
-  runtime.assetRepository = boot.services.assetRepository || null;
-  runtime.customLibraryService = boot.services.customLibraryService || null;
-  runtime.safetyGate = boot.services.safetyGate || null;
-  runtime.learningIngestionService = boot.services.learningIngestionService || null;
-  runtime.learningScheduler = boot.services.learningScheduler || null;
-  runtime.assetSelectionService = boot.services.assetSelectionService || null;
-  runtime.assetDeleteService = boot.services.assetDeleteService || null;
-  runtime.overridePersistence = boot.services.overridePersistence || null;
-  runtime.safetyClassifierPort = boot.services.safetyClassifierPort || null;
-  runtime.config = boot.config || null;
-  runtime.mqttClient = boot.deps.mqttClient || null;
+  runtime.snapshotStore = requestContext.snapshotStore = boot.deps.snapshotStore;
+  runtime.snapshotCache = requestContext.snapshotCache = boot.deps.snapshotCache;
+  runtime.pinStore = requestContext.pinStore = boot.deps.pinStore;
+  runtime.publicationLock = requestContext.publicationLock = boot.deps.publicationLock;
+  runtime.operatingModeService = requestContext.operatingModeService = boot.deps.operatingModeService;
+  runtime.publicationHistory = requestContext.publicationHistory = boot.deps.publicationHistory;
+  runtime.notificationPort = requestContext.notificationPort = boot.deps.notificationPort;
+  runtime.publicationService = requestContext.publicationService = boot.services.publicationService;
+  runtime.adminQueryService = requestContext.adminQueryService = boot.services.adminQueryService || null;
+  runtime.adminStateService = requestContext.adminStateService = new AdminStateService({
+    operatingModeService: requestContext.operatingModeService || null,
+    snapshotStore: requestContext.snapshotStore || null,
+    publicationHistory: requestContext.publicationHistory || null,
+    mqttClient: requestContext.mqttClient || null,
+  });
+  runtime.newsTitleService = requestContext.newsTitleService = new NewsTitleService();
+  runtime.safeImagePath = requestContext.safeImagePath = new SafeImagePath({ rootDir: ROOT_DIR });
+  runtime.imageRasterizer = requestContext.imageRasterizer = new ImageRasterizer();
+  runtime.featureFlagView = requestContext.featureFlagView = boot.services.featureFlagView || null;
+  runtime.assetRepository = requestContext.assetRepository = boot.services.assetRepository || null;
+  runtime.customLibraryService = requestContext.customLibraryService = boot.services.customLibraryService || null;
+  runtime.safetyGate = requestContext.safetyGate = boot.services.safetyGate || null;
+  runtime.learningIngestionService = requestContext.learningIngestionService = boot.services.learningIngestionService || null;
+  runtime.learningScheduler = requestContext.learningScheduler = boot.services.learningScheduler || null;
+  runtime.assetSelectionService = requestContext.assetSelectionService = boot.services.assetSelectionService || null;
+  runtime.assetDeleteService = requestContext.assetDeleteService = boot.services.assetDeleteService || null;
+  runtime.overridePersistence = requestContext.overridePersistence = boot.services.overridePersistence || null;
+  // Inject late-bound dependencies into publication service (overridePersistence,
+  // frameCache are created after the service itself).
+  if (runtime.publicationService && typeof runtime.publicationService.setInjections === 'function') {
+    runtime.publicationService.setInjections({
+      overridePersistence: runtime.overridePersistence,
+      frameCache: runtime.cachedFrames,
+    });
+  }
+  runtime.safetyClassifierPort = requestContext.safetyClassifierPort = boot.services.safetyClassifierPort || null;
+  runtime.config = requestContext.config = boot.config || null;
+  runtime.mqttClient = requestContext.mqttClient = boot.deps.mqttClient || null;
   await runtime.snapshotStore.ensureDirs();
 
   // V6: initialize the safety classifier async lifecycle (load model + smoke
@@ -356,27 +465,34 @@ async function main() {
 
   // V3: Restore persisted ONE_SHOT / FOCUS_LOCK override on restart.
   // validateOverrideAsync() re-checks the asset is still SAFE + SELECTABLE +
-  // local file present. If valid, the operating mode is restored to the same
-  // snapshot. If invalid, the override is cleared and the server falls through
+  // local file present (or snapshot integrity for no-asset one-shot).
+  // If valid, the operating mode is restored to the same snapshot.
+  // If invalid, the override is cleared and the server falls through
   // to AUTO schedule (no silent asset substitution).
-  if (runtime.overridePersistence && runtime.assetRepository && runtime.operatingModeService) {
+  if (runtime.overridePersistence && runtime.operatingModeService) {
     try {
       var persistedOverride = runtime.overridePersistence.loadOverride();
       if (persistedOverride &&
           (persistedOverride.mode === 'ONE_SHOT_OVERRIDE' ||
-           persistedOverride.mode === 'FOCUS_LOCK') &&
-          persistedOverride.assetId && persistedOverride.snapshotId) {
+           persistedOverride.mode === 'FOCUS_LOCK' ||
+           persistedOverride.mode === 'LEGACY_ADMIN_OVERRIDE') &&
+          persistedOverride.snapshotId) {
         var v3Validation = await runtime.overridePersistence.validateOverrideAsync(
-          persistedOverride, runtime.assetRepository
+          persistedOverride,
+          runtime.assetRepository,
+          runtime.snapshotStore
         );
         if (v3Validation.valid) {
-          // Restore operating mode; snapshot was already preloaded above.
           if (persistedOverride.mode === 'ONE_SHOT_OVERRIDE') {
             runtime.operatingModeService.enterOneShot(
               persistedOverride.snapshotId,
               persistedOverride.expiresAt || persistedOverride.savedAt
             );
-            r1Logger.info('Restored ONE_SHOT override: asset=' + persistedOverride.assetId);
+            r1Logger.info('Restored ONE_SHOT override: snapshotId=' + persistedOverride.snapshotId +
+              (persistedOverride.assetId ? ' asset=' + persistedOverride.assetId : ''));
+          } else if (persistedOverride.mode === 'LEGACY_ADMIN_OVERRIDE') {
+            runtime.operatingModeService.setMode('LEGACY_ADMIN_OVERRIDE');
+            r1Logger.info('Restored LEGACY_ADMIN_OVERRIDE: snapshotId=' + persistedOverride.snapshotId);
           } else {
             runtime.operatingModeService.enterFocusLock(persistedOverride.snapshotId, {
               libraryType: persistedOverride.libraryType || null,
@@ -396,6 +512,7 @@ async function main() {
     }
   }
 
+  var app = createApplication({ context: requestContext });
   var server = boot.server;
 
   var effectiveTimeZone = r1Clock.timezone();
@@ -487,10 +604,11 @@ function parseArgs(argv, config) {
 function loadAppConfig() {
   var result = R1_loadConfig({ cwd: ROOT_DIR });
   if (!result.isValid) {
-    r1Logger.error('Config validation failed: ' + result.errors.join('; '));
-    // Only hard-exit when run as the entry point. When required by tests for
-    // utility functions, log and fall through so the module still loads.
+    // Only log and hard-exit when run as the entry point.
+    // When required by tests for utility functions, suppress the log and
+    // fall through so the module still loads without false error output.
     if (require.main === module) {
+      r1Logger.error('Config validation failed: ' + result.errors.join('; '));
       process.exit(1);
     }
   }
@@ -802,6 +920,52 @@ function escapeRegex(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function resolveAllowedAssetImagePath(ctx, localPath) {
+  if (!localPath || typeof localPath !== 'string') return null;
+  var roots = [];
+  var candidates = [];
+  if (ctx && ctx.DATA_DIR) candidates.push(ctx.DATA_DIR);
+  if (ctx && ctx.IMAGES_DIR) candidates.push(ctx.IMAGES_DIR);
+  if (ctx && ctx.config && ctx.config.paths) {
+    var p = ctx.config.paths;
+    if (p.imagesDir) candidates.push(p.imagesDir);
+    if (p.rawImagesDir) candidates.push(p.rawImagesDir);
+    if (p.processedImagesDir) candidates.push(p.processedImagesDir);
+    if (p.importImagesDir) candidates.push(p.importImagesDir);
+    if (p.fallbackStudyDir) candidates.push(p.fallbackStudyDir);
+  }
+  candidates.forEach(function(c) {
+    var absPath = path.resolve(c);
+    try {
+      var real = fs.realpathSync(absPath);
+      if (roots.indexOf(real) < 0) roots.push(real);
+    } catch(e) {}
+  });
+  if (roots.length === 0) return null;
+  var resolved;
+  try {
+    resolved = fs.realpathSync(path.resolve(localPath));
+  } catch(e) {
+    return null;
+  }
+  var ok = false;
+  for (var ri = 0; ri < roots.length; ri++) {
+    var root = roots[ri];
+    if (resolved === root || resolved.indexOf(root + path.sep) === 0) {
+      ok = true;
+      break;
+    }
+  }
+  if (!ok) return null;
+  var stat;
+  try { stat = fs.statSync(resolved); } catch(e) { return null; }
+  if (!stat.isFile()) return null;
+  var ext = path.extname(resolved).toLowerCase();
+  var ALLOWED_EXT = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'];
+  if (ALLOWED_EXT.indexOf(ext) < 0) return null;
+  return resolved;
+}
+
 function extractTag(xml, tagName) {
   const escapedTagName = escapeRegex(tagName);
   const patterns = [
@@ -901,27 +1065,31 @@ async function fetchText(url, timeoutMs) {
   return r1HttpClient.fetchText(url, timeoutMs || 20000);
 }
 
-async function loadFeeds() {
-  const raw = await readJson(FEEDS_FILE, null);
+async function loadFeeds(ctx) {
+  var R = ctx || runtime;
+  var feedsFile = (R && R.FEEDS_FILE) || FEEDS_FILE;
+  const raw = await readJson(feedsFile, null);
   if (!raw) return [];
   const feeds = Array.isArray(raw) ? raw : raw.feeds;
   if (!Array.isArray(feeds)) return [];
   return feeds.filter((feed) => feed && feed.id && feed.source && feed.country && feed.category && feed.language && feed.url);
 }
 
-async function refreshFeeds() {
-  const feeds = await loadFeeds();
-  runtime.feeds = feeds;
-  runtime.feedsLoadedAt = Date.now();
+async function refreshFeeds(ctx) {
+  var R = ctx || runtime;
+  const feeds = await loadFeeds(R);
+  R.feeds = feeds;
+  R.feedsLoadedAt = Date.now();
   return feeds;
 }
 
-async function loadNewsCandidates() {
-  if (!runtime.feeds || !runtime.feeds.length || Date.now() - runtime.feedsLoadedAt > 10 * 60 * 1000) {
-    await refreshFeeds();
+async function loadNewsCandidates(ctx) {
+  var R = ctx || runtime;
+  if (!R.feeds || !R.feeds.length || Date.now() - R.feedsLoadedAt > 10 * 60 * 1000) {
+    await refreshFeeds(R);
   }
 
-  const fetched = await Promise.all(runtime.feeds.map(async (feed) => {
+  const fetched = await Promise.all(R.feeds.map(async (feed) => {
     try {
       const text = await fetchText(feed.url);
       const trimmed = text.trim();
@@ -975,25 +1143,27 @@ function titleHash(title) {
   return sha1(normalizeText(title).toLowerCase());
 }
 
-function isRecentlyShown(article, sinceHours) {
+function isRecentlyShown(article, sinceHours, ctx) {
+  var R = ctx || runtime;
   const cutoff = Date.now() - sinceHours * 60 * 60 * 1000;
   const url = canonicalUrl(article.url);
   const hash = titleHash(article.title);
-  return runtime.newsRotation.shown.some((entry) => {
+  return R.newsRotation.shown.some((entry) => {
     if (entry.shownAt && Date.parse(entry.shownAt) < cutoff) return false;
     if (url && canonicalUrl(entry.url) === url) return true;
     return entry.titleHash === hash;
   });
 }
 
-function filterByRotation(candidates, minHours) {
-  return candidates.filter((article) => !isRecentlyShown(article, minHours));
+function filterByRotation(candidates, minHours, ctx) {
+  return candidates.filter((article) => !isRecentlyShown(article, minHours, ctx));
 }
 
-function selectNewsItems(candidates, slotKey) {
-  let pool = filterByRotation(candidates, NEWS_SHOWN_RECALL_HOURS);
+function selectNewsItems(candidates, slotKey, ctx) {
+  var R = ctx || runtime;
+  let pool = filterByRotation(candidates, NEWS_SHOWN_RECALL_HOURS, R);
   if (pool.length < NEWS_MIN_ITEMS) {
-    pool = filterByRotation(candidates, NEWS_SHOWN_FALLBACK_HOURS);
+    pool = filterByRotation(candidates, NEWS_SHOWN_FALLBACK_HOURS, R);
   }
 
   const byCategory = new Map();
@@ -1091,15 +1261,17 @@ function selectNewsItems(candidates, slotKey) {
   return selected;
 }
 
-async function recordShownItems(items, slotKey) {
+async function recordShownItems(items, slotKey, ctx) {
+  var R = ctx || runtime;
+  var newsRotFile = (R && R.NEWS_ROTATION_FILE) || NEWS_ROTATION_FILE;
   const now = new Date().toISOString();
   const retentionCutoff = Date.now() - NEWS_SHOWN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  runtime.newsRotation.shown = runtime.newsRotation.shown.filter((entry) => {
+  R.newsRotation.shown = R.newsRotation.shown.filter((entry) => {
     return entry.shownAt && Date.parse(entry.shownAt) >= retentionCutoff;
   });
 
   for (const item of items) {
-    runtime.newsRotation.shown.push({
+    R.newsRotation.shown.push({
       url: canonicalUrl(item.url),
       titleHash: titleHash(item.title),
       title: truncateText(item.title, 120),
@@ -1109,8 +1281,8 @@ async function recordShownItems(items, slotKey) {
     });
   }
 
-  runtime.newsRotation.updatedAt = now;
-  await writeJson(NEWS_ROTATION_FILE, runtime.newsRotation).catch((error) => {
+  R.newsRotation.updatedAt = now;
+  await writeJson(newsRotFile, R.newsRotation).catch((error) => {
     console.log(`news rotation state write failed: ${error.message}`);
   });
 }
@@ -1339,7 +1511,8 @@ function translationCacheKey(article) {
   return sha1([TRANSLATION_PROVIDER, article.language, article.source, article.url || article.title, article.title, article.summary].join('|'));
 }
 
-async function translateArticle(article) {
+async function translateArticle(article, ctx) {
+  var R = ctx || runtime;
   const language = String(article.language || '').toLowerCase();
   if (!language || language.startsWith('zh')) {
     return {
@@ -1397,8 +1570,9 @@ async function translateArticle(article) {
     };
   }
 
+  var newsCacheFile = (R && R.NEWS_CACHE_FILE) || NEWS_CACHE_FILE;
   const cacheKey = translationCacheKey(article);
-  const cached = runtime.newsCache.translations?.[cacheKey];
+  const cached = R.newsCache.translations?.[cacheKey];
   if (cached) {
     return {
       ...article,
@@ -1412,14 +1586,14 @@ async function translateArticle(article) {
 
   try {
     const translated = await translateWithProvider(article);
-    runtime.newsCache.translations = runtime.newsCache.translations || {};
-    runtime.newsCache.translations[cacheKey] = {
+    R.newsCache.translations = R.newsCache.translations || {};
+    R.newsCache.translations[cacheKey] = {
       ...translated,
       provider: TRANSLATION_PROVIDER,
       updatedAt: new Date().toISOString(),
     };
-    runtime.newsCache.updatedAt = new Date().toISOString();
-    await writeJson(NEWS_CACHE_FILE, runtime.newsCache).catch((error) => {
+    R.newsCache.updatedAt = new Date().toISOString();
+    await writeJson(newsCacheFile, R.newsCache).catch((error) => {
       console.log(`news cache write failed: ${error.message}`);
     });
     return {
@@ -1589,16 +1763,18 @@ function evaluateNewsItemQuality(item) {
   return { titleComplete, summaryComplete, summaryFallback, titleReason: reasons.title.join(','), summaryReason: reasons.summary.join(','), score, titleLen: tLen, summaryLen: sLen };
 }
 
-async function buildNewsSnapshot(now) {
-  const key = `news:${formatDateKey(now)}:${Math.floor(now.getTime() / (NEWS_REFRESH_MINUTES * 60 * 1000))}`;
-  if (runtime.cachedSnapshots.has(key)) return runtime.cachedSnapshots.get(key);
+async function buildNewsSnapshot(now, ctx) {
+  var R = ctx || runtime;
+  var newsRefreshMinutes = (R && R.NEWS_REFRESH_MINUTES) || NEWS_REFRESH_MINUTES;
+  const key = `news:${formatDateKey(now)}:${Math.floor(now.getTime() / (newsRefreshMinutes * 60 * 1000))}`;
+  if (R.cachedSnapshots.has(key)) return R.cachedSnapshots.get(key);
 
-  const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
+  const snapshot = selectPhotoSnapshot(now, R.imageIndex || []);
   const slotKey = snapshot.slotKey || `news:${formatDateKey(now)}`;
 
-  const rawItems = await loadNewsCandidates();
-  const selected = selectNewsItems(rawItems, slotKey);
-  await recordShownItems(selected, slotKey);
+  const rawItems = await loadNewsCandidates(R);
+  const selected = selectNewsItems(rawItems, slotKey, R);
+  await recordShownItems(selected, slotKey, R);
 
   const stats = { rawCandidates: rawItems.length, deduped: 0, evaluated: 0, pass: 0, softPass: 0, rejectTitle: 0, rejectSummary: 0, rejectSemantic: 0, final: 0, rejects: [] };
   const seenKeys = new Map();
@@ -1612,7 +1788,7 @@ async function buildNewsSnapshot(now) {
 
   const mainPool = [];
   for (const item of selected) {
-    const result = await translateArticle(item);
+    const result = await translateArticle(item, R);
     const lang = String(item.language || '').toLowerCase();
     const isZh = !lang || lang.startsWith('zh');
     const isTranslated = ['translated', 'cached'].includes(result.translationStatus);
@@ -1737,7 +1913,7 @@ async function buildNewsSnapshot(now) {
   }
 
   stats.final = final.length;
-  runtime._newsPipelineStats = stats;
+  R._newsPipelineStats = stats;
 
   const translationNotice = TRANSLATION_PROVIDER === 'none'
     ? '翻译未启用'
@@ -1765,17 +1941,18 @@ async function buildNewsSnapshot(now) {
   };
 
   // Save last-good-news if we have enough items
+  var lastGoodFile = (R && R.LAST_GOOD_NEWS_FILE) || LAST_GOOD_NEWS_FILE;
   if (final.length >= NEWS_MAX_ITEMS) {
-    runtime.lastGoodNews = news;
-    try { await writeJson(LAST_GOOD_NEWS_FILE, news); } catch(e) { console.log('last-good-news write failed: ' + e.message); }
+    R.lastGoodNews = news;
+    try { await writeJson(lastGoodFile, news); } catch(e) { console.log('last-good-news write failed: ' + e.message); }
   }
 
   // If no items, fall back to last-good-news or built-in placeholder
   if (news.items.length === 0) {
-    if (runtime.lastGoodNews && runtime.lastGoodNews.items && runtime.lastGoodNews.items.length >= NEWS_MAX_ITEMS) {
-      console.log('live news empty, using last-good-news (' + runtime.lastGoodNews.items.length + ' items)');
-      runtime.cachedSnapshots.set(key, runtime.lastGoodNews);
-      return runtime.lastGoodNews;
+    if (R.lastGoodNews && R.lastGoodNews.items && R.lastGoodNews.items.length >= NEWS_MAX_ITEMS) {
+      console.log('live news empty, using last-good-news (' + R.lastGoodNews.items.length + ' items)');
+      R.cachedSnapshots.set(key, R.lastGoodNews);
+      return R.lastGoodNews;
     }
     // Built-in safe placeholder (never show "暂无新闻" with empty items)
     var placeholderItems = [];
@@ -1803,20 +1980,22 @@ async function buildNewsSnapshot(now) {
       title: 'STANDBY',
       slotKey: snapshot.slotKey || 'standby',
     };
-    runtime.cachedSnapshots.set(key, fallbackNews);
+    R.cachedSnapshots.set(key, fallbackNews);
     return fallbackNews;
   }
 
-  runtime.cachedSnapshots.set(key, news);
+  R.cachedSnapshots.set(key, news);
   return news;
 }
 
-async function loadImageIndex() {
+async function loadImageIndex(ctx) {
+  var R = ctx || runtime;
+  var imgIdxFile = (R && R.IMAGE_INDEX_FILE) || IMAGE_INDEX_FILE;
   try {
-    const data = await readJson(IMAGE_INDEX_FILE, []);
+    const data = await readJson(imgIdxFile, []);
     const entries = Array.isArray(data) ? data : data.images || [];
-    runtime.imageIndexLoadedAt = Date.now();
-    runtime.fullImageIndex = entries;
+    R.imageIndexLoadedAt = Date.now();
+    R.fullImageIndex = entries;
     return entries;
   } catch (error) {
     console.log(`image index load failed: ${error.message}`);
@@ -1883,15 +2062,17 @@ function generateFallbackStudySvg(entry) {
   return '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480">' + boxes.join('') + '</svg>';
 }
 
-async function ensureFallbackStudyFrames() {
-  if (runtime.fallbackStudyReady) return;
-  await ensureDir(FALLBACK_STUDY_DIR);
+async function ensureFallbackStudyFrames(ctx) {
+  var R = ctx || runtime;
+  if (R.fallbackStudyReady) return;
+  var fbDir = (R && R.FALLBACK_STUDY_DIR) || FALLBACK_STUDY_DIR;
+  await ensureDir(fbDir);
   var entries = [];
   for (var fbi = 0; fbi < FALLBACK_STUDY_THEMES.length; fbi++) {
     var t = FALLBACK_STUDY_THEMES[fbi];
     var svgStr = generateFallbackStudySvg(t);
-    var pngPath = path.join(FALLBACK_STUDY_DIR, t.id + '.png');
-    var epfPath = path.join(FALLBACK_STUDY_DIR, t.id + '.epf');
+    var pngPath = path.join(fbDir, t.id + '.png');
+    var epfPath = path.join(fbDir, t.id + '.epf');
     if (!fs.existsSync(pngPath) || !fs.existsSync(epfPath)) {
       try {
         var { data, info } = await sharp(Buffer.from(svgStr))
@@ -1933,29 +2114,33 @@ async function ensureFallbackStudyFrames() {
       hash: sha1(t.id),
     });
   }
-  runtime.fallbackStudyEntries = entries;
-  runtime.fallbackStudyReady = true;
+  R.fallbackStudyEntries = entries;
+  R.fallbackStudyReady = true;
   console.log('fallback study frames ready: ' + entries.length + ' entries');
 }
 
-function selectableImages() {
-  return (runtime.fullImageIndex || runtime.imageIndex || []).filter(function(e) { return isImageReady(e) && isImageApproved(e); });
+function selectableImages(ctx) {
+  var R = ctx || runtime;
+  return (R.fullImageIndex || R.imageIndex || []).filter(function(e) { return isImageReady(e) && isImageApproved(e); });
 }
 
-function studySelectableImages() {
-  var realEntries = (runtime.fullImageIndex || runtime.imageIndex || []).filter(isStudySelectable);
+function studySelectableImages(ctx) {
+  var R = ctx || runtime;
+  var realEntries = (R.fullImageIndex || R.imageIndex || []).filter(isStudySelectable);
   if (realEntries.length > 0) return realEntries;
-  if (runtime.fallbackStudyReady && runtime.fallbackStudyEntries) {
-    return runtime.fallbackStudyEntries.filter(function(e) { return fs.existsSync(e.processedPngPath); });
+  if (R.fallbackStudyReady && R.fallbackStudyEntries) {
+    return R.fallbackStudyEntries.filter(function(e) { return fs.existsSync(e.processedPngPath); });
   }
   return [];
 }
 
-async function reloadImageIndexIfNeeded() {
+async function reloadImageIndexIfNeeded(ctx) {
+  var R = ctx || runtime;
+  var imgIdxFile = (R && R.IMAGE_INDEX_FILE) || IMAGE_INDEX_FILE;
   try {
-    const stats = await fsp.stat(IMAGE_INDEX_FILE);
-    if (stats.mtimeMs > runtime.imageIndexLoadedAt) {
-      runtime.imageIndex = await loadImageIndex();
+    const stats = await fsp.stat(imgIdxFile);
+    if (stats.mtimeMs > R.imageIndexLoadedAt) {
+      R.imageIndex = await loadImageIndex(R);
     }
   } catch {
     // image index may not exist yet
@@ -1970,7 +2155,11 @@ function isImageReady(entry) {
 }
 
 function isImageApproved(entry) {
-  return entry && entry.safetyStatus === 'approved';
+  if (!entry) return false;
+  // Reuse image-approval-adapter for canonical resolution.
+  // Canonical publishable: SAFE + APPROVED + SELECTABLE.
+  // Legacy lowercase 'approved' is supported via the adapter's _verifyLegacyApproved path.
+  return require('./src/images/image-approval-adapter').isPublishable(entry);
 }
 
 function isStudySelectable(entry) {
@@ -2076,9 +2265,10 @@ function sortByLastShown(images) {
   });
 }
 
-function updateLibraryStateForPhoto(snapshot, imageIndex) {
+function updateLibraryStateForPhoto(snapshot, imageIndex, libraryState) {
+  var ls = libraryState || runtime.libraryState;
   const daySeed = Number.parseInt(sha1(snapshot.slotKey).slice(0, 8), 16);
-  const state = { ...runtime.libraryState };
+  const state = { ...ls };
   const sameSlot = state.lastSlotKey === snapshot.slotKey;
 
   // Same slot: return cached selection (preserving kind)
@@ -2192,7 +2382,8 @@ function updateLibraryStateForPhoto(snapshot, imageIndex) {
   return { theme, entry, state, kind };
 }
 
-function selectPhotoSnapshot(now, imageIndex = runtime.imageIndex || []) {
+function selectPhotoSnapshot(now, imageIndex) {
+  if (imageIndex === undefined) imageIndex = runtime.imageIndex || [];
   const t = getWallTime(now, TIMEZONE);
   const resolved = resolveDisplayMode(t, TIMEZONE);
   const dateKey = `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
@@ -2246,18 +2437,21 @@ function computeNextSwitchAt(now) {
 function selectStudyPhoto(now, imageIndex, libraryState) {
   const snapshot = selectPhotoSnapshot(now, imageIndex);
   const studyIndex = (imageIndex || []).filter(isStudySelectable);
-  const selection = updateLibraryStateForPhoto(snapshot, studyIndex);
+  const selection = updateLibraryStateForPhoto(snapshot, studyIndex, libraryState);
   if (!selection.entry) {
     return { theme: 'NO_STUDY_FRAMES', entry: null, kind: 'shot', state: selection.state };
   }
   return selection;
 }
 
-async function buildPhotoSnapshot(now) {
-  const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
-  const selection = updateLibraryStateForPhoto(snapshot, studySelectableImages());
-  runtime.libraryState = selection.state;
-  await writeJson(LIBRARY_STATE_FILE, runtime.libraryState).catch((error) => {
+async function buildPhotoSnapshot(now, ctx) {
+  var R = ctx || runtime;
+  var libStateFile = (R && R.LIBRARY_STATE_FILE) || LIBRARY_STATE_FILE;
+  var imgIdxFile = (R && R.IMAGE_INDEX_FILE) || IMAGE_INDEX_FILE;
+  const snapshot = selectPhotoSnapshot(now, R.imageIndex || []);
+  const selection = updateLibraryStateForPhoto(snapshot, studySelectableImages(R), R.libraryState);
+  R.libraryState = selection.state;
+  await writeJson(libStateFile, R.libraryState).catch((error) => {
     console.log(`library state write failed: ${error.message}`);
   });
 
@@ -2265,7 +2459,7 @@ async function buildPhotoSnapshot(now) {
     selection.entry.lastShownAt = new Date().toISOString();
     selection.entry.shownCount = (selection.entry.shownCount || 0) + 1;
     // Persist the full image index (not just the selectable subset) to preserve pending/rejected entries
-    await writeJson(IMAGE_INDEX_FILE, runtime.fullImageIndex || runtime.imageIndex || []).catch((error) => {
+    await writeJson(imgIdxFile, R.fullImageIndex || R.imageIndex || []).catch((error) => {
       console.log(`image index write failed: ${error.message}`);
     });
   }
@@ -2280,7 +2474,7 @@ async function buildPhotoSnapshot(now) {
     slotKey: snapshot.slotKey,
     nextSwitchAt: snapshot.nextSwitchAt.toISOString(),
     nextSwitchLocal: formatLocalTimeLabel(snapshot.nextSwitchAt),
-    timezone: TIMEZONE,
+    timezone: (R && R.TIMEZONE) || TIMEZONE,
     frameId,
     title: selection.theme || 'PHOTO',
     imageStatus: hasImage ? 'ready' : 'empty',
@@ -2297,7 +2491,8 @@ async function buildPhotoSnapshot(now) {
 // Bypasses schedule selection; uses the asset's localPath as the image source.
 // Returns { snapshot, frame, photo } mirroring getContentForNow so createSnapshot
 // receives a proper payload object and EPF1 Buffer.
-async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
+async function buildPhotoSnapshotFromAsset(asset, now, prefix, ctx) {
+  var R = ctx || runtime;
   var snap = selectPhotoSnapshot(now);
   var assetTheme = (asset.metadata && asset.metadata.theme) || asset.libraryType || 'PHOTO';
   var frameId = (prefix || 'photo:asset') + ':' + asset.assetId + ':' + Date.now().toString(36);
@@ -2307,7 +2502,7 @@ async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
     slotKey: snap.slotKey,
     nextSwitchAt: snap.nextSwitchAt.toISOString(),
     nextSwitchLocal: formatLocalTimeLabel(snap.nextSwitchAt),
-    timezone: TIMEZONE,
+    timezone: (R && R.TIMEZONE) || TIMEZONE,
     frameId: frameId,
     title: assetTheme,
     imageStatus: 'ready',
@@ -2322,9 +2517,9 @@ async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
   if (photo.imagePath && fs.existsSync(photo.imagePath)) {
     selection.entry = { processedPngPath: photo.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT };
   }
-  var rawFrame = await renderPhotoFrame(selection, now);
+  var rawFrame = await renderPhotoFrame(selection, now, R);
   var frame = buildFrameBuffer(rawFrame);
-  runtime.renderCount++;
+  R.renderCount++;
   return {
     snapshot: {
       panelIndex: options.panel,
@@ -2336,7 +2531,7 @@ async function buildPhotoSnapshotFromAsset(asset, now, prefix) {
       title: assetTheme,
       nextSwitchAt: photo.nextSwitchAt,
       nextSwitchLocal: photo.nextSwitchLocal,
-      timezone: TIMEZONE,
+      timezone: (R && R.TIMEZONE) || TIMEZONE,
       timestamp: now.toISOString(),
       imageStatus: 'ready',
       imageName: photo.imageName,
@@ -2469,21 +2664,21 @@ function renderNewsSvg(news, now) {
   return createSvgHeader(FRAME_WIDTH, FRAME_HEIGHT, boxes.join(''));
 }
 
-async function renderPhotoFrame(selection, now) {
+async function renderPhotoFrame(selection, now, ctx) {
   if (!selection.entry || !selection.entry.processedPngPath || !fs.existsSync(selection.entry.processedPngPath)) {
     return renderPlaceholderFrame('NO IMAGE', now);
   }
 
   const { data, info } = await (PHOTO_QUANT_MODE === 'clean'
     ? sharp(selection.entry.processedPngPath)
-        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill', kernel: 'lanczos3' })
+        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'contain', kernel: 'lanczos3' })
         .flatten({ background: '#ffffff' })
         .modulate({ brightness: 1.03, saturation: 1.15 })
         .blur(0.5)
         .raw()
         .toBuffer({ resolveWithObject: true })
     : sharp(selection.entry.processedPngPath)
-        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
+        .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'contain' })
         .flatten({ background: '#ffffff' })
         .raw()
         .toBuffer({ resolveWithObject: true }));
@@ -2509,7 +2704,7 @@ function renderPlaceholderFrame(label, now) {
     .then(({ data, info }) => imageToFrameBuffer(data, info.width, info.height, info.channels));
 }
 
-async function renderNewsFrame(news, now) {
+async function renderNewsFrame(news, now, ctx) {
   const svg = renderNewsSvg(news, now);
   const { data, info } = await sharp(svg)
     .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
@@ -2531,8 +2726,9 @@ function hexPreview(buf, bytes) {
   return epaperEpf1.hexPreview(buf, bytes || 32);
 }
 
-function computeSnapshot(now) {
-  const photoOrNews = selectPhotoSnapshot(now, runtime.imageIndex || []);
+function computeSnapshot(now, ctx) {
+  var R = ctx || runtime;
+  const photoOrNews = selectPhotoSnapshot(now, R.imageIndex || []);
   return {
     panelIndex: options.panel,
     panelName: PANEL_SIZES[options.panel].name,
@@ -2543,58 +2739,60 @@ function computeSnapshot(now) {
     title: photoOrNews.mode === 'photo' ? 'PHOTO' : 'NEWS',
     nextSwitchAt: photoOrNews.nextSwitchAt.toISOString(),
     nextSwitchLocal: formatLocalTimeLabel(photoOrNews.nextSwitchAt),
-    timezone: TIMEZONE,
+    timezone: (R && R.TIMEZONE) || TIMEZONE,
     timestamp: now.toISOString(),
     frameUrl: `/api/frame.bin?panel=${options.panel}`,
-    currentKind: photoOrNews.mode === 'photo' ? (runtime.libraryState.currentKind || 'shot') : null,
+    currentKind: photoOrNews.mode === 'photo' ? (R.libraryState.currentKind || 'shot') : null,
   };
 }
 
 // R3.5: Ensure active snapshot matches current schedule; publish if needed
 // R3.7: ONE_SHOT_OVERRIDE — keep pinned snapshot until boundary expiry
-async function ensureActiveSnapshotForSchedule(now) {
-  if (!runtime.publicationService) return null;
+async function ensureActiveSnapshotForSchedule(now, ctx) {
+  var R = ctx || runtime;
+  if (!R.publicationService) return null;
   // R3.7: If operating mode is ONE_SHOT, check expiry first
-  if (runtime.operatingModeService) {
-    var osMode = runtime.operatingModeService.getMode();
+  if (R.operatingModeService) {
+    var osMode = R.operatingModeService.getMode();
     if (osMode === 'ONE_SHOT_OVERRIDE') {
-      if (runtime.operatingModeService.checkExpiry(now)) {
+      if (R.operatingModeService.checkExpiry(now)) {
         // BOUNDARY_EXPIRY: exit ONE_SHOT, clear persisted override, fall through to schedule publish
-        runtime.operatingModeService.exitOneShot();
-        if (runtime.overridePersistence) {
-          try { runtime.overridePersistence.clearOverride(); } catch(e) {}
+        R.operatingModeService.exitOneShot();
+        if (R.overridePersistence) {
+          try { R.overridePersistence.clearOverride(); } catch(e) {}
         }
         r1Logger.info('ONE_SHOT expired at boundary, restoring AUTO schedule');
       } else {
         // ONE_SHOT still active — keep current snapshot, no republish
-        return await runtime.publicationService.getActive();
+        return await R.publicationService.getActive();
       }
-    } else if (osMode === 'FOCUS_LOCK') {
-      // FOCUS_LOCK persists until explicit DELETE — keep current snapshot
-      return await runtime.publicationService.getActive();
+    } else if (osMode === 'FOCUS_LOCK' || osMode === 'LEGACY_ADMIN_OVERRIDE') {
+      // FOCUS_LOCK / LEGACY_ADMIN_OVERRIDE persists until explicit DELETE — keep current snapshot
+      return await R.publicationService.getActive();
     }
   }
-  var active = await runtime.publicationService.getActive();
-  var schedule = selectPhotoSnapshot(now, runtime.imageIndex || []);
+  var active = await R.publicationService.getActive();
+  var schedule = selectPhotoSnapshot(now, R.imageIndex || []);
   var scheduleKey = schedule.mode + ':' + (schedule.slotKey || '');
   if (active && active.frameId.indexOf(scheduleKey) === 0) return active;
-  var content = await getContentForNow(now);
+  var content = await getContentForNow(now, R);
     var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'schedule' });
-    await runtime.publicationService.publish(snap);
+    await R.publicationService.publish(snap);
     return snap;
 }
 
-async function getContentForNow(now) {
-  const snapshot = selectPhotoSnapshot(now, runtime.imageIndex || []);
+async function getContentForNow(now, ctx) {
+  var R = ctx || runtime;
+  const snapshot = selectPhotoSnapshot(now, R.imageIndex || []);
   if (snapshot.mode === 'news') {
-    const news = await buildNewsSnapshot(now);
+    const news = await buildNewsSnapshot(now, R);
     const frameId = `${snapshot.mode}:${snapshot.slotKey}:${news.frameId}`;
     const cacheKey = frameId;
-    if (!runtime.cachedFrames.has(cacheKey)) {
-      const frame = buildFrameBuffer(await renderNewsFrame({ ...news, nextSwitchAt: snapshot.nextSwitchAt }, now));
-      runtime.cachedFrames.set(cacheKey, { frame, payload: news, snapshot: { ...snapshot, frameId, title: news.title } });
+    if (!R.cachedFrames.has(cacheKey)) {
+      const frame = buildFrameBuffer(await renderNewsFrame({ ...news, nextSwitchAt: snapshot.nextSwitchAt }, now, R));
+      R.cachedFrames.set(cacheKey, { frame, payload: news, snapshot: { ...snapshot, frameId, title: news.title } });
     }
-    const cached = runtime.cachedFrames.get(cacheKey);
+    const cached = R.cachedFrames.get(cacheKey);
     return {
       snapshot: {
         panelIndex: options.panel,
@@ -2606,7 +2804,7 @@ async function getContentForNow(now) {
         title: news.title,
         nextSwitchAt: snapshot.nextSwitchAt.toISOString(),
         nextSwitchLocal: formatLocalTimeLabel(snapshot.nextSwitchAt),
-        timezone: TIMEZONE,
+        timezone: (R && R.TIMEZONE) || TIMEZONE,
         timestamp: now.toISOString(),
         items: news.items,
         translationProvider: news.translationProvider,
@@ -2617,17 +2815,17 @@ async function getContentForNow(now) {
     };
   }
 
-  const photo = await buildPhotoSnapshot(now);
+  const photo = await buildPhotoSnapshot(now, R);
   const cacheKey = photo.frameId;
-  if (!runtime.cachedFrames.has(cacheKey)) {
+  if (!R.cachedFrames.has(cacheKey)) {
     const selection = { entry: null, theme: photo.title || null, kind: photo.kind || 'shot' };
     if (photo.imagePath && fs.existsSync(photo.imagePath)) {
       selection.entry = { processedPngPath: photo.imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT };
     }
-    const rawFrame = await renderPhotoFrame(selection, now);
+    const rawFrame = await renderPhotoFrame(selection, now, R);
     const frame = buildFrameBuffer(rawFrame);
-    runtime.renderCount++;
-    runtime.cachedFrames.set(cacheKey, { frame, payload: photo, snapshot: photo });
+    R.renderCount++;
+    R.cachedFrames.set(cacheKey, { frame, payload: photo, snapshot: photo });
   }
   return {
     snapshot: {
@@ -2640,7 +2838,7 @@ async function getContentForNow(now) {
       title: photo.title,
       nextSwitchAt: photo.nextSwitchAt,
       nextSwitchLocal: photo.nextSwitchLocal,
-      timezone: photo.timezone,
+      timezone: (R && R.TIMEZONE) || TIMEZONE,
       timestamp: now.toISOString(),
       imageStatus: photo.imageStatus,
       imageName: photo.imageName,
@@ -2649,7 +2847,7 @@ async function getContentForNow(now) {
       theme: photo.theme,
       kind: photo.kind,
     },
-    frame: runtime.cachedFrames.get(cacheKey).frame,
+    frame: R.cachedFrames.get(cacheKey).frame,
     photo,
   };
 }
@@ -2712,55 +2910,72 @@ function failJson(res, code, msg) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(b);
 }
-function adminNetworkCheck(req) {
-  if (ADMIN_ACCESS_MODE !== 'lan') return true;
-  if (!ADM_PARSED_CIDRS.valid) return false;
-  var ip = adminPolicy.getRemoteIP(req, TRUST_PROXY, ADM_TRUSTED_PROXY_CIDRS);
+function readAdminConfig(ctx) {
+  var R = ctx || runtime;
+  return {
+    accessMode: (R && R.adminAccessMode) || ADMIN_ACCESS_MODE,
+    token: (R && R.adminToken) || ADMIN_TOKEN,
+    allowedCidrs: (R && R.adminAllowedCidrs) || ADM_PARSED_CIDRS,
+    trustProxy: (R && R.adminTrustProxy) != null ? R.adminTrustProxy : TRUST_PROXY,
+    trustedProxyCidrs: (R && R.adminTrustedProxyCidrs) || ADM_TRUSTED_PROXY_CIDRS,
+    allowHeaderlessWrite: (R && R.adminAllowHeaderlessWrite) != null ? R.adminAllowHeaderlessWrite : ADMIN_ALLOW_HEADERLESS_WRITE,
+  };
+}
+
+function adminNetworkCheck(req, ctx) {
+  var cfg = readAdminConfig(ctx);
+  if (cfg.accessMode !== 'lan') return true;
+  if (!cfg.allowedCidrs.valid) return false;
+  var ip = adminPolicy.getRemoteIP(req, cfg.trustProxy, cfg.trustedProxyCidrs);
   if (!ip) return false;
-  return adminPolicy.isAddressAllowed(ip, ADM_PARSED_CIDRS.parsed);
+  return adminPolicy.isAddressAllowed(ip, cfg.allowedCidrs.parsed);
 }
 
-function adminCSRFCheck(req) {
-  if (ADMIN_ACCESS_MODE !== 'lan') return { allowed: true };
-  return adminCSRF.checkCSRF(req, ADMIN_ALLOW_HEADERLESS_WRITE);
+function adminCSRFCheck(req, ctx) {
+  var cfg = readAdminConfig(ctx);
+  if (cfg.accessMode !== 'lan') return { allowed: true };
+  return adminCSRF.checkCSRF(req, cfg.allowHeaderlessWrite);
 }
 
-function adminAuth(req) {
-  if (ADMIN_ACCESS_MODE === 'lan') {
-    if (!adminNetworkCheck(req)) return false;
+function adminAuth(req, ctx) {
+  var cfg = readAdminConfig(ctx);
+  if (cfg.accessMode === 'lan') {
+    if (!adminNetworkCheck(req, ctx)) return false;
     return true;
   }
-  if (!ADMIN_TOKEN) return false;
+  if (!cfg.token) return false;
   var auth = req.headers['authorization'] || '';
-  return auth === 'Bearer ' + ADMIN_TOKEN;
+  return auth === 'Bearer ' + cfg.token;
 }
-function serveAdminFile(name) {
+function serveAdminFile(name, ctx) {
+  var cfg = readAdminConfig(ctx);
   var fp = path.join(ROOT_DIR, 'public', 'admin', name);
   if (!fs.existsSync(fp)) return null;
   var c = fs.readFileSync(fp);
-  if (name === 'index.html' && ADMIN_ACCESS_MODE === 'lan') {
+  if (name === 'index.html' && cfg.accessMode === 'lan') {
     c = c.toString().replace(/<div id=["']?login-overlay["']?[\s\S]*?<\/form>\s*<\/div>\s*<\/div>/, '');
   }
   return Buffer.from(c);
 }
 
-async function handleRequest(req, res) {
+async function handleRequest(req, res, ctx) {
+  var R = ctx || runtime;
   const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const panelIndex = PANEL_SIZES[Number(parsed.searchParams.get('panel'))]
     ? Number(parsed.searchParams.get('panel'))
     : options.panel;
-  const now = runtime.nowProvider ? runtime.nowProvider() : new Date();
+  const now = R.nowProvider ? R.nowProvider() : new Date();
 
   try {
     if (parsed.pathname === '/') {
-      const state = computeSnapshot(now);
+      const state = computeSnapshot(now, R);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(renderIndexHtml(state));
       return;
     }
 
     if (parsed.pathname === '/api/news.json') {
-      const news = await buildNewsSnapshot(now);
+      const news = await buildNewsSnapshot(now, R);
       const body = Buffer.from(JSON.stringify({
         updatedAt: new Date().toISOString(),
         translationProvider: news.translationProvider,
@@ -2776,12 +2991,12 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/state.json') {
       const client = clientKey(req);
-      if (!runtime.publicationService) { failJson(res, 503, 'SNAPSHOT_SERVICE_UNAVAILABLE'); return; }
-      var activeSnap = await ensureActiveSnapshotForSchedule(now);
-      runtime.pinStore.pin(client, activeSnap.snapshotId);
+      if (!R.publicationService) { failJson(res, 503, 'SNAPSHOT_SERVICE_UNAVAILABLE'); return; }
+      var activeSnap = await ensureActiveSnapshotForSchedule(now, R);
+      R.pinStore.pin(client, activeSnap.snapshotId);
       const body = Buffer.from(JSON.stringify({
         ...activeSnap.payload, snapshotId: activeSnap.snapshotId, panelIndex,
-        operatingMode: runtime.operatingModeService ? runtime.operatingModeService.getMode() : 'AUTO',
+        operatingMode: R.operatingModeService ? R.operatingModeService.getMode() : 'AUTO',
         frameUrl: `${req.headers.host ? `http://${req.headers.host}` : ''}/api/frame.bin?panel=${panelIndex}`,
         frameSha256: activeSnap.frameSha256,
         frameLength: activeSnap.frameLength,
@@ -2793,22 +3008,31 @@ async function handleRequest(req, res) {
 
     if (parsed.pathname === '/api/frame.bin') {
       const client = clientKey(req);
-      if (!runtime.publicationService) { res.writeHead(503, { 'Content-Type': 'text/plain' }); res.end('SNAPSHOT_SERVICE_UNAVAILABLE'); return; }
-      var pinnedId = runtime.pinStore.get(client);
+      if (!R.publicationService) { res.writeHead(503, { 'Content-Type': 'text/plain' }); res.end('SNAPSHOT_SERVICE_UNAVAILABLE'); return; }
+      // When an override is active (LEGACY, ONE_SHOT, FOCUS_LOCK), bypass pinned cache
+      // and always serve the override snapshot so state.json and frame.bin agree.
+      var osMode2 = R.operatingModeService ? R.operatingModeService.getMode() : 'AUTO';
+      var overrideActive = osMode2 === 'LEGACY_ADMIN_OVERRIDE' || osMode2 === 'ONE_SHOT_OVERRIDE' || osMode2 === 'FOCUS_LOCK';
       var frameSnap = null;
-      if (pinnedId) { frameSnap = runtime.snapshotCache.get(pinnedId); if (!frameSnap) frameSnap = await runtime.publicationService.loadSnapshot(pinnedId); }
+      if (!overrideActive) {
+        var pinnedId = R.pinStore.get(client);
+        if (pinnedId) { frameSnap = R.snapshotCache.get(pinnedId); if (!frameSnap) frameSnap = await R.publicationService.loadSnapshot(pinnedId); }
+      }
       if (frameSnap) {
+        var fSha = crypto.createHash('sha256').update(frameSnap.frame).digest('hex');
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': frameSnap.frame.length,
           'X-Frame-Id': frameSnap.frameId, 'X-Frame-Hex-Preview': hexPreview(frameSnap.frame), 'X-Pinned': '1',
-          'X-Frame-Mode': frameSnap.mode, 'X-Frame-Slot': frameSnap.payload.slotKey || frameSnap.frameId });
+          'X-Frame-Mode': frameSnap.mode, 'X-Frame-Slot': frameSnap.payload.slotKey || frameSnap.frameId,
+          'X-Frame-Sha256': fSha });
         res.end(frameSnap.frame); return;
       }
-      var activeSnap = await runtime.publicationService.getActive();
-      if (!activeSnap) activeSnap = await ensureActiveSnapshotForSchedule(now);
+      var activeSnap = await ensureActiveSnapshotForSchedule(now, R);
       if (activeSnap) {
+        var aSha = crypto.createHash('sha256').update(activeSnap.frame).digest('hex');
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': activeSnap.frame.length,
           'X-Frame-Id': activeSnap.frameId, 'X-Frame-Hex-Preview': hexPreview(activeSnap.frame),
-          'X-Frame-Mode': activeSnap.mode, 'X-Frame-Slot': activeSnap.payload.slotKey || activeSnap.frameId });
+          'X-Frame-Mode': activeSnap.mode, 'X-Frame-Slot': activeSnap.payload.slotKey || activeSnap.frameId,
+          'X-Frame-Sha256': aSha });
         res.end(activeSnap.frame); return;
       }
       res.writeHead(503, { 'Content-Type': 'text/plain' }); res.end('SNAPSHOT_SERVICE_UNAVAILABLE');
@@ -2816,7 +3040,7 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/debug/news.svg') {
-      const news = await buildNewsSnapshot(now);
+      const news = await buildNewsSnapshot(now, R);
       const svg = renderNewsSvg({ ...news, nextSwitchAt: computeNextSwitchAt(now) }, now);
       res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Content-Length': svg.length });
       res.end(svg);
@@ -2824,7 +3048,7 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/debug/news.png') {
-      const news = await buildNewsSnapshot(now);
+      const news = await buildNewsSnapshot(now, R);
       const svg = renderNewsSvg({ ...news, nextSwitchAt: computeNextSwitchAt(now) }, now);
       const png = await sharp(svg)
         .resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' })
@@ -2836,11 +3060,11 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/library.json') {
-      await reloadImageIndexIfNeeded();
-      const index = runtime.imageIndex || [];
+      await reloadImageIndexIfNeeded(R);
+      const index = R.imageIndex || [];
       const ready = index.filter(isImageReady);
       const snapshot = selectPhotoSnapshot(now, index);
-      const state = runtime.libraryState;
+      const state = R.libraryState;
 
       // Build theme detail map
       const themeMap = new Map();
@@ -2894,8 +3118,8 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/debug/photo-info.json') {
-      await reloadImageIndexIfNeeded();
-      const photo = await buildPhotoSnapshot(now);
+      await reloadImageIndexIfNeeded(R);
+      const photo = await buildPhotoSnapshot(now, R);
       const body = Buffer.from(JSON.stringify({
         mode: photo.mode,
         frameId: photo.frameId,
@@ -2909,7 +3133,7 @@ async function handleRequest(req, res) {
         nextSwitchAt: photo.nextSwitchAt,
         nextSwitchLocal: photo.nextSwitchLocal,
         timezone: photo.timezone,
-        totalImages: (runtime.imageIndex || []).length,
+        totalImages: (R.imageIndex || []).length,
       }, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
       res.end(body);
@@ -2917,8 +3141,8 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/debug/photo.png') {
-      await reloadImageIndexIfNeeded();
-      const photo = await buildPhotoSnapshot(now);
+      await reloadImageIndexIfNeeded(R);
+      const photo = await buildPhotoSnapshot(now, R);
       let png;
       let contentType = 'image/png';
       if (photo.imagePath && fs.existsSync(photo.imagePath)) {
@@ -2945,9 +3169,9 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/review.json') {
-      const content = await getContentForNow(now);
+      const content = await getContentForNow(now, R);
       const s = content.snapshot;
-      const review = { timestamp: now.toISOString(), timezone: TIMEZONE, mode: s.mode, frameId: s.frameId, panelIndex, totalImages: (runtime.imageIndex || []).length, imageStatus: s.imageStatus || null, imageTheme: s.imageTheme || null, title: s.title || null, nextSwitchAt: s.nextSwitchAt, nextSwitchLocal: s.nextSwitchLocal, width: FRAME_WIDTH, height: FRAME_HEIGHT, frameSize: content.frame.length };
+      const review = { timestamp: now.toISOString(), timezone: (R && R.TIMEZONE) || TIMEZONE, mode: s.mode, frameId: s.frameId, panelIndex, totalImages: (R.imageIndex || []).length, imageStatus: s.imageStatus || null, imageTheme: s.imageTheme || null, title: s.title || null, nextSwitchAt: s.nextSwitchAt, nextSwitchLocal: s.nextSwitchLocal, width: FRAME_WIDTH, height: FRAME_HEIGHT, frameSize: content.frame.length };
       const body = Buffer.from(JSON.stringify(review, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
       res.end(body);
@@ -2955,7 +3179,7 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/debug/news-review-6.png' || parsed.pathname === '/debug/news.png') {
-      const news = await buildNewsSnapshot(now);
+      const news = await buildNewsSnapshot(now, R);
       const svg = renderNewsSvg({ ...news, nextSwitchAt: computeNextSwitchAt(now) }, now);
       const png = await sharp(svg).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).png().toBuffer();
       res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
@@ -2964,7 +3188,7 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/debug/photo-review.png' || parsed.pathname === '/debug/photo.png') {
-      const photo = await buildPhotoSnapshot(now);
+      const photo = await buildPhotoSnapshot(now, R);
       let png;
       if (photo.imagePath && fs.existsSync(photo.imagePath)) {
         png = await sharp(photo.imagePath).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).png().toBuffer();
@@ -2978,14 +3202,14 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/debug/photo-before-after.png') {
-      const photo = await buildPhotoSnapshot(now);
+      const photo = await buildPhotoSnapshot(now, R);
       let png;
       if (photo.imagePath && fs.existsSync(photo.imagePath)) {
         const rawData = await sharp(photo.imagePath).resize(FRAME_WIDTH, FRAME_HEIGHT, { fit: 'fill' }).raw().toBuffer();
         const afterRaw = Buffer.alloc(FRAME_WIDTH * FRAME_HEIGHT * 4);
         for (let i = 0; i < FRAME_WIDTH * FRAME_HEIGHT; i++) {
           const bi = Math.floor(i / 2);
-          const fb = runtime.cachedFrames.get(photo.frameId); const fbuf = fb ? fb.frame.slice(10) : Buffer.alloc(192000, 0x11); const byteVal = i % 2 === 0 ? (fbuf[bi] >> 4) & 0x0F : fbuf[bi] & 0x0F;
+          const fb = R.cachedFrames.get(photo.frameId); const fbuf = fb ? fb.frame.slice(10) : Buffer.alloc(192000, 0x11); const byteVal = i % 2 === 0 ? (fbuf[bi] >> 4) & 0x0F : fbuf[bi] & 0x0F;
           const c = PALETTE.find(p => p.code === byteVal) || PALETTE[0];
           const o = i * 4;
           afterRaw[o] = c.rgb[0]; afterRaw[o+1] = c.rgb[1]; afterRaw[o+2] = c.rgb[2]; afterRaw[o+3] = 255;
@@ -3010,17 +3234,17 @@ async function handleRequest(req, res) {
     }
 
         if (parsed.pathname === '/debug/photo-palette.json') {
-      const photo = await buildPhotoSnapshot(now);
+      const photo = await buildPhotoSnapshot(now, R);
       const cacheKey = photo.frameId;
-      if (!runtime.cachedFrames.has(cacheKey)) {
+      if (!R.cachedFrames.has(cacheKey)) {
         const sel = { entry: null, theme: photo.title || null, kind: photo.kind || 'shot' };
         if (photo.imagePath && fs.existsSync(photo.imagePath)) { sel.entry = { processedPngPath: photo.imagePath, width: 800, height: 480 }; }
-        const rawFrame = await renderPhotoFrame(sel, now);
+        const rawFrame = await renderPhotoFrame(sel, now, R);
         const frame = buildFrameBuffer(rawFrame);
-        runtime.renderCount++;
-        runtime.cachedFrames.set(cacheKey, { frame, payload: photo, snapshot: photo });
+        R.renderCount++;
+        R.cachedFrames.set(cacheKey, { frame, payload: photo, snapshot: photo });
       }
-      const payload = runtime.cachedFrames.get(cacheKey).frame.slice(10);
+      const payload = R.cachedFrames.get(cacheKey).frame.slice(10);
       const counts = {};
       for (let i = 0; i < payload.length; i++) {
         counts[String((payload[i] >> 4) & 0x0F)] = (counts[String((payload[i] >> 4) & 0x0F)] || 0) + 1;
@@ -3037,15 +3261,15 @@ async function handleRequest(req, res) {
 
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/pin-state.json') {
       const client = clientKey(req);
-      var pinnedId = runtime.pinStore ? runtime.pinStore.get(client) : null;
+      var pinnedId = R.pinStore ? R.pinStore.get(client) : null;
       const body = Buffer.from(JSON.stringify({
         timestamp: now.toISOString(),
         client,
         hasPin: pinnedId !== null,
         snapshotId: pinnedId || null,
-        pinStoreSize: runtime.pinStore ? runtime.pinStore.size() : 0,
-        renderCount: runtime.renderCount,
-        cachedFrames: runtime.cachedFrames.size,
+        pinStoreSize: R.pinStore ? R.pinStore.size() : 0,
+        renderCount: (typeof R.renderCount === 'number') ? R.renderCount : 0,
+        cachedFrames: R.cachedFrames.size,
       }, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
       res.end(body);
@@ -3053,12 +3277,12 @@ async function handleRequest(req, res) {
     }
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/config') {
       const r = Buffer.from(JSON.stringify({
-        DATA_DIR: DATA_DIR,
-        NEWS_CACHE_FILE: NEWS_CACHE_FILE,
-        LIBRARY_STATE_FILE: LIBRARY_STATE_FILE,
-        NEWS_ROTATION_FILE: NEWS_ROTATION_FILE,
-        IMAGE_INDEX_FILE: IMAGE_INDEX_FILE,
-        FEEDS_FILE: FEEDS_FILE,
+        DATA_DIR: (R && R.DATA_DIR) || DATA_DIR,
+        NEWS_CACHE_FILE: (R && R.NEWS_CACHE_FILE) || NEWS_CACHE_FILE,
+        LIBRARY_STATE_FILE: (R && R.LIBRARY_STATE_FILE) || LIBRARY_STATE_FILE,
+        NEWS_ROTATION_FILE: (R && R.NEWS_ROTATION_FILE) || NEWS_ROTATION_FILE,
+        IMAGE_INDEX_FILE: (R && R.IMAGE_INDEX_FILE) || IMAGE_INDEX_FILE,
+        FEEDS_FILE: (R && R.FEEDS_FILE) || FEEDS_FILE,
         CONFIG_FILE: APP_CONFIG.configFile || path.join(ROOT_DIR, 'config.json'),
       }, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
@@ -3071,10 +3295,10 @@ async function handleRequest(req, res) {
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/debug/clock') {
       const iso = parsed.searchParams.get('iso');
       if (iso) {
-        runtime.nowProvider = () => new Date(iso);
-        runtime.pinNowProvider = () => new Date(iso).getTime();
-        if (runtime.pinStore && typeof runtime.pinStore.setClock === 'function') {
-          runtime.pinStore.setClock({ nowMs: runtime.pinNowProvider });
+        R.nowProvider = () => new Date(iso);
+        R.pinNowProvider = () => new Date(iso).getTime();
+        if (R.pinStore && typeof R.pinStore.setClock === 'function') {
+          R.pinStore.setClock({ nowMs: R.pinNowProvider });
         }
         const r = Buffer.from(JSON.stringify({ set: true, iso }));
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
@@ -3082,17 +3306,17 @@ async function handleRequest(req, res) {
         return;
       }
       if (parsed.searchParams.get('reset') === '1') {
-        runtime.nowProvider = null;
-        runtime.pinNowProvider = null;
-        if (runtime.pinStore && typeof runtime.pinStore.setClock === 'function') {
-          runtime.pinStore.setClock(null);
+        R.nowProvider = null;
+        R.pinNowProvider = null;
+        if (R.pinStore && typeof R.pinStore.setClock === 'function') {
+          R.pinStore.setClock(null);
         }
         const r = Buffer.from(JSON.stringify({ set: false }));
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
         res.end(r);
         return;
       }
-      const r = Buffer.from(JSON.stringify({ nowProviderActive: runtime.nowProvider !== null, serverTime: new Date().toISOString() }));
+      const r = Buffer.from(JSON.stringify({ nowProviderActive: R.nowProvider !== null, serverTime: new Date().toISOString() }));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': r.length });
       res.end(r);
       return;
@@ -3114,8 +3338,8 @@ async function handleRequest(req, res) {
     }
 
     if (ENABLE_DEBUG_ROUTES && parsed.pathname === '/test/frame-ok') {
-      var fb2 = runtime.cachedFrames.get(clientKey(req));
-      var fbAny = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0] : null;
+      var fb2 = R.cachedFrames.get(clientKey(req));
+      var fbAny = R.cachedFrames.size > 0 ? Array.from(R.cachedFrames.values())[0] : null;
       var buf = fbAny ? fbAny.frame : Buffer.alloc(192010, 0x11);
       res.writeHead(200, {
         'Content-Type': 'application/octet-stream',
@@ -3202,9 +3426,9 @@ async function handleRequest(req, res) {
     // ── Admin routes ──
     if (parsed.pathname === '/admin' || parsed.pathname === '/admin/' ||
         parsed.pathname.startsWith('/admin/') || parsed.pathname.startsWith('/api/admin/')) {
-      if (!adminNetworkCheck(req)) { failJson(res, 403, 'ADMIN_NETWORK_DENIED'); return; }
+      if (!adminNetworkCheck(req, R)) { failJson(res, 403, 'ADMIN_NETWORK_DENIED'); return; }
       if (req.method !== 'GET' && req.method !== 'OPTIONS') {
-        var csrfResult = adminCSRFCheck(req);
+        var csrfResult = adminCSRFCheck(req, R);
         if (!csrfResult.allowed) {
           // Malformed Origin/Referer headers surface a specific error so the
           // failure is diagnosable; all other CSRF denials collapse to the
@@ -3218,50 +3442,55 @@ async function handleRequest(req, res) {
       if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     }
     if (parsed.pathname === '/api/admin/access-mode') {
-      respondJson(res, { mode: ADMIN_ACCESS_MODE });
+      var modeCfg = readAdminConfig(R);
+      respondJson(res, { mode: modeCfg.accessMode });
       return;
     }
     if (parsed.pathname === '/admin' || parsed.pathname === '/admin/') {
-      var h = serveAdminFile('index.html');
+      var h = serveAdminFile('index.html', R);
       if (h) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(h); return; }
       res.writeHead(500); res.end('Admin file missing'); return;
     }
     if (parsed.pathname === '/admin/admin.css') {
-      var c = serveAdminFile('admin.css');
+      var c = serveAdminFile('admin.css', R);
       if (c) { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' }); res.end(c); return; }
     }
     if (parsed.pathname === '/admin/admin.js') {
-      var j = serveAdminFile('admin.js');
+      var j = serveAdminFile('admin.js', R);
       if (j) { res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' }); res.end(j); return; }
     }
 
     if (parsed.pathname === '/api/admin/dashboard') {
-      if (ADMIN_ACCESS_MODE !== 'lan' && !ADMIN_TOKEN) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
-      if (ADMIN_ACCESS_MODE !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      var snap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
-      var newsItemCount = 0;
-      try {
-        var lgPath2 = path.join(DATA_DIR, 'last_good_news.json');
-        if (fs.existsSync(lgPath2)) { var lg2 = JSON.parse(fs.readFileSync(lgPath2, 'utf8')); if (lg2 && lg2.items) newsItemCount = lg2.items.length; }
-      } catch(e) {}
-      respondJson(res, { status: 'ok', timezone: TIMEZONE, currentMode: snap ? snap.mode : null, currentSlot: snap ? snap.slotKey : null, frameId: snap ? snap.frameId : null, nextSwitchLocal: snap ? snap.nextSwitchLocal : null, frameCacheEntries: runtime.cachedFrames.size, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000), frameRenderCount: runtime.renderCount, newsItemCount: newsItemCount, manualOverride: runtime.manualOverride || null, overrideExpiresAt: runtime.overrideExpiresAt || null, lastPublishedAt: runtime.lastPublishedAt || null });
+      var dashCfg = readAdminConfig(R);
+      if (dashCfg.accessMode !== 'lan' && !dashCfg.token) { failJson(res, 401, 'ADMIN_TOKEN not configured'); return; }
+      if (dashCfg.accessMode !== 'lan' && !req.headers['authorization']) { failJson(res, 401, 'authorization header missing'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (typeof R.adminStateService?.getAdminState === 'function') {
+        try {
+          const st = await R.adminStateService.getAdminState();
+          respondJson(res, { ...st, deprecated: true, deprecationNotice: 'Use GET /api/admin/state instead' });
+        } catch(e) {
+          respondJson(res, { status: 'error', error: e.message, deprecated: true });
+        }
+      } else {
+        failJson(res, 503, 'AdminStateService not available');
+      }
       return;
     }
 
     if (parsed.pathname === '/api/admin/news') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       var sel = [];
       try {
         var nw = now;
         var kn = 'news:' + nw.getFullYear() + '-' + String(nw.getMonth()+1).padStart(2,'0') + '-' + String(nw.getDate()).padStart(2,'0') + ':' + Math.floor(nw.getTime() / 900000);
-        var ch = runtime.cachedSnapshots.get(kn);
+        var ch = R.cachedSnapshots.get(kn);
         if (ch && ch.items) sel = ch.items.map(function(it) { return { source: it.source, category: it.category, title: it.zhTitle, summary: it.zhSummary, url: it.sourceUrl, titleLen: (it.zhTitle||'').length, summaryLen: (it.zhSummary||'').length, publishedAt: it.publishedAt, translationStatus: it.translationStatus }; });
       } catch(e) {}
       // Fallback: read from last_good_news.json if in-memory cache is empty
       if (sel.length === 0) {
         try {
-          var lgPath = path.join(DATA_DIR, 'last_good_news.json');
+          var lgPath = (R && R.LAST_GOOD_NEWS_FILE) || path.join(R.DATA_DIR || DATA_DIR, 'last_good_news.json');
           if (fs.existsSync(lgPath)) {
             var lg = JSON.parse(fs.readFileSync(lgPath, 'utf8'));
             if (lg && lg.items) sel = lg.items.map(function(it) { return { source: it.source, category: it.category, title: it.zhTitle || it.originalTitle, summary: it.zhSummary || it.originalSummary, url: it.sourceUrl, titleLen: (it.zhTitle||it.originalTitle||'').length, summaryLen: (it.zhSummary||it.originalSummary||'').length, publishedAt: it.publishedAt, translationStatus: it.translationStatus }; });
@@ -3273,91 +3502,268 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/admin/news/draft' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       try {
         var db = JSON.parse(await readBody(req));
         var di = db.items || db.selected || [];
         if (di.length !== 6) { failJson(res, 400, 'need exactly 6 items, got ' + di.length); return; }
+        var nts = R.newsTitleService;
+        if (!nts) { failJson(res, 503, 'NewsTitleService not available'); return; }
         var su = {}, st = {};
+        var processed = [];
         for (var dk = 0; dk < di.length; dk++) {
           var d = di[dk];
           if (!d.title || !d.title.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': title empty'); return; }
-          if (d.title.length > 24) { failJson(res, 400, 'item ' + (dk+1) + ': title too long (' + d.title.length + ')'); return; }
           if (!d.summary || !d.summary.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': summary empty'); return; }
           if (!d.url || !d.url.trim()) { failJson(res, 400, 'item ' + (dk+1) + ': URL empty'); return; }
           var un = d.url.toLowerCase().replace(/[?#].*$/, '');
           if (su[un]) { failJson(res, 400, 'duplicate URL: ' + d.url); return; }
           su[un] = true;
-          var tn = d.title.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
-          if (st[tn]) { failJson(res, 400, 'duplicate title: ' + d.title); return; }
-          st[tn] = true;
+          var tResult = await nts.normalizeTitle(d.title, d.summary);
+          var tKey = tResult.displayTitle.replace(/[\s]/g, '').toLowerCase().slice(0, 12);
+          if (st[tKey]) { failJson(res, 400, 'duplicate title after normalization: ' + d.title); return; }
+          st[tKey] = true;
+          processed.push({
+            source: d.source || '',
+            category: d.category || '',
+            url: d.url,
+            publishedAt: d.publishedAt || null,
+            rawTitle: d.title,
+            rawSummary: d.summary || '',
+            displayTitle: tResult.displayTitle,
+            displaySummary: tResult.displaySummary || d.summary || '',
+            titleWidthPx: tResult.titleWidthPx || null,
+            titleMaxWidthPx: tResult.titleMaxWidthPx || null,
+            titleStatus: tResult.titleStatus || 'ok',
+            reviewStatus: tResult.titleStatus === 'needs_review' ? 'pending' : 'approved',
+            normalizationVersion: tResult.normalizationVersion || '1.0',
+          });
         }
-        require('fs').writeFileSync(path.join(DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: di }, null, 2));
-        respondJson(res, { status: 'ok', count: di.length });
+        require('fs').writeFileSync(path.join(R.DATA_DIR || DATA_DIR, 'admin_news_draft.json'), JSON.stringify({ items: processed }, null, 2));
+        respondJson(res, { status: 'ok', count: processed.length, items: processed });
       } catch(e) { failJson(res, 500, e.message); }
       return;
     }
 
-    if (parsed.pathname === '/api/admin/publish/news' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      var fid = 'manual-news:' + Date.now().toString(36);
-      var overrideFile = path.join(DATA_DIR, 'admin_override.json');
-      var oldOverride = null;
-      try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
-      var newOverride = JSON.stringify({ mode: 'manual-news', createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
-      fs.writeFileSync(overrideFile, newOverride);
+    if (parsed.pathname === '/api/admin/news/draft/approve-all' && req.method === 'POST') {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      var draftDir = R.DATA_DIR || DATA_DIR;
       try {
-        if (runtime.publicationService && runtime.snapshotStore) {
-          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_news' });
-          await runtime.publicationService.publish(snap);
+        var draftPath = path.join(draftDir, 'admin_news_draft.json');
+        var draft = JSON.parse(fs.readFileSync(draftPath, 'utf8'));
+        if (!draft || !draft.items || draft.items.length === 0) {
+          failJson(res, 400, 'no draft items to approve');
+          return;
+        }
+        draft.items.forEach(function(item) {
+          item.titleStatus = 'fit';
+          item.reviewStatus = 'approved';
+        });
+        draft.updatedAt = new Date().toISOString();
+        fs.writeFileSync(draftPath, JSON.stringify(draft, null, 2));
+        respondJson(res, { status: 'ok', approved: draft.items.length });
+      } catch(e) {
+        failJson(res, 500, 'approve failed: ' + e.message);
+      }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/news/draft/reject-all' && req.method === 'POST') {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      var draftDir = R.DATA_DIR || DATA_DIR;
+      try {
+        var draftPath = path.join(draftDir, 'admin_news_draft.json');
+        var draft = JSON.parse(fs.readFileSync(draftPath, 'utf8'));
+        if (!draft || !draft.items || draft.items.length === 0) {
+          failJson(res, 400, 'no draft items to reject');
+          return;
+        }
+        draft.items.forEach(function(item) {
+          item.titleStatus = 'rejected';
+          item.reviewStatus = 'rejected';
+        });
+        draft.updatedAt = new Date().toISOString();
+        fs.writeFileSync(draftPath, JSON.stringify(draft, null, 2));
+        respondJson(res, { status: 'ok', rejected: draft.items.length });
+      } catch(e) {
+        failJson(res, 500, 'reject failed: ' + e.message);
+      }
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/publish/news' && req.method === 'POST') {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      var draftPath = path.join(R.DATA_DIR || DATA_DIR, 'admin_news_draft.json');
+      try {
+        var draftData = JSON.parse(fs.readFileSync(draftPath, 'utf8'));
+        var draftItems = draftData.items || [];
+        if (!draftItems || draftItems.length !== 6) {
+          failJson(res, 400, 'requires exactly 6 draft items');
+          return;
+        }
+        var failedItems = [];
+        for (var ni = 0; ni < draftItems.length; ni++) {
+          var item = draftItems[ni];
+          var rs = item.reviewStatus;
+          if (rs !== 'approved') {
+            failedItems.push({ index: ni, title: item.displayTitle || item.rawTitle, titleStatus: item.titleStatus, reviewStatus: rs });
+          }
+        }
+        if (failedItems.length > 0) {
+          var b409 = Buffer.from(JSON.stringify({ error: { code: 'NEWS_REVIEW_REQUIRED', blockedItems: failedItems } }));
+          res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': b409.length });
+          res.end(b409);
+          return;
         }
       } catch(e) {
-        r1Logger.warn('admin/news publish failed, restoring override: ' + e.message);
-        if (oldOverride) fs.writeFileSync(overrideFile, oldOverride);
-        else try { fs.unlinkSync(overrideFile); } catch(e2) {}
+        failJson(res, 400, 'cannot read draft: ' + e.message);
+        return;
+      }
+      var manualNewsItems = draftItems.map(function(it, idx) {
+        return {
+          zhTitle: it.displayTitle || it.rawTitle || '',
+          zhSummary: it.displaySummary || it.zhSummary || it.summary || '',
+          sourceUrl: it.url || '',
+          source: it.source || 'Admin',
+          category: it.category || 'general',
+          publishedAt: it.publishedAt || new Date().toISOString(),
+          originalTitle: it.displayTitle || it.rawTitle || '',
+          originalSummary: it.displaySummary || it.zhSummary || it.summary || '',
+          translationStatus: 'manual',
+        };
+      });
+      var manualTitle = draftItems.map(function(it) { return it.displayTitle || it.rawTitle || ''; }).join(' / ');
+      var manualNewsPayload = {
+        mode: 'news',
+        title: manualTitle,
+        items: manualNewsItems,
+        frameId: null,
+        generatedAt: new Date().toISOString(),
+        translationProvider: (R && R.TRANSLATION_PROVIDER) || TRANSLATION_PROVIDER,
+        translationNotice: '',
+        slotKey: 'manual',
+      };
+      if (!R.publicationService || !R.snapshotStore || !R.operatingModeService || !R.overridePersistence) {
+        failJson(res, 503, 'service unavailable'); return;
+      }
+      try {
+        var publishNow = R.nowProvider ? R.nowProvider() : new Date();
+        var manualFrame = buildFrameBuffer(await renderNewsFrame(manualNewsPayload, publishNow, R));
+        var manualFrameId = 'manual-news:' + crypto.createHash('sha256').update(manualFrame).digest('hex').slice(0, 12);
+        manualNewsPayload.frameId = manualFrameId;
+        var manualSnap = R3_snapshotModel.createSnapshot(manualFrameId, manualNewsPayload, manualFrame, 'news', { publishReason: 'manual_news' });
+        await R.publicationService.publish(manualSnap, {
+          stateCallback: function(ctx) {
+            ctx.operatingModeService.setMode('LEGACY_ADMIN_OVERRIDE');
+            ctx.overridePersistence.saveOverride({
+              mode: 'LEGACY_ADMIN_OVERRIDE',
+              snapshotId: ctx.snapshot.snapshotId,
+              savedAt: new Date().toISOString(),
+            });
+          },
+        });
+        var frameSha256 = crypto.createHash('sha256').update(manualFrame).digest('hex');
+        respondJson(res, { frameId: manualFrameId, snapshotId: manualSnap.snapshotId, frameSha256: frameSha256 });
+      } catch(e) {
+        r1Logger.warn('admin/news publish failed: ' + e.message);
         failJson(res, 500, 'publish failed: ' + e.message);
         return;
       }
-      respondJson(res, { frameId: fid });
       return;
     }
 
     if (parsed.pathname === '/api/admin/publish/photo' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       var photoId = '';
       try { var pb = JSON.parse(await readBody(req)); photoId = (pb && pb.photoId) || ''; } catch(e) {}
+      if (!photoId) { failJson(res, 400, 'photoId required'); return; }
       var imgIdx = [];
-      try { imgIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
-      var foundPhoto = imgIdx.some(function(e) { return e.id === photoId; });
-      if (!foundPhoto && photoId) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
-      var fid2 = 'manual-photo:' + Date.now().toString(36);
-      var overrideFile = path.join(DATA_DIR, 'admin_override.json');
-      var oldOverride = null;
-      try { oldOverride = fs.readFileSync(overrideFile, 'utf8'); } catch(e) {}
-      var newOverride = JSON.stringify({ mode: 'manual-photo', createdAt: new Date().toISOString(), expiresAt: null }, null, 2);
-      fs.writeFileSync(overrideFile, newOverride);
-      try {
-        if (runtime.publicationService && runtime.snapshotStore) {
-          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'manual_photo' });
-          await runtime.publicationService.publish(snap);
+      try { imgIdx = JSON.parse(fs.readFileSync(R.IMAGE_INDEX_FILE || path.join(R.DATA_DIR || DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      var foundEntry = null;
+      for (var pi2 = 0; pi2 < imgIdx.length; pi2++) {
+        if (imgIdx[pi2].id === photoId) { foundEntry = imgIdx[pi2]; break; }
+      }
+      if (!foundEntry) { failJson(res, 400, 'unknown photo: ' + photoId); return; }
+      if (foundEntry) {
+        var approval = require('./src/images/image-approval-adapter').resolveStatus(foundEntry);
+        if (approval.safetyStatus !== 'SAFE' || approval.reviewStatus !== 'APPROVED' || approval.lifecycleStatus !== 'SELECTABLE') {
+          var b409 = Buffer.from(JSON.stringify({
+            error: {
+              code: 'PHOTO_REVIEW_REQUIRED',
+              safetyStatus: approval.safetyStatus,
+              reviewStatus: approval.reviewStatus,
+              lifecycleStatus: approval.lifecycleStatus
+            }
+          }));
+          res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': b409.length });
+          res.end(b409);
+          return;
         }
+      }
+      if (!R.publicationService || !R.snapshotStore || !R.operatingModeService || !R.overridePersistence) {
+        failJson(res, 503, 'service unavailable'); return;
+      }
+      try {
+        var publishNow = R.nowProvider ? R.nowProvider() : new Date();
+        if (!foundEntry.processedPngPath) { failJson(res, 400, 'photo file path missing'); return; }
+        try {
+          var imgMeta = require('sharp');
+          var meta = await imgMeta(foundEntry.processedPngPath).metadata();
+          if (meta.width !== 800 || meta.height !== 480) {
+            failJson(res, 400, 'photo dimensions must be 800x480, got ' + meta.width + 'x' + meta.height);
+            return;
+          }
+        } catch (e) {
+          failJson(res, 400, 'cannot read photo file: ' + e.message);
+          return;
+        }
+        var photoSelection = { entry: { processedPngPath: foundEntry.processedPngPath, width: FRAME_WIDTH, height: FRAME_HEIGHT }, theme: foundEntry.theme || 'PHOTO', kind: foundEntry.kind || 'shot' };
+        var rawFrame = await renderPhotoFrame(photoSelection, publishNow, R);
+        var manualFrame = buildFrameBuffer(rawFrame);
+        var manualPhotoFrameId = 'manual-photo:' + crypto.createHash('sha256').update(manualFrame).digest('hex').slice(0, 12);
+        var photoSnapshot = {
+          panelIndex: options.panel,
+          panelName: PANEL_SIZES[options.panel].name,
+          width: FRAME_WIDTH,
+          height: FRAME_HEIGHT,
+          mode: 'photo',
+          frameId: manualPhotoFrameId,
+          title: foundEntry.theme || 'PHOTO',
+          nextSwitchAt: new Date(Date.now() + 3600000).toISOString(),
+          nextSwitchLocal: '',
+          timezone: (R && R.TIMEZONE) || TIMEZONE,
+          timestamp: publishNow.toISOString(),
+          imageStatus: 'ready',
+          imageName: foundEntry.imageName || foundEntry.originalName || '',
+          imageSource: foundEntry.source || '',
+          imageTheme: foundEntry.theme || 'PHOTO',
+          kind: foundEntry.kind || 'shot',
+        };
+        var manualSnap = R3_snapshotModel.createSnapshot(manualPhotoFrameId, photoSnapshot, manualFrame, 'photo', { publishReason: 'manual_photo' });
+        await R.publicationService.publish(manualSnap, {
+          stateCallback: function(ctx) {
+            ctx.operatingModeService.setMode('LEGACY_ADMIN_OVERRIDE');
+            ctx.overridePersistence.saveOverride({
+              mode: 'LEGACY_ADMIN_OVERRIDE',
+              snapshotId: ctx.snapshot.snapshotId,
+              savedAt: new Date().toISOString(),
+            });
+          },
+        });
+        var frameSha256 = crypto.createHash('sha256').update(manualFrame).digest('hex');
+        respondJson(res, { frameId: manualPhotoFrameId, snapshotId: manualSnap.snapshotId, frameSha256: frameSha256 });
       } catch(e) {
-        r1Logger.warn('admin/photo publish failed, restoring override: ' + e.message);
-        if (oldOverride) fs.writeFileSync(overrideFile, oldOverride);
-        else try { fs.unlinkSync(overrideFile); } catch(e2) {}
+        r1Logger.warn('admin/photo publish failed: ' + e.message);
         failJson(res, 500, 'publish failed: ' + e.message);
         return;
       }
-      respondJson(res, { frameId: fid2 });
       return;
     }
 
     // R3.7: ONE_SHOT publication — pin a snapshot until next HH:00/HH:30 boundary
     if (parsed.pathname === '/api/admin/publish/one-shot' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.operatingModeService || !runtime.publicationService) {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.operatingModeService || !R.publicationService || !R.overridePersistence) {
         failJson(res, 503, 'operating mode service unavailable'); return;
       }
       try {
@@ -3368,47 +3774,42 @@ async function handleRequest(req, res) {
         if (contentType !== 'photo' && contentType !== 'news') {
           failJson(res, 400, 'contentType must be "photo" or "news", got: ' + contentType); return;
         }
-        var osNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
+        var osNow = R.nowProvider ? R.nowProvider() : new Date();
         var osExpiresAt = computeNextSwitchAt(osNow);
         var osContent;
         if (contentType === 'news') {
-          osContent = await buildNewsSnapshot(osNow);
+          osContent = await buildNewsSnapshot(osNow, R);
         } else if (assetId) {
           // Explicit asset selection via assetSelectionService
-          if (!runtime.assetSelectionService) {
+          if (!R.assetSelectionService) {
             failJson(res, 400, 'assetSelectionService unavailable — cannot select explicit asset'); return;
           }
           try {
-            var osSelection = await runtime.assetSelectionService.selectForOneShot(libraryType, assetId);
-            osContent = await buildPhotoSnapshotFromAsset(osSelection.asset, osNow, 'one-shot:photo');
+            var osSelection = await R.assetSelectionService.selectForOneShot(libraryType, assetId);
+            osContent = await buildPhotoSnapshotFromAsset(osSelection.asset, osNow, 'one-shot:photo', R);
           } catch(selErr) {
             failJson(res, 400, 'asset selection failed: ' + selErr.message); return;
           }
         } else {
-          osContent = await buildPhotoSnapshot(osNow);
+          osContent = await getContentForNow(osNow, R);
         }
         var osFrameId = 'one-shot:' + contentType + ':' + Date.now().toString(36);
+        osContent.snapshot.frameId = osFrameId;
         var osSnap = R3_snapshotModel.createSnapshot(osFrameId, osContent.snapshot, osContent.frame, contentType, { publishReason: 'one_shot' });
-        await runtime.publicationService.publish(osSnap);
-        runtime.operatingModeService.enterOneShot(osSnap.snapshotId, osExpiresAt);
-        // V3: persist override via overridePersistence (replaces ad-hoc writeFileSync).
-        // On restart, validateOverrideAsync() re-checks the asset; if it has been
-        // deleted / marked unsafe, the override is cleared (no silent swap).
-        if (runtime.overridePersistence) {
-          try {
-            runtime.overridePersistence.saveOverride({
+        await R.publicationService.publish(osSnap, {
+          stateCallback: function(ctx) {
+            ctx.operatingModeService.enterOneShot(ctx.snapshot.snapshotId, osExpiresAt);
+            ctx.overridePersistence.saveOverride({
               mode: 'ONE_SHOT_OVERRIDE',
+              snapshotId: ctx.snapshot.snapshotId,
               assetId: assetId || null,
-              snapshotId: osSnap.snapshotId,
               libraryType: libraryType,
               contentType: contentType,
               savedAt: new Date().toISOString(),
               expiresAt: osExpiresAt.toISOString(),
             });
-          } catch (e) {
-            r1Logger.warn('Failed to persist ONE_SHOT override: ' + e.message);
-          }
-        }
+          },
+        });
         respondJson(res, {
           snapshotId: osSnap.snapshotId,
           frameId: osFrameId,
@@ -3424,8 +3825,8 @@ async function handleRequest(req, res) {
 
     // R3.7: FOCUS_LOCK — pin a snapshot until explicit DELETE
     if (parsed.pathname === '/api/admin/focus-lock' && req.method === 'PUT') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.operatingModeService || !runtime.publicationService) {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.operatingModeService || !R.publicationService || !R.overridePersistence) {
         failJson(res, 503, 'operating mode service unavailable'); return;
       }
       try {
@@ -3433,48 +3834,44 @@ async function handleRequest(req, res) {
         var flLibraryType = String(flBody.libraryType || 'custom').toLowerCase();
         var flTheme = flBody.theme || null;
         var flAlbumId = flBody.albumId || null;
-        var flNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
+        var flNow = R.nowProvider ? R.nowProvider() : new Date();
         var flContent;
         // Use assetSelectionService to find a matching asset (no schedule fallback)
-        if (!runtime.assetSelectionService) {
+        if (!R.assetSelectionService) {
           failJson(res, 503, 'assetSelectionService unavailable'); return;
         }
         try {
-          var flSelection = await runtime.assetSelectionService.selectForFocusLock({
+          var flSelection = await R.assetSelectionService.selectForFocusLock({
             libraryType: flLibraryType,
             theme: flTheme,
             albumId: flAlbumId,
           });
-          flContent = await buildPhotoSnapshotFromAsset(flSelection.asset, flNow, 'focus-lock:photo');
+          flContent = await buildPhotoSnapshotFromAsset(flSelection.asset, flNow, 'focus-lock:photo', R);
         } catch(selErr) {
           // No matching asset → 404 (no schedule fallback)
           failJson(res, 404, 'no matching asset found: ' + selErr.message); return;
         }
         var flFrameId = 'focus-lock:' + Date.now().toString(36);
         var flSnap = R3_snapshotModel.createSnapshot(flFrameId, flContent.snapshot, flContent.frame, 'photo', { publishReason: 'focus_change' });
-        await runtime.publicationService.publish(flSnap);
-        runtime.operatingModeService.enterFocusLock(flSnap.snapshotId, {
-          libraryType: flLibraryType,
-          theme: flTheme,
-          albumId: flAlbumId,
-          resolvedAssetId: flSelection.assetId,
-        });
-        // V3: persist override via overridePersistence for restart restore.
-        if (runtime.overridePersistence) {
-          try {
-            runtime.overridePersistence.saveOverride({
+        await R.publicationService.publish(flSnap, {
+          stateCallback: function(ctx) {
+            ctx.operatingModeService.enterFocusLock(ctx.snapshot.snapshotId, {
+              libraryType: flLibraryType,
+              theme: flTheme,
+              albumId: flAlbumId,
+              resolvedAssetId: flSelection.assetId,
+            });
+            ctx.overridePersistence.saveOverride({
               mode: 'FOCUS_LOCK',
               assetId: flSelection.assetId,
-              snapshotId: flSnap.snapshotId,
+              snapshotId: ctx.snapshot.snapshotId,
               libraryType: flLibraryType,
               theme: flTheme,
               albumId: flAlbumId,
               savedAt: new Date().toISOString(),
             });
-          } catch (e) {
-            r1Logger.warn('Failed to persist FOCUS_LOCK override: ' + e.message);
-          }
-        }
+          },
+        });
         respondJson(res, {
           snapshotId: flSnap.snapshotId,
           frameId: flFrameId,
@@ -3492,22 +3889,22 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/admin/focus-lock' && req.method === 'DELETE') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.operatingModeService || !runtime.publicationService) {
-        failJson(res, 503, 'operating mode service unavailable'); return;
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.operatingModeService || !R.publicationService || !R.snapshotStore || !R.overridePersistence) {
+        failJson(res, 503, 'service unavailable'); return;
       }
       try {
-        runtime.operatingModeService.exitFocusLock();
-        // V3: clear persisted override via overridePersistence (replaces ad-hoc unlinkSync)
-        if (runtime.overridePersistence) {
-          try { runtime.overridePersistence.clearOverride(); } catch(e) {}
-        }
         // Re-publish current schedule-based snapshot
-        if (runtime.snapshotStore) {
-          var flRestoreNow = runtime.nowProvider ? runtime.nowProvider() : new Date();
-          var flRestoreContent = await getContentForNow(flRestoreNow);
+        if (R.snapshotStore) {
+          var flRestoreNow = R.nowProvider ? R.nowProvider() : new Date();
+          var flRestoreContent = await getContentForNow(flRestoreNow, R);
           var flRestoreSnap = R3_snapshotModel.createSnapshot(flRestoreContent.snapshot.frameId, flRestoreContent.snapshot, flRestoreContent.frame, flRestoreContent.snapshot.mode, { publishReason: 'schedule_restore' });
-          await runtime.publicationService.publish(flRestoreSnap);
+          await R.publicationService.publish(flRestoreSnap, {
+            stateCallback: function(ctx) {
+              ctx.operatingModeService.exitFocusLock();
+              ctx.overridePersistence.clearOverride();
+            },
+          });
         }
         respondJson(res, { status: 'ok', operatingMode: 'AUTO' });
       } catch(e) {
@@ -3518,30 +3915,25 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/admin/rollback' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (runtime.publicationService) {
-        try {
-          var rbBody = JSON.parse(await readBody(req));
-          var rbSnapshotId = rbBody && (rbBody.snapshotId || rbBody.publishId);
-          if (!rbSnapshotId) { failJson(res, 400, 'snapshotId required'); return; }
-          await runtime.publicationService.rollback(rbSnapshotId);
-          respondJson(res, { status: 'ok', snapshotId: rbSnapshotId });
-          return;
-        } catch (e) {
-          failJson(res, 400, 'rollback failed: ' + e.message);
-          return;
-        }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.publicationService) { failJson(res, 503, 'publication service unavailable'); return; }
+      try {
+        var rbBody = JSON.parse(await readBody(req));
+        var rbSnapshotId = rbBody && (rbBody.snapshotId || rbBody.publishId);
+        if (!rbSnapshotId) { failJson(res, 400, 'snapshotId required'); return; }
+        await R.publicationService.rollback(rbSnapshotId);
+        respondJson(res, { status: 'ok', snapshotId: rbSnapshotId });
+      } catch (e) {
+        failJson(res, 400, 'rollback failed: ' + e.message);
       }
-      var rbId = Date.now().toString(36);
-      respondJson(res, { status: 'ok', frameId: 'rollback:' + rbId });
       return;
     }
 
     if (parsed.pathname === '/api/admin/publish-history') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (runtime.publicationHistory) {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (R.publicationHistory) {
         try {
-          var r3History = await runtime.publicationHistory.list();
+          var r3History = await R.publicationHistory.list();
           // Only mark the first (most recent) as active
           if (r3History && r3History.length > 0) {
             r3History[0].status = 'active';
@@ -3558,15 +3950,15 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/admin/photos') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       var idx = [];
-      try { idx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      try { idx = JSON.parse(fs.readFileSync(R.IMAGE_INDEX_FILE || path.join(R.DATA_DIR || DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
       respondJson(res, { photos: idx.map(function(e) { return { id: e.id, title: e.title, source: e.source, width: e.width, height: e.height, theme: e.theme, kind: e.kind, poolType: e.poolType || '', safetyStatus: e.safetyStatus || 'pending', createdAt: e.createdAt }; }), uploadAvailable: false, uploadDisabledReason: '安全分类器未就绪，暂不可上传' });
       return;
     }
 
     if (parsed.pathname === '/api/admin/photos/upload' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       // Check if photo upload is supported
       var uploadDisabled = true;
       var uploadReason = '安全分类器未就绪，暂不可上传';
@@ -3580,18 +3972,63 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/admin/photo-preview' || parsed.pathname === '/api/admin/photo-eink-preview') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      failJson(res, 501, '图片预览服务未就绪');
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      var pvPhotoId = '';
+      try { var pvBody = JSON.parse(await readBody(req)); pvPhotoId = (pvBody && pvBody.photoId) || ''; } catch(e) {}
+      if (!pvPhotoId) { failJson(res, 400, 'photoId required'); return; }
+      var pvIdx = [];
+      try { pvIdx = JSON.parse(fs.readFileSync(R.IMAGE_INDEX_FILE || path.join(R.DATA_DIR || DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      var pvEntry = null;
+      for (var pvi = 0; pvi < pvIdx.length; pvi++) {
+        if (pvIdx[pvi].id === pvPhotoId) { pvEntry = pvIdx[pvi]; break; }
+      }
+      if (!pvEntry) { failJson(res, 404, 'photo not found'); return; }
+      var pvImgPath = pvEntry.processedPngPath || pvEntry.rawPath || '';
+      if (!pvImgPath) { failJson(res, 404, 'no image path'); return; }
+      var pvSip = R.safeImagePath;
+      if (!pvSip || !pvSip.isSafe(pvImgPath)) { failJson(res, 403, 'forbidden'); return; }
+      try {
+        var pvFullPath = pvSip.resolve(pvImgPath);
+        var pvRecipe = { fitMode: 'contain', background: '#ffffff' };
+        if (parsed.pathname === '/api/admin/photo-eink-preview') {
+          var pvEinkSvc = new ImageRecipeService();
+          var pvEinkProc = await pvEinkSvc.processImage(pvFullPath, pvRecipe);
+          var pvEinkRst = R.imageRasterizer;
+          var pvEinkFrame = await pvEinkRst.rasterize(pvFullPath, pvRecipe, { width: FRAME_WIDTH, height: FRAME_HEIGHT });
+          var pvEinkDecoded = epaperEpf1.decodeFrame(pvEinkFrame.frameBuffer);
+          var pvEinkPNG = await sharp(pvEinkDecoded.pixels, { raw: { width: pvEinkDecoded.width, height: pvEinkDecoded.height, channels: 3 } }).png().toBuffer();
+          res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Content-Length': pvEinkPNG.length,
+            'X-Source-Hash': pvEinkProc.sourceHash,
+            'X-Recipe-Hash': pvEinkProc.recipeHash,
+            'X-Processed-Image-Hash': pvEinkProc.hash,
+            'X-Frame-Sha256': pvEinkFrame.hash,
+            'X-Frame-Length': String(pvEinkFrame.frameBuffer.length),
+            'X-Renderer-Version': '2.0',
+          });
+          res.end(pvEinkPNG);
+        } else {
+          var pvSvc = new ImageRecipeService();
+          var pvResult2 = await pvSvc.processImage(pvFullPath, pvRecipe);
+          // Convert raw RGB to PNG for browser display
+          var pngBuf = await sharp(pvResult2.buffer, { raw: { width: pvResult2.info.width, height: pvResult2.info.height, channels: pvResult2.info.channels } }).png().toBuffer();
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': pngBuf.length, 'X-Source-Hash': pvResult2.sourceHash, 'X-Recipe-Hash': pvResult2.recipeHash, 'X-Processed-Image-Hash': pvResult2.hash });
+          res.end(pngBuf);
+        }
+      } catch(e) {
+        failJson(res, 500, 'preview failed: ' + e.message);
+      }
       return;
     }
 
     // Serve individual photo thumbnail/image
     var photoMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/thumbnail$/);
     if (photoMatch) {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       var photoId = photoMatch[1];
       var photoIdx = [];
-      try { photoIdx = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
+      try { photoIdx = JSON.parse(fs.readFileSync(R.IMAGE_INDEX_FILE || path.join(R.DATA_DIR || DATA_DIR, 'image_index.json'), 'utf8')); } catch(e) {}
       var photoEntry = null;
       for (var pi = 0; pi < photoIdx.length; pi++) {
         if (photoIdx[pi].id === photoId) { photoEntry = photoIdx[pi]; break; }
@@ -3599,77 +4036,140 @@ async function handleRequest(req, res) {
       if (!photoEntry) { res.writeHead(404); res.end('not found'); return; }
       var imgPath = photoEntry.processedPngPath || photoEntry.rawPath || '';
       if (!imgPath) { res.writeHead(404); res.end('no image path'); return; }
-      // Resolve relative to app root
-      var fullImgPath = path.isAbsolute(imgPath) ? imgPath : path.join(ROOT_DIR, imgPath);
-      if (!fs.existsSync(fullImgPath)) { res.writeHead(404); res.end('file not found: ' + fullImgPath); return; }
+      var sip = R.safeImagePath;
+      if (!sip || !sip.isSafe(imgPath)) { res.writeHead(403); res.end('forbidden'); return; }
       try {
+        var fullImgPath = sip.resolve(imgPath);
         var imgBuf = fs.readFileSync(fullImgPath);
         var ext = path.extname(fullImgPath).toLowerCase();
         var ct = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'public, max-age=3600' });
+        res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'private, no-store' });
         res.end(imgBuf);
       } catch(e) {
-        res.writeHead(500); res.end('read error: ' + e.message);
+        res.writeHead(500); res.end('read error');
       }
       return;
     }
 
 
     if (parsed.pathname === '/api/admin/override' && req.method === 'DELETE') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      // V3: clear persisted override via overridePersistence (replaces ad-hoc unlinkSync)
-      if (runtime.overridePersistence) {
-        try { runtime.overridePersistence.clearOverride(); } catch(e) {}
-      } else {
-        try { fs.unlinkSync(path.join(DATA_DIR, 'admin_override.json')); } catch(e) {}
-      }
-      // Also exit any active operating mode so the schedule can republish
-      if (runtime.operatingModeService) {
-        try { runtime.operatingModeService.exitOneShot(); } catch(e) {}
-        try { runtime.operatingModeService.exitFocusLock(); } catch(e) {}
-      }
-      // R3.6: Re-publish schedule-based content after clearing override
-      if (runtime.publicationService && runtime.snapshotStore) {
-        try {
-          var content = await getContentForNow(runtime.nowProvider ? runtime.nowProvider() : new Date());
-          var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, content.frame, content.snapshot.mode, { publishReason: 'schedule_restore' });
-          await runtime.publicationService.publish(snap);
-        } catch (e) {
-          r1Logger.warn('R3 publish after override clear failed: ' + e.message);
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      // ── Full transaction: clear override and restore AUTO mode ──
+      var savedState = null;
+      try {
+        // 1. Save current manual state
+        var curActive = await R.snapshotStore.readActive();
+        var curMode = R.operatingModeService ? R.operatingModeService.getMode() : 'AUTO';
+        var curOverride = null;
+        if (R.overridePersistence) {
+          try { curOverride = R.overridePersistence.loadOverride(); } catch(e) {}
         }
+        savedState = { activeSnapshotId: curActive ? curActive.activeSnapshotId : null, mode: curMode, override: curOverride };
+
+        // 2. Generate current AUTO content (news/photo schedule)
+        var restoreNow = R.nowProvider ? R.nowProvider() : new Date();
+        var content = await getContentForNow(restoreNow, R);
+
+        // 3. Generate and validate frame (192010 bytes)
+        var frame = content.frame;
+        if (!Buffer.isBuffer(frame) || frame.length !== 192010) {
+          throw new Error('Invalid frame: expected 192010 bytes, got ' + (frame ? frame.length : 'null'));
+        }
+        var { validateFrameBuffer } = require('./src/epaper/frame-validator');
+        var validation = validateFrameBuffer(frame);
+        if (!validation.ok) {
+          throw new Error('Frame validation failed: ' + validation.errors.join('; '));
+        }
+
+        // 4. Create and publish AUTO snapshot (internal transaction with rollback)
+        var snap = R3_snapshotModel.createSnapshot(content.snapshot.frameId, content.snapshot, frame, content.snapshot.mode, { publishReason: 'schedule_restore' });
+        await R.publicationService.publish(snap, {
+          stateCallback: function(ctx) {
+            ctx.operatingModeService.setMode('AUTO');
+            ctx.overridePersistence.clearOverride();
+          },
+        });
+
+        // 5. Read-back via AdminStateService
+        if (R.adminStateService) {
+          var adminState = await R.adminStateService.getAdminState();
+          if (!adminState.consistent) {
+            throw new Error('AdminStateService inconsistency after override clear: ' + JSON.stringify(adminState.inconsistencies));
+          }
+          if (adminState.active.operatingMode !== 'AUTO') {
+            throw new Error('Operating mode read-back failed: expected AUTO, got ' + adminState.active.operatingMode);
+          }
+        }
+
+        // 8. Read-back frame and compare SHA
+        var activePtr = await R.snapshotStore.readActive();
+        if (activePtr && activePtr.frameSha256) {
+          var frameSha = require('crypto').createHash('sha256').update(frame).digest('hex');
+          if (activePtr.frameSha256 !== frameSha) {
+            throw new Error('Frame SHA read-back mismatch: expected ' + frameSha + ', got ' + activePtr.frameSha256);
+          }
+        }
+
+        respondJson(res, { status: 'ok', operatingMode: 'AUTO' });
+      } catch(e) {
+        r1Logger.error('Override clear transaction failed: ' + e.message);
+        // 9. If ANY step fails, restore the saved manual state
+        if (savedState) {
+          try {
+            if (savedState.activeSnapshotId && R.snapshotStore) {
+              await R.snapshotStore.activate(savedState.activeSnapshotId);
+              r1Logger.info('Override clear rollback: restored active snapshot ' + savedState.activeSnapshotId);
+            }
+            if (R.operatingModeService && savedState.mode) {
+              R.operatingModeService.setMode(savedState.mode);
+            }
+            if (R.overridePersistence) {
+              if (savedState.override) {
+                R.overridePersistence.saveOverride(savedState.override);
+              } else {
+                R.overridePersistence.clearOverride();
+              }
+            }
+          } catch(restoreErr) {
+            r1Logger.error('Override clear rollback ALSO failed: ' + restoreErr.message);
+          }
+        }
+        failJson(res, 500, 'override clear failed: ' + e.message);
       }
-      respondJson(res, { status: 'ok' });
       return;
     }
 
     // ── Admin read-only query routes (R10: admin-query-service HTTP exposure) ──
     if (parsed.pathname === '/api/admin/system/status') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
-      try {
-        var sysStatus = await runtime.adminQueryService.getSystemStatus();
-        respondJson(res, sysStatus);
-      } catch(e) { failJson(res, 500, 'system status failed: ' + e.message); }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (typeof R.adminStateService?.getAdminState === 'function') {
+        try {
+          const st = await R.adminStateService.getAdminState();
+          respondJson(res, { ...st, deprecated: true, deprecationNotice: 'Use GET /api/admin/state instead' });
+        } catch(e) { failJson(res, 500, 'system status failed (admin state): ' + e.message); }
+      } else {
+        failJson(res, 503, 'AdminStateService not available');
+      }
       return;
     }
 
     if (parsed.pathname === '/api/admin/publications') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
       try {
-        var pubs = await runtime.adminQueryService.listPublications();
+        var pubs = await R.adminQueryService.listPublications();
         respondJson(res, { publications: pubs || [] });
       } catch(e) { failJson(res, 500, 'publications query failed: ' + e.message); }
       return;
     }
 
     if (parsed.pathname.indexOf('/api/admin/publications/') === 0) {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
       var pubSnapshotId = decodeURIComponent(parsed.pathname.slice('/api/admin/publications/'.length));
       if (!pubSnapshotId) { failJson(res, 400, 'snapshotId required'); return; }
       try {
-        var pubDetail = await runtime.adminQueryService.getPublication(pubSnapshotId);
+        var pubDetail = await R.adminQueryService.getPublication(pubSnapshotId);
         if (!pubDetail) { failJson(res, 404, 'publication not found: ' + pubSnapshotId); return; }
         respondJson(res, pubDetail);
       } catch(e) { failJson(res, 500, 'publication query failed: ' + e.message); }
@@ -3677,27 +4177,27 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/admin/assets') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
       var assetFilter = {};
       if (query.libraryType) assetFilter.libraryType = query.libraryType;
       if (query.safetyStatus) assetFilter.safetyStatus = query.safetyStatus;
       if (query.lifecycleStatus) assetFilter.lifecycleStatus = query.lifecycleStatus;
       if (query.sha256) assetFilter.sha256 = query.sha256;
       try {
-        var assets = await runtime.adminQueryService.listAssets(assetFilter);
+        var assets = await R.adminQueryService.listAssets(assetFilter);
         respondJson(res, { assets: assets || [] });
       } catch(e) { failJson(res, 500, 'assets query failed: ' + e.message); }
       return;
     }
 
     if (parsed.pathname.indexOf('/api/admin/assets/') === 0) {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.adminQueryService) { failJson(res, 503, 'admin query service unavailable'); return; }
       var assetId = decodeURIComponent(parsed.pathname.slice('/api/admin/assets/'.length));
       if (!assetId) { failJson(res, 400, 'assetId required'); return; }
       try {
-        var assetDetail = await runtime.adminQueryService.getAsset(assetId);
+        var assetDetail = await R.adminQueryService.getAsset(assetId);
         if (!assetDetail) { failJson(res, 404, 'asset not found: ' + assetId); return; }
         respondJson(res, assetDetail);
       } catch(e) { failJson(res, 500, 'asset query failed: ' + e.message); }
@@ -3705,8 +4205,8 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/admin/features') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      var featureFlagsSource = runtime.featureFlagView || (runtime.adminQueryService && runtime.adminQueryService.getFeatureFlags ? runtime.adminQueryService : null);
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      var featureFlagsSource = R.featureFlagView || (R.adminQueryService && R.adminQueryService.getFeatureFlags ? R.adminQueryService : null);
       if (!featureFlagsSource || typeof featureFlagsSource.getFeatureFlags !== 'function') { failJson(res, 503, 'feature flag view unavailable'); return; }
       try {
         var flags = featureFlagsSource.getFeatureFlags();
@@ -3717,26 +4217,35 @@ async function handleRequest(req, res) {
 
     // ── Library API (R4) — GET / PATCH / DELETE implemented; POST upload deferred ──
     if (parsed.pathname === '/api/admin/library' && req.method === 'GET') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
-      var libType = String(query.libraryType || '').toUpperCase();
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      var qlt = (parsed.searchParams && parsed.searchParams.get('libraryType')) || '';
+      var libType = String(qlt).toUpperCase();
+      if (!R.assetRepository) { respondJson(res, { libraryType: libType, assets: [] }); return; }
       if (libType !== 'LEARNING' && libType !== 'CUSTOM') {
-        failJson(res, 400, 'libraryType must be "learning" or "custom", got: ' + query.libraryType); return;
+        failJson(res, 400, 'libraryType must be "learning" or "custom", got: ' + qlt); return;
+      }
+      if (libType === 'LEARNING' && R.config && R.config.features && !R.config.features.learningLibraryEnabled) {
+        respondJson(res, { libraryType: 'LEARNING', assets: [] });
+        return;
+      }
+      if (libType === 'CUSTOM' && R.config && R.config.features && !R.config.features.customLibraryEnabled) {
+        respondJson(res, { libraryType: 'CUSTOM', assets: [] });
+        return;
       }
       try {
-        var libAssets = await runtime.assetRepository.list({ libraryType: libType });
+        var libAssets = await R.assetRepository.list({ libraryType: libType });
         respondJson(res, { libraryType: libType, assets: libAssets || [] });
-      } catch(e) { failJson(res, 500, 'library query failed: ' + e.message); }
+      } catch(e) { respondJson(res, { libraryType: libType, assets: [] }); }
       return;
     }
 
     if (parsed.pathname === '/api/admin/library/custom/upload' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       // Feature flag gate: customLibraryEnabled must be true (configured in load-config)
-      if (!runtime.config || !runtime.config.features || !runtime.config.features.customLibraryEnabled) {
+      if (!R.config || !R.config.features || !R.config.features.customLibraryEnabled) {
         failJson(res, 503, 'FEATURE_DISABLED: customLibraryEnabled is false'); return;
       }
-      if (!runtime.customLibraryService) { failJson(res, 503, 'SAFETY_GATE_REQUIRED: custom library service unavailable'); return; }
+      if (!R.customLibraryService) { failJson(res, 503, 'SAFETY_GATE_REQUIRED: custom library service unavailable'); return; }
       // V3 streaming upload: accept application/octet-stream only.
       // Metadata (original name / mime / size) is passed via headers — no JSON
       // body, no base64, no client-provided file paths. The request stream is
@@ -3752,9 +4261,9 @@ async function handleRequest(req, res) {
         mimeType: req.headers['x-mime-type'] || '',
         expectedSize: parseInt(req.headers['content-length'] || '0', 10) || undefined,
       };
-      var streamMaxBytes = (runtime.config.upload && runtime.config.upload.maxUploadBytes) || undefined;
+      var streamMaxBytes = (R.config.upload && R.config.upload.maxUploadBytes) || undefined;
       try {
-        var streamResult = await runtime.customLibraryService.processUploadStream(
+        var streamResult = await R.customLibraryService.processUploadStream(
           req, streamMetadata, { maxBytes: streamMaxBytes }
         );
         if (streamResult.status === 'ACCEPTED') {
@@ -3783,19 +4292,19 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/admin/learning/ingest' && req.method === 'POST') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       // Feature flag gate: learningLibraryEnabled must be true (configured in load-config)
-      if (!runtime.config || !runtime.config.features || !runtime.config.features.learningLibraryEnabled) {
+      if (!R.config || !R.config.features || !R.config.features.learningLibraryEnabled) {
         failJson(res, 503, 'FEATURE_DISABLED: learningLibraryEnabled is false'); return;
       }
       // Classifier readiness gate: fail-closed — do not ingest if classifier not ready
-      if (runtime.safetyClassifierPort && !runtime.safetyClassifierPort.ready) {
+      if (R.safetyClassifierPort && !R.safetyClassifierPort.ready) {
         failJson(res, 503, 'SAFETY_CLASSIFIER_NOT_READY'); return;
       }
       // 触发 learning 摄取(自动 fetch sources → validate → dedup → persist)
-      if (!runtime.learningIngestionService) { failJson(res, 503, 'learning ingestion service unavailable'); return; }
+      if (!R.learningIngestionService) { failJson(res, 503, 'learning ingestion service unavailable'); return; }
       try {
-        var ingestResults = await runtime.learningIngestionService.ingestAll();
+        var ingestResults = await R.learningIngestionService.ingestAll();
         var accepted = 0, rejected = 0, duplicate = 0, errored = 0;
         (ingestResults || []).forEach(function(r) {
           if (!r) return;
@@ -3804,56 +4313,162 @@ async function handleRequest(req, res) {
           else if (r.status === 'DUPLICATE') duplicate++;
           else errored++;
         });
-        runtime.learningLastIngestAt = new Date().toISOString();
+        R.learningLastIngestAt = new Date().toISOString();
         respondJson(res, { status: 'ok', total: (ingestResults || []).length, accepted: accepted, rejected: rejected, duplicate: duplicate, errored: errored, results: ingestResults });
       } catch(e) { failJson(res, 500, 'learning ingest failed: ' + e.message); }
       return;
     }
 
     if (parsed.pathname === '/api/admin/learning/status' && req.method === 'GET') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       // Feature flag gate: learningLibraryEnabled must be true (configured in load-config)
-      if (!runtime.config || !runtime.config.features || !runtime.config.features.learningLibraryEnabled) {
+      if (!R.config || !R.config.features || !R.config.features.learningLibraryEnabled) {
         failJson(res, 503, 'FEATURE_DISABLED: learningLibraryEnabled is false'); return;
       }
       // 返回 learning 摄取服务状态 + scheduler status (if available)
       var learningStatus = {
-        configured: !!runtime.learningIngestionService,
-        lastIngestAt: runtime.learningLastIngestAt || null,
+        configured: !!R.learningIngestionService,
+        lastIngestAt: R.learningLastIngestAt || null,
       };
-      if (runtime.learningScheduler) {
-        learningStatus.scheduler = runtime.learningScheduler.getStatus();
+      if (R.learningScheduler) {
+        learningStatus.scheduler = R.learningScheduler.getStatus();
       }
       respondJson(res, learningStatus);
       return;
     }
 
-    if (parsed.pathname.indexOf('/api/admin/library/') === 0 && req.method === 'PATCH') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
-      if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
-      var metaAssetId = decodeURIComponent(parsed.pathname.slice('/api/admin/library/'.length));
-      if (!metaAssetId) { failJson(res, 400, 'assetId required'); return; }
+    // ── Admin: serve full-resolution image for photo editor ──
+    var libFullMatch = parsed.pathname.match(/^\/api\/admin\/library\/([^/]+)\/full$/);
+    if (libFullMatch && req.method === 'GET') {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      var libFullId = libFullMatch[1];
+      if (!libFullId) { failJson(res, 400, 'id required'); return; }
+      try { libFullId = decodeURIComponent(libFullId); } catch(e) { failJson(res, 400, 'invalid id encoding'); return; }
+      if (libFullId.indexOf('..') >= 0 || libFullId.indexOf('/') >= 0 || libFullId.indexOf('\\') >= 0) {
+        failJson(res, 400, 'invalid id'); return;
+      }
+      if (!R.assetRepository || typeof R.assetRepository.get !== 'function') {
+        failJson(res, 503, 'asset repository unavailable'); return;
+      }
+      var libFullAsset = null;
+      try { libFullAsset = await R.assetRepository.get(libFullId); } catch(e) { failJson(res, 503, 'asset repository error'); return; }
+      if (!libFullAsset) { failJson(res, 404, 'asset not found'); return; }
+      var libFullPath = libFullAsset.processedPngPath || libFullAsset.localPath || libFullAsset.rawPath || '';
+      if (!libFullPath) { failJson(res, 404, 'no image path'); return; }
+      var libFullResolved = resolveAllowedAssetImagePath(R, libFullPath);
+      if (!libFullResolved) { failJson(res, 403, 'forbidden path'); return; }
       try {
-        var metaBody = JSON.parse(await readBody(req) || '{}');
-        // Only metadata is patchable; GUARDED_FIELDS enforced by repository
-        var metaPatch = { metadata: metaBody.metadata || metaBody };
-        await runtime.assetRepository.update(metaAssetId, metaPatch);
-        var metaUpdated = await runtime.assetRepository.get(metaAssetId);
-        respondJson(res, { status: 'ok', asset: metaUpdated });
-      } catch(e) { failJson(res, 500, 'metadata update failed: ' + e.message); }
+        var libFullExt = path.extname(libFullResolved).toLowerCase();
+        var libFullCt = libFullExt === '.png' ? 'image/png' : libFullExt === '.jpg' || libFullExt === '.jpeg' ? 'image/jpeg' : libFullExt === '.webp' ? 'image/webp' : 'application/octet-stream';
+        var libFullBuf = fs.readFileSync(libFullResolved);
+        res.writeHead(200, { 'Content-Type': libFullCt, 'Content-Length': libFullBuf.length, 'Cache-Control': 'no-cache' });
+        res.end(libFullBuf);
+      } catch(e) {
+        failJson(res, 404, 'cannot read file: ' + e.message);
+      }
+      return;
+    }
+
+    // ── Admin: save edited/transformed image ──
+    var saveEditMatch = parsed.pathname.match(/^\/api\/admin\/photos\/([^/]+)\/save-edit$/);
+    if (saveEditMatch && req.method === 'POST') {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      var seCSRF = adminCSRFCheck ? adminCSRFCheck(req, R) : { allowed: true };
+      if (!seCSRF.allowed) { failJson(res, seCSRF.status || 403, seCSRF.error || 'CSRF rejected'); return; }
+      var seId = saveEditMatch[1];
+      try { seId = decodeURIComponent(seId); } catch(e) { failJson(res, 400, 'invalid id encoding'); return; }
+      if (seId.indexOf('..') >= 0 || seId.indexOf('/') >= 0 || seId.indexOf('\\') >= 0) {
+        failJson(res, 400, 'invalid id'); return;
+      }
+      var seBody = {};
+      try { seBody = JSON.parse(await readBody(req) || '{}'); } catch(e) { failJson(res, 400, 'invalid JSON body'); return; }
+      seBody = seBody.recipe || {};
+      if (!R.assetRepository || typeof R.assetRepository.get !== 'function') {
+        failJson(res, 503, 'asset repository unavailable'); return;
+      }
+      var seAsset = null;
+      try { seAsset = await R.assetRepository.get(seId); } catch(e) { failJson(res, 503, 'asset repository error'); return; }
+      if (!seAsset) { failJson(res, 404, 'asset not found'); return; }
+      var seLocalPath = seAsset.localPath;
+      if (!seLocalPath) { failJson(res, 404, 'no source path'); return; }
+      try {
+        var seRecipe = {};
+        seRecipe.fitMode = seBody.mode === 'manual-crop' ? 'manual_crop' : (seBody.mode || 'contain');
+        seRecipe.zoom = typeof seBody.zoom === 'number' ? Math.max(1, Math.min(5, seBody.zoom)) : 1;
+        seRecipe.panX = typeof seBody.panX === 'number' ? Math.max(-1, Math.min(1, seBody.panX / 400)) : 0;
+        seRecipe.panY = typeof seBody.panY === 'number' ? Math.max(-1, Math.min(1, seBody.panY / 240)) : 0;
+        seRecipe.rotate = typeof seBody.rotation === 'number' ? ((seBody.rotation % 360) + 360) % 360 : 0;
+        seRecipe.flipHorizontal = !!seBody.flipH;
+        seRecipe.flipVertical = !!seBody.flipV;
+        seRecipe.brightness = typeof seBody.brightness === 'number' ? Math.max(0, Math.min(2, seBody.brightness + 1)) : 1;
+        seRecipe.contrast = typeof seBody.contrast === 'number' ? Math.max(0, Math.min(2, seBody.contrast + 1)) : 1;
+        seRecipe.saturation = typeof seBody.saturation === 'number' ? Math.max(0, Math.min(2, seBody.saturation + 1)) : 1;
+        seRecipe.gamma = typeof seBody.gamma === 'number' ? Math.max(0.1, Math.min(5, seBody.gamma)) : 1;
+        seRecipe.sharpen = typeof seBody.sharpen === 'number' ? Math.max(0, Math.min(10, seBody.sharpen)) : 0;
+        seRecipe.blur = typeof seBody.blur === 'number' ? Math.max(0, Math.min(20, seBody.blur)) : 0;
+        if (seBody.cropRect && typeof seBody.cropRect === 'object') {
+          var cr = seBody.cropRect;
+          seRecipe.crop = {
+            x: Math.max(0, Math.min(1, (Number(cr.x) || 0) / 800)),
+            y: Math.max(0, Math.min(1, (Number(cr.y) || 0) / 480)),
+            width: Math.max(0.01, Math.min(1, (Number(cr.width) || 800) / 800)),
+            height: Math.max(0.01, Math.min(1, (Number(cr.height) || 480) / 480)),
+          };
+        }
+        var seResolvedSrc = resolveAllowedAssetImagePath(R, seLocalPath);
+        if (!seResolvedSrc) { failJson(res, 403, 'forbidden path'); return; }
+        var { writeFileAtomic } = require('./src/infra/atomic-file');
+        var IRS = require('./src/images/image-recipe-service');
+        var seSvc = new IRS.ImageRecipeService();
+        var seResult = await seSvc.processImage(seResolvedSrc, seRecipe);
+        var seOutputBuf = await sharp(seResult.buffer, { raw: { width: seResult.info.width, height: seResult.info.height, channels: seResult.info.channels } }).png().toBuffer();
+        var seOutDir = path.join(R.DATA_DIR || DATA_DIR, 'edited');
+        fs.mkdirSync(seOutDir, {recursive: true});
+        var seSafeName = 'edit_' + crypto.createHash('sha256').update(seId).digest('hex').slice(0, 12) + '_' + Date.now().toString(36) + '.png';
+        var seOutFile = path.join(seOutDir, seSafeName);
+        await writeFileAtomic(seOutFile, seOutputBuf, { encoding: 'binary' });
+        var seSourceHash = crypto.createHash('sha256').update(fs.readFileSync(seResolvedSrc)).digest('hex');
+        var seSha256 = crypto.createHash('sha256').update(seOutputBuf).digest('hex');
+        var seRecipeHash = crypto.createHash('sha256').update(JSON.stringify(seRecipe)).digest('hex');
+        var seUpdate = {
+          localPath: seOutFile,
+          sha256: seSha256,
+          mimeType: 'image/png',
+          width: 800,
+          height: 480,
+          metadata: {
+            originalLocalPath: seAsset.metadata && seAsset.metadata.originalLocalPath ? seAsset.metadata.originalLocalPath : seResolvedSrc,
+            sourceHash: seSourceHash,
+            canonicalRecipe: seRecipe,
+            recipeHash: seRecipeHash,
+            editedAt: new Date().toISOString(),
+            previousSha256: seAsset.sha256 || null,
+          },
+        };
+        try {
+          await R.assetRepository.update(seId, seUpdate);
+        } catch(e) {
+          try { fs.unlinkSync(seOutFile); } catch(e2) {}
+          failJson(res, 500, 'asset update failed: ' + e.message);
+          return;
+        }
+        respondJson(res, { status: 'ok', assetId: seId, sha256: seSha256, width: 800, height: 480, recipeHash: seRecipeHash });
+      } catch(e) {
+        failJson(res, 500, 'edit failed: ' + e.message);
+      }
       return;
     }
 
     if (parsed.pathname.indexOf('/api/admin/library/') === 0 && req.method === 'DELETE') {
-      if (!adminAuth(req)) { failJson(res, 403, 'forbidden'); return; }
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
       // V3 atomic delete: feature flag must be true; no legacy markTombstoned
       // fallback. Without deletePipelineEnabled the route returns 503
       // FEATURE_DISABLED so callers cannot bypass the reference check / audit.
-      if (!runtime.config || !runtime.config.features || !runtime.config.features.deletePipelineEnabled) {
+      if (!R.config || !R.config.features || !R.config.features.deletePipelineEnabled) {
         failJson(res, 503, 'FEATURE_DISABLED: deletePipelineEnabled is false'); return;
       }
-      if (!runtime.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
-      if (!runtime.assetDeleteService) { failJson(res, 503, 'asset delete service unavailable'); return; }
+      if (!R.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
+      if (!R.assetDeleteService) { failJson(res, 503, 'asset delete service unavailable'); return; }
       var delAssetId = decodeURIComponent(parsed.pathname.slice('/api/admin/library/'.length));
       if (!delAssetId) { failJson(res, 400, 'assetId required'); return; }
       // reason enum (UNSAFE / SUSPICIOUS / POLICY_BLOCKED) — read from body or
@@ -3871,14 +4486,14 @@ async function handleRequest(req, res) {
       try {
         // Full atomic chain: markBlocked → tombstone → cleanup → audit → markTombstoned
         // (fail-closed: every step rejects on failure; no swallow).
-        await runtime.assetDeleteService.deleteAsset(delAssetId, delReason);
+        await R.assetDeleteService.deleteAsset(delAssetId, delReason);
         // Invalidate cached frames referencing this asset (best-effort)
-        if (runtime.cachedFrames && runtime.cachedFrames.forEach) {
+        if (R.cachedFrames && R.cachedFrames.forEach) {
           var toInvalidate = [];
-          runtime.cachedFrames.forEach(function(val, key) {
+          R.cachedFrames.forEach(function(val, key) {
             if (val && val.payload && val.payload.assetId === delAssetId) toInvalidate.push(key);
           });
-          toInvalidate.forEach(function(k) { runtime.cachedFrames.delete(k); });
+          toInvalidate.forEach(function(k) { R.cachedFrames.delete(k); });
         }
         respondJson(res, { status: 'ok', assetId: delAssetId, reason: delReason, pipeline: 'atomic_delete_chain' });
       } catch(e) {
@@ -3891,17 +4506,33 @@ async function handleRequest(req, res) {
       return;
     }
 
+    if (parsed.pathname.indexOf('/api/admin/library/') === 0 && req.method === 'PATCH') {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      if (!R.assetRepository) { failJson(res, 503, 'asset repository unavailable'); return; }
+      var metaAssetId = decodeURIComponent(parsed.pathname.slice('/api/admin/library/'.length));
+      if (!metaAssetId) { failJson(res, 400, 'assetId required'); return; }
+      try {
+        var metaBody = JSON.parse(await readBody(req) || '{}');
+        // Only metadata is patchable; GUARDED_FIELDS enforced by repository
+        var metaPatch = { metadata: metaBody.metadata || metaBody };
+        await R.assetRepository.update(metaAssetId, metaPatch);
+        var metaUpdated = await R.assetRepository.get(metaAssetId);
+        respondJson(res, { status: 'ok', asset: metaUpdated });
+      } catch(e) { failJson(res, 500, 'metadata update failed: ' + e.message); }
+      return;
+    }
+
     if (parsed.pathname === '/health/live') {
-      respondJson(res, { status: 'ok', pid: process.pid, uptimeSeconds: Math.floor((Date.now() - runtime.serverStartTime) / 1000) });
+      respondJson(res, { status: 'ok', pid: process.pid, uptimeSeconds: Math.floor((Date.now() - R.serverStartTime) / 1000) });
       return;
     }
 
     if (parsed.pathname === '/health/ready') {
       var ready = { status: 'ok' };
       var issues = [];
-      if (!runtime.snapshotStore) issues.push('SNAPSHOT_STORE_UNAVAILABLE');
+      if (!R.snapshotStore) issues.push('SNAPSHOT_STORE_UNAVAILABLE');
       try {
-        var r = fs.existsSync(path.join(DATA_DIR, 'config.json')) || fs.existsSync(path.join(ROOT_DIR, 'config.json'));
+        var r = fs.existsSync(path.join(R.DATA_DIR || DATA_DIR, 'config.json')) || fs.existsSync(path.join(ROOT_DIR, 'config.json'));
         if (!r) issues.push('CONFIG_NOT_FOUND');
       } catch(e) { issues.push('CONFIG_CHECK_FAILED'); }
       if (issues.length > 0) {
@@ -3913,40 +4544,53 @@ async function handleRequest(req, res) {
     }
 
     if (parsed.pathname === '/api/health.json') {
-      var uptime = Math.floor((Date.now() - runtime.serverStartTime) / 1000);
-      var hSnap = runtime.cachedFrames.size > 0 ? Array.from(runtime.cachedFrames.values())[0].snapshot : null;
+      var uptime = Math.floor((Date.now() - R.serverStartTime) / 1000);
+      var hSnap = R.cachedFrames.size > 0 ? Array.from(R.cachedFrames.values())[0].snapshot : null;
       var hNewsCount = 0;
       try {
-        var hLgPath = path.join(DATA_DIR, 'last_good_news.json');
+        var hLgPath = (R && R.LAST_GOOD_NEWS_FILE) || path.join(R.DATA_DIR || DATA_DIR, 'last_good_news.json');
         if (fs.existsSync(hLgPath)) { var hLg = JSON.parse(fs.readFileSync(hLgPath, 'utf8')); if (hLg && hLg.items) hNewsCount = hLg.items.length; }
       } catch(e) {}
       var hPhotoCount = 0;
       try {
-        var hIdxPath = path.join(DATA_DIR, 'image_index.json');
+        var hIdxPath = (R && R.IMAGE_INDEX_FILE) || path.join(R.DATA_DIR || DATA_DIR, 'image_index.json');
         if (fs.existsSync(hIdxPath)) { hPhotoCount = JSON.parse(fs.readFileSync(hIdxPath, 'utf8')).length; }
       } catch(e) {}
       respondJson(res, {
-        status: 'ok', uptimeSeconds: uptime, timezone: TIMEZONE,
+        status: 'ok', uptimeSeconds: uptime, timezone: (R && R.TIMEZONE) || TIMEZONE,
         currentMode: hSnap ? hSnap.mode : null,
         currentSlot: hSnap ? hSnap.slotKey : null,
         frameId: hSnap ? hSnap.frameId : null,
-        frameCacheEntries: runtime.cachedFrames.size,
-        frameRenderCount: runtime.renderCount,
+        frameCacheEntries: R.cachedFrames.size,
+        frameRenderCount: R.renderCount,
         newsItemCount: hNewsCount,
         photoCount: hPhotoCount,
         mqttEnabled: !!APP_CONFIG.mqtt && APP_CONFIG.mqtt.enabled,
         translationProvider: (APP_CONFIG.translation && APP_CONFIG.translation.provider) || 'none',
-        stateRequestCount: runtime.stateRequestCount || 0,
-        frameRequestCount: runtime.frameRequestCount || 0,
-        newsRefreshCount: runtime.newsRefreshCount || 0,
-        newsRefreshFailureCount: runtime.newsRefreshFailureCount || 0,
-        recentError: runtime.recentError || null,
-        lastNewsRefreshAt: runtime.lastNewsRefreshAt || null,
+        stateRequestCount: R.stateRequestCount || 0,
+        frameRequestCount: R.frameRequestCount || 0,
+        newsRefreshCount: R.newsRefreshCount || 0,
+        newsRefreshFailureCount: R.newsRefreshFailureCount || 0,
+        recentError: R.recentError || null,
+        lastNewsRefreshAt: R.lastNewsRefreshAt || null,
         buildSha: BUILD_GIT_SHA,
-        manualOverride: runtime.manualOverride || null,
-        overrideExpiresAt: runtime.overrideExpiresAt || null,
-        lastPublishedAt: runtime.lastPublishedAt || null
+        manualOverride: R.manualOverride || null,
+        overrideExpiresAt: R.overrideExpiresAt || null,
+        lastPublishedAt: R.lastPublishedAt || null
       });
+      return;
+    }
+
+    if (parsed.pathname === '/api/admin/state') {
+      if (!adminAuth(req, R)) { failJson(res, 403, 'forbidden'); return; }
+      try {
+        if (typeof R.adminStateService.getAdminState === 'function') {
+          const st = await R.adminStateService.getAdminState();
+          respondJson(res, st);
+        } else {
+          respondJson(res, { status: 'unavailable', reason: 'AdminStateService not initialized' });
+        }
+      } catch(e) { respondJson(res, { status: 'error', error: e.message }); }
       return;
     }
 
@@ -4002,16 +4646,29 @@ if (require.main === module) {
   });
 }
 
+// ── Runtime injection for test isolation ────────────────────────────────
+// Creates a request handler that passes the provided runtime context
+// to handleRequest via the `ctx` parameter, without mutating the
+// module-level `runtime` variable.
+function createHandler(ctx) {
+  return function(req, res) {
+    return handleRequest(req, res, ctx);
+  };
+}
+
 module.exports = {
   handleRequest: handleRequest,
   main: main,
-  runtime: runtime,
+  createApplication: createApplication,
+  createHandler: createHandler,
   PALETTE: epaperPalette.PALETTE,
+  TIMEZONE: TIMEZONE,
   extractTag,
   extractItems,
   parseFeedXml,
   parseJsonFeed,
   buildNewsSnapshot,
+  buildPhotoSnapshot,
   getContentForNow,
   loadAppConfig,
   formatDateTime,
@@ -4019,6 +4676,7 @@ module.exports = {
   formatLocalTimeLabel,
   formatDateParts,
   getWallTime,
+  dateFromWallTime,
   computeNextSwitchAt,
   selectPhotoSnapshot,
   selectStudyPhoto,
