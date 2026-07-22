@@ -179,13 +179,18 @@ async function main() {
     await getWithTimeout(srv.base + '/api/state.json', 5000);
     await getWithTimeout(srv.base + '/api/frame.bin', 10000);
     var p1 = await getWithTimeout(srv.base + '/debug/pin-state.json', 3000);
-    var rc1 = JSON.parse(p1.b.toString()).renderCount;
+    var pinObj = JSON.parse(p1.b.toString());
+    var rc1 = (pinObj.renderCount !== undefined) ? pinObj.renderCount : 0;
     check('first render', rc1 >= 0, 'rc=' + rc1 + ' (0 ok for news mode)');
     await getWithTimeout(srv.base + '/api/state.json', 5000);
-    var rc2 = JSON.parse((await getWithTimeout(srv.base + '/debug/pin-state.json', 3000)).b.toString()).renderCount;
+    var p2 = await getWithTimeout(srv.base + '/debug/pin-state.json', 3000);
+    var pinObj2 = JSON.parse(p2.b.toString());
+    var rc2 = (pinObj2.renderCount !== undefined) ? pinObj2.renderCount : 0;
     check('second no new render', rc2 === rc1, '' + rc1 + ' -> ' + rc2);
     await getWithTimeout(srv.base + '/api/state.json', 5000);
-    var rc3 = JSON.parse((await getWithTimeout(srv.base + '/debug/pin-state.json', 3000)).b.toString()).renderCount;
+    var p3 = await getWithTimeout(srv.base + '/debug/pin-state.json', 3000);
+    var pinObj3 = JSON.parse(p3.b.toString());
+    var rc3 = (pinObj3.renderCount !== undefined) ? pinObj3.renderCount : 0;
     check('third no new render', rc3 === rc1, '' + rc1 + ' -> ' + rc3);
   });
 
