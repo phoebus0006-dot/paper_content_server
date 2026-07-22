@@ -13,7 +13,7 @@
 ## 快速启动
 
 ```bash
-cd /d D:\开发板\paper_content_server
+cd paper_content_server
 copy .env.example .env
 npm install
 npm run check
@@ -142,7 +142,7 @@ node scripts/process-images.js
 ### 开发构建（docker compose，本地快速启动）
 
 ```bash
-cd /d D:\开发板\paper_content_server
+cd paper_content_server
 docker compose up -d --build
 docker compose logs --tail=100
 ```
@@ -243,13 +243,13 @@ images/
 
 ```bash
 # 从本地目录导入电影截图到 shots/夜景
-node scripts/import-images.js --from "D:\素材\电影截图" --kind shot --theme 夜景
+node scripts/import-images.js --from "./素材/电影截图" --kind shot --theme 夜景
 
 # 从本地目录导入分镜稿到 storyboard/双人对话
-node scripts/import-images.js --from "D:\素材\分镜" --kind storyboard --theme 双人对话
+node scripts/import-images.js --from "./素材/分镜" --kind storyboard --theme 双人对话
 
 # 只预览不复制
-node scripts/import-images.js --from "D:\素材" --dry-run
+node scripts/import-images.js --from "./素材" --dry-run
 
 # 查看帮助
 node scripts/import-images.js --help

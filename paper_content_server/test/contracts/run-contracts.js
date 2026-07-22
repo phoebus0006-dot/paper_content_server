@@ -47,7 +47,8 @@ function captureHashes() {
 
 function computePollution(before, after) {
   var polluted = [];
-  TRACKED_FILES.forEach(function(f) {
+  var keys = Object.keys(before || {});
+  keys.forEach(function(f) {
     if (before[f] !== after[f]) polluted.push(f);
   });
   return polluted;
@@ -55,7 +56,8 @@ function computePollution(before, after) {
 
 function runContract(fname) {
   return new Promise(function(resolve) {
-    var child = cp.spawn(process.execPath, [path.join(CONTRACTS_DIR, fname)], {
+    var targetPath = path.isAbsolute(fname) ? fname : path.join(CONTRACTS_DIR, fname);
+    var child = cp.spawn(process.execPath, [targetPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd: path.join(CONTRACTS_DIR, '..', '..')
     });
@@ -66,13 +68,17 @@ function runContract(fname) {
       // Parse PASS/FAIL from assertions
       var pass = (out.match(/\bPASS\b/g) || []).length;
       var fail = (out.match(/\bFAIL\b/g) || []).length;
+      if (code !== 0 && fail === 0) {
+        fail = 1;
+      }
       // Parse STATUS lines (PARTIAL, NOT_IMPLEMENTED)
       var partial = (out.match(/STATUS.*PARTIAL/g) || []).length;
       var notImpl = (out.match(/STATUS.*NOT_IMPLEMENTED/g) || []).length;
       var skip = (out.match(/\bSKIP\b/g) || []).length;
 
-      results.push({ name: fname, pass: pass, fail: fail, partial: partial, not_impl: notImpl, skip: skip, code: code, status: null, pollution: [] });
-      resolve();
+      var res = { name: fname, pass: pass, fail: fail, partial: partial, not_impl: notImpl, skip: skip, code: code, status: null, pollution: [] };
+      results.push(res);
+      resolve(res);
     });
   });
 }
