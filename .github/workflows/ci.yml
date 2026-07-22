@@ -81,7 +81,7 @@ jobs:
         if: always()
         with:
           name: playwright-admin-screenshots
-          path: screenshots/
+          path: paper_content_server/screenshots/
           retention-days: 7
 
   docker:
