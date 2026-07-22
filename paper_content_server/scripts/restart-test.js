@@ -167,6 +167,19 @@ async function main() {
     var st = JSON.parse(stRes.b.toString());
     check('state 200 after restart', stRes.s === 200, 'http=' + stRes.s + ' mode=' + st.mode);
     check('frameId valid', st.frameId && st.frameId.length > 10);
+
+    var adminStRes = await getWithTimeout(srv.base + '/api/admin/state', 5000);
+    check('admin state 200 after restart', adminStRes.s === 200);
+    var ast = JSON.parse(adminStRes.b.toString());
+    check('restart state schema active.snapshotId', ast.active && typeof ast.active.snapshotId === 'string');
+    check('restart state schema active.frameId', ast.active && typeof ast.active.frameId === 'string');
+    check('restart state schema active.frameSha256', ast.active && typeof ast.active.frameSha256 === 'string');
+    check('restart state schema active.frameLength', ast.active && typeof ast.active.frameLength === 'number');
+    check('restart state schema active.operatingMode', ast.active && typeof ast.active.operatingMode === 'string');
+    check('restart state schema active.contentMode', ast.active && typeof ast.active.contentMode === 'string');
+    check('restart state schema override', ast.override !== undefined);
+    check('restart state schema consistent', typeof ast.consistent === 'boolean');
+
     var ins = JSON.parse((await getWithTimeout(srv.base + '/debug/test-instance', 3000)).b.toString());
     check('instance matches suffix', ins.instanceId.indexOf('_srv2') >= 0, 'id=' + ins.instanceId);
     var fb = await getWithTimeout(srv.base + '/api/frame.bin', 10000);
@@ -180,18 +193,18 @@ async function main() {
     await getWithTimeout(srv.base + '/api/frame.bin', 10000);
     var p1 = await getWithTimeout(srv.base + '/debug/pin-state.json', 3000);
     var pinObj = JSON.parse(p1.b.toString());
-    var rc1 = (pinObj.renderCount !== undefined) ? pinObj.renderCount : 0;
-    check('first render', rc1 >= 0, 'rc=' + rc1 + ' (0 ok for news mode)');
+    check('renderCount is number in contract', typeof pinObj.renderCount === 'number', 'rc=' + pinObj.renderCount);
+    var rc1 = pinObj.renderCount;
     await getWithTimeout(srv.base + '/api/state.json', 5000);
     var p2 = await getWithTimeout(srv.base + '/debug/pin-state.json', 3000);
     var pinObj2 = JSON.parse(p2.b.toString());
-    var rc2 = (pinObj2.renderCount !== undefined) ? pinObj2.renderCount : 0;
-    check('second no new render', rc2 === rc1, '' + rc1 + ' -> ' + rc2);
+    check('renderCount is number on second read', typeof pinObj2.renderCount === 'number', 'rc=' + pinObj2.renderCount);
+    check('second no new render', pinObj2.renderCount === rc1, '' + rc1 + ' -> ' + pinObj2.renderCount);
     await getWithTimeout(srv.base + '/api/state.json', 5000);
     var p3 = await getWithTimeout(srv.base + '/debug/pin-state.json', 3000);
     var pinObj3 = JSON.parse(p3.b.toString());
-    var rc3 = (pinObj3.renderCount !== undefined) ? pinObj3.renderCount : 0;
-    check('third no new render', rc3 === rc1, '' + rc1 + ' -> ' + rc3);
+    check('renderCount is number on third read', typeof pinObj3.renderCount === 'number', 'rc=' + pinObj3.renderCount);
+    check('third no new render', pinObj3.renderCount === rc1, '' + rc1 + ' -> ' + pinObj3.renderCount);
   });
 
   console.log('\n--- CASE 4: Corrupt state files (12 scenarios, each isolated) ---');

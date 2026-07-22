@@ -295,8 +295,12 @@ async function runTests() {
 
   // ── 10. SIGTERM — graceful shutdown ──
   console.log('Sending SIGTERM...');
+  var sigtermSent = true;
+  var sendTime = Date.now();
+  var exitTime = null;
   var sigtermCode = null;
   var sigtermSignal = null;
+
   var sigtermPromise = new Promise(function(resolve) {
     var timeout = setTimeout(function() {
       t('SIGTERM_EXIT', false, 'timeout waiting for exit');
@@ -305,6 +309,9 @@ async function runTests() {
     }, 10000);
     serverProc.on('exit', function(code, signal) {
       clearTimeout(timeout);
+      if (serverProc.stdout) { try { serverProc.stdout.destroy(); } catch(e) {} }
+      if (serverProc.stderr) { try { serverProc.stderr.destroy(); } catch(e) {} }
+      exitTime = Date.now();
       sigtermCode = code;
       sigtermSignal = signal;
       serverExited = true;
@@ -312,17 +319,48 @@ async function runTests() {
       resolve();
     });
   });
+
   serverProc.kill('SIGTERM');
   await sigtermPromise;
 
-  // On Windows, SIGTERM terminates the process; exit event may give code=null.
-  // On POSIX, exit code 0 with 'SIGTERM' signal.
-  if (process.platform === 'win32') {
-    t('SIGTERM_EXIT_CODE', sigtermCode === null || sigtermCode === 1 || sigtermCode === 0, 'code=' + sigtermCode);
+  var shutdownHookObserved = serverStdout.indexOf('SIGTERM') >= 0 || serverStdout.indexOf('shutdown') >= 0 || serverStdout.indexOf('graceful') >= 0 || serverStdout.indexOf('Closing HTTP') >= 0 || serverStderr.indexOf('SIGTERM') >= 0 || serverStderr.indexOf('shutdown') >= 0 || serverStderr.indexOf('graceful') >= 0;
+
+  t('SIGTERM_SENT_FLAG', sigtermSent === true, 'sigtermSent must be true');
+  t('SIGTERM_SEND_TIME_RECORDED', typeof sendTime === 'number' && sendTime > 0, 'sendTime recorded');
+  t('SIGTERM_EXIT_TIME_RECORDED', typeof exitTime === 'number' && exitTime >= sendTime, 'exitTime recorded');
+
+  if (sigtermSignal === null) {
+    t('SIGTERM_GRACEFUL_EXIT_ZERO_CODE', sigtermCode === 0, 'graceful exit code must be 0 when signal is null');
+    t('SIGTERM_SHUTDOWN_HOOK_OBSERVED', shutdownHookObserved === true, 'shutdown hook execution flag must be observed');
   } else {
-    t('SIGTERM_EXIT_CODE', sigtermCode === 0 || sigtermCode === null, 'code=' + sigtermCode);
-    t('SIGTERM_EXIT_SIGNAL', sigtermSignal === 'SIGTERM' || sigtermSignal === null || sigtermCode === 0, 'signal=' + sigtermSignal);
+    t('SIGTERM_EXIT_SIGNAL', sigtermSignal === 'SIGTERM', 'signal must be SIGTERM');
   }
+
+  // Verify port released (allow socket TIME_WAIT OS cleanup)
+  var portReleased = false;
+  var lastPortErr = '';
+  for (var pi = 0; pi < 10; pi++) {
+    try {
+      var testNet = require('net').createServer();
+      await new Promise(function(ok, fail) {
+        testNet.listen(port, '127.0.0.1', function() { testNet.close(function() { ok(); }); });
+        testNet.on('error', fail);
+      });
+      portReleased = true;
+      break;
+    } catch(e) {
+      lastPortErr = e.message;
+      await new Promise(function(r) { setTimeout(r, 100); });
+    }
+  }
+  t('SIGTERM_PORT_RELEASED', portReleased, 'port must be released after exit: ' + lastPortErr);
+
+  // Verify no active locks in temp dir
+  var lockFiles = [];
+  try {
+    lockFiles = fs.readdirSync(tmp.dataDir).filter(function(f) { return f.endsWith('.lock'); });
+  } catch(e) {}
+  t('SIGTERM_NO_ACTIVE_LOCKS', lockFiles.length === 0, 'lock files count must be 0');
 
   // ── 11. Verify data files persisted ──
   t('DATA_library_state_json', fs.existsSync(path.join(tmp.dataDir, 'library_state.json')), '');

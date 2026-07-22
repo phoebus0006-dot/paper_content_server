@@ -131,17 +131,34 @@ describe('Real HTTP E2E Tests', function() {
     });
   });
 
-  it('POST /api/admin/publish/news fails with needs_review check', async function() {
+  it('POST /api/admin/publish/news fails with needs_review check and leaves state unchanged', async function() {
+    await new Promise(r => setTimeout(r, 200));
+    var stateBefore = await httpRequest('GET', baseUrl + '/api/admin/state', { headers: adminHeaders() });
+    var frameBefore = await httpRequest('GET', baseUrl + '/api/frame.bin', { headers: {} });
+    var histBefore = await httpRequest('GET', baseUrl + '/api/admin/publish-history', { headers: adminHeaders() });
+
     var res = await httpRequest('POST', baseUrl + '/api/admin/publish/news', {
       headers: adminHeaders(),
       body: JSON.stringify({}),
     });
     assert.strictEqual(res.statusCode, 409, 'expected 409 when items need review');
+    assert.ok((res.headers['content-type'] || '').indexOf('application/json') >= 0, 'content-type must be application/json');
     var data = JSON.parse(res.body.toString('utf8'));
     assert.ok(data.error, 'response must have error object');
     assert.strictEqual(data.error.code, 'NEWS_REVIEW_REQUIRED', 'error.code must be NEWS_REVIEW_REQUIRED');
     assert.ok(Array.isArray(data.error.blockedItems), 'blockedItems must be an array');
     assert.ok(data.error.blockedItems.length > 0, 'blockedItems must not be empty');
+
+    var stateAfter = await httpRequest('GET', baseUrl + '/api/admin/state', { headers: adminHeaders() });
+    var frameAfter = await httpRequest('GET', baseUrl + '/api/frame.bin', { headers: {} });
+    var histAfter = await httpRequest('GET', baseUrl + '/api/admin/publish-history', { headers: adminHeaders() });
+
+    var stateDataAfter = JSON.parse(stateAfter.body.toString('utf8'));
+    var stateDataBefore = JSON.parse(stateBefore.body.toString('utf8'));
+
+    assert.strictEqual(stateDataAfter.active.operatingMode, stateDataBefore.active.operatingMode, 'operatingMode must remain unchanged');
+    assert.strictEqual(JSON.stringify(stateDataAfter.override), JSON.stringify(stateDataBefore.override), 'override must remain unchanged');
+    assert.strictEqual(histAfter.body.toString(), histBefore.body.toString(), 'history must remain unchanged');
   });
 
   it('POST /api/admin/photo-preview returns processed image PNG', async function() {
@@ -441,6 +458,20 @@ describe('Real HTTP E2E Tests', function() {
       return;
     }
 
+    // Get preview hashes and eink preview first
+    var prevRes = await httpRequest('POST', baseUrl + '/api/admin/photo-preview', {
+      headers: adminHeaders(),
+      body: JSON.stringify({ photoId: fixtureImageId, recipe: { fitMode: 'contain', background: '#ffffff' } }),
+    });
+    assert.strictEqual(prevRes.statusCode, 200);
+
+    var einkPrevRes = await httpRequest('POST', baseUrl + '/api/admin/photo-eink-preview', {
+      headers: adminHeaders(),
+      body: JSON.stringify({ photoId: fixtureImageId, recipe: { fitMode: 'contain', background: '#ffffff' } }),
+    });
+    assert.strictEqual(einkPrevRes.statusCode, 200);
+    var einkPrevSha = einkPrevRes.headers['x-frame-sha256'];
+
     // Publish the fixture image
     var pubRes = await httpRequest('POST', baseUrl + '/api/admin/publish/photo', {
       headers: adminHeaders(),
@@ -449,6 +480,14 @@ describe('Real HTTP E2E Tests', function() {
     assert.strictEqual(pubRes.statusCode, 200);
     var pubData = JSON.parse(pubRes.body.toString('utf8'));
     assert.ok(pubData.frameId, 'response must have frameId');
+
+    // Assert recipe/image hashes and eink preview frame SHA equality
+    if (prevRes.headers['x-recipe-hash'] && pubRes.headers['x-recipe-hash']) {
+      assert.strictEqual(prevRes.headers['x-recipe-hash'], pubRes.headers['x-recipe-hash'], 'recipeHash mismatch');
+    }
+    if (prevRes.headers['x-processed-image-hash'] && pubRes.headers['x-processed-image-hash']) {
+      assert.strictEqual(prevRes.headers['x-processed-image-hash'], pubRes.headers['x-processed-image-hash'], 'processedImageHash mismatch');
+    }
 
     // State read-back
     var stateRes = await httpRequest('GET', baseUrl + '/api/admin/state', {
@@ -466,6 +505,8 @@ describe('Real HTTP E2E Tests', function() {
     assert.strictEqual(frameRes.body.length, 192010, 'frame.bin body length must be 192010');
     var computedSha = require('crypto').createHash('sha256').update(frameRes.body).digest('hex');
     assert.strictEqual(computedSha, frameRes.headers['x-frame-sha256'], 'Computed SHA256 must match header');
+
+    assert.strictEqual(pubData.frameSha256, frameRes.headers['x-frame-sha256'], 'publish response frameSha256 must match frame.bin SHA header');
 
     // Verify state/frame consistency
     if (stateData.active && stateData.active.frameId) {
@@ -493,7 +534,6 @@ describe('Real HTTP E2E Tests', function() {
       this.skip('no fixture image available');
       return;
     }
-    // Add a PENDING entry to image_index.json
     var idxPath = path.join(dataDir, 'image_index.json');
     var idx = JSON.parse(fs.readFileSync(idxPath, 'utf8'));
     var pendingId = 'e2e-pending-' + Date.now().toString(36);
@@ -512,9 +552,9 @@ describe('Real HTTP E2E Tests', function() {
       headers: adminHeaders(),
       body: JSON.stringify({ photoId: pendingId }),
     });
-    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.statusCode, 409);
     var data = JSON.parse(res.body.toString('utf8'));
-    assert.ok(data.error.indexOf('PENDING') >= 0, 'error must mention PENDING status');
+    assert.strictEqual(data.error.code, 'PHOTO_REVIEW_REQUIRED');
   });
 
   it('POST /api/admin/publish/photo rejects REJECTED review status', async function() {
@@ -540,9 +580,9 @@ describe('Real HTTP E2E Tests', function() {
       headers: adminHeaders(),
       body: JSON.stringify({ photoId: rejectedId }),
     });
-    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.statusCode, 409);
     var data = JSON.parse(res.body.toString('utf8'));
-    assert.ok(data.error.indexOf('REJECTED') >= 0, 'error must mention REJECTED status');
+    assert.strictEqual(data.error.code, 'PHOTO_REVIEW_REQUIRED');
   });
 
   it('POST /api/admin/publish/photo rejects QUARANTINED lifecycle status', async function() {
@@ -568,8 +608,8 @@ describe('Real HTTP E2E Tests', function() {
       headers: adminHeaders(),
       body: JSON.stringify({ photoId: quarantinedId }),
     });
-    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.statusCode, 409);
     var data = JSON.parse(res.body.toString('utf8'));
-    assert.ok(data.error.indexOf('QUARANTINED') >= 0, 'error must mention QUARANTINED status');
+    assert.strictEqual(data.error.code, 'PHOTO_REVIEW_REQUIRED');
   });
 });
