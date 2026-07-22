@@ -46,14 +46,18 @@ function mutationTest(name, sourcePath, mutateFn, testCommand) {
 
   var result = {
     name: name,
-    killed: false,
+    targetFile: sourcePath,
+    replacementCount: 1,
     sourceShaBefore: origHash,
     sourceShaMutated: null,
-    sourceShaRestored: origHash,
-    mutationsApplied: 0,
     nodeCheckExitCode: null,
+    applicationStarted: true,
+    targetTestName: testCommand,
+    failedAssertion: null,
     targetTestExitCode: null,
-    failureAssertionName: null,
+    sourceShaRestored: origHash,
+    result: "SURVIVED",
+    killed: false,
     error: null
   };
 
@@ -112,9 +116,9 @@ function mutationTest(name, sourcePath, mutateFn, testCommand) {
       // Check if failure was due to assertion (not crash/syntax/typeerror)
       if (output.indexOf('AssertionError') >= 0 || output.indexOf('ERR_ASSERTION') >= 0) {
         result.killed = true;
-        // Extract assertion name
+        result.result = "KILLED";
         var match = output.match(/(?:not ok \d+ - |failureType|name:\s*')([^']+)/);
-        result.failureAssertionName = match ? match[1] : 'AssertionError (contract)';
+        result.failedAssertion = match ? match[1] : 'AssertionError (contract)';
       } else if (output.indexOf('TypeError') >= 0) {
         result.error = 'Mutation caused TypeError, not contract failure';
         result.killed = false;

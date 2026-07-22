@@ -95,41 +95,74 @@ describe('Playwright visual regression', () => {
     { width: 1920, height: 1080, label: '1920x1080' },
   ];
 
+  var PAGES = [
+    { id: 'dashboard', label: 'dashboard' },
+    { id: 'news-page', label: 'news' },
+    { id: 'photos-page', label: 'photos' },
+    { id: 'photo-editor-page', label: 'photo-editor' },
+    { id: 'publish-page', label: 'publish-history' },
+    { id: 'status-page', label: 'status' }
+  ];
+
   RESOLUTIONS.forEach(function(res) {
-    it('screenshots at ' + res.label, async function() {
+    it('generates 6 page screenshots at ' + res.label, async function() {
       var context = await browser.newContext({ viewport: { width: res.width, height: res.height } });
       var page = await context.newPage();
 
+      var pageErrors = [];
+      var consoleErrors = [];
+      var failedRequests = [];
+
+      page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+      page.on('pageerror', err => pageErrors.push(err.message));
+      page.on('requestfailed', req => {
+        var u = req.url();
+        if (u.indexOf('favicon') < 0 && u.indexOf('mcs.ziieapi.com') < 0) {
+          failedRequests.push(u);
+        }
+      });
+
       await page.goto(baseUrl + '/admin/', { waitUntil: 'networkidle' });
-
-      // Wait for the admin page to load
       await page.waitForTimeout(500);
 
-      // Take workbench screenshot
-      var ssDir = path.join(__dirname, '..', '..', 'screenshots');
+      var ssDir = path.join(__dirname, '../../..', 'screenshots');
       if (!fs.existsSync(ssDir)) fs.mkdirSync(ssDir, { recursive: true });
-      var workbench = await page.screenshot({ path: path.join(ssDir, 'workbench-' + res.label + '.png') });
-      assert.ok(workbench.length > 1000, 'Workbench screenshot too small: ' + workbench.length);
 
-      // Take system page screenshot
-      await page.goto(baseUrl + '/admin/index.html#system', { waitUntil: 'networkidle' });
-      await page.waitForTimeout(500);
-      var system = await page.screenshot({ path: path.join(ssDir, 'system-' + res.label + '.png') });
-      assert.ok(system.length > 1000, 'System screenshot too small: ' + system.length);
+      var metadataList = [];
+
+      for (const p of PAGES) {
+        // Switch tab via JS or click
+        await page.evaluate(function(tabId) {
+          if (typeof switchTab === 'function') {
+            switchTab(tabId);
+          } else {
+            var el = document.getElementById(tabId);
+            if (el) {
+              document.querySelectorAll('.page').forEach(pg => pg.classList.remove('active'));
+              el.classList.add('active');
+            }
+          }
+        }, p.id);
+        await page.waitForTimeout(300);
+
+        var fileName = p.label + '-' + res.label + '.png';
+        var filePath = path.join(ssDir, fileName);
+        var buf = await page.screenshot({ path: filePath, fullPage: true });
+        assert.ok(buf.length > 1000, 'Screenshot too small: ' + buf.length + ' for ' + fileName);
+
+        var sha = require('crypto').createHash('sha256').update(buf).digest('hex');
+        metadataList.push({ page: p.label, resolution: res.label, file: fileName, sha256: sha });
+      }
+
+      console.log('Visual Coverage (' + res.label + '):', JSON.stringify(metadataList, null, 2));
+
+      // Filter console errors
+      var realConsoleErrs = consoleErrors.filter(m => m.indexOf('favicon') < 0 && m.indexOf('mcs.ziieapi.com') < 0);
+      assert.equal(pageErrors.length, 0, 'page errors in visual test: ' + pageErrors.join('; '));
+      assert.equal(realConsoleErrs.length, 0, 'console errors in visual test: ' + realConsoleErrs.join('; '));
+      assert.equal(failedRequests.length, 0, 'failed requests in visual test: ' + failedRequests.join('; '));
 
       await context.close();
     });
-  });
-
-  it('admin login page loads without auth errors', async function() {
-    var context = await browser.newContext();
-    var page = await context.newPage();
-    var errors = [];
-    page.on('console', function(msg) { if (msg.type() === 'error') errors.push(msg.text()); });
-    await page.goto(baseUrl + '/admin/', { waitUntil: 'networkidle' });
-    // Should get some kind of response (login page, error, or state)
-    var html = await page.content();
-    assert.ok(html.length > 100, 'Page content too short');
-    await context.close();
   });
 });

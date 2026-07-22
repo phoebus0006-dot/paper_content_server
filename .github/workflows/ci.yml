@@ -32,6 +32,18 @@ jobs:
       - run: npm run test:contract
       - run: npm run mutation:test
       - run: npm run test:all
+      - name: Enforce Zero Skips and Zero Todos in Test Suites
+        run: |
+          node -e '
+            const { execSync } = require("child_process");
+            const out = execSync("npm run test:all", { encoding: "utf8" });
+            console.log(out);
+            if (/\bskipped\s+[1-9]\d*/i.test(out) || /\bskip\s+[1-9]\d*/i.test(out) || /\btodo\s+[1-9]\d*/i.test(out)) {
+              console.error("CI REJECTED: Found skipped or todo tests in test:all output!");
+              process.exit(1);
+            }
+            console.log("SUCCESS: Zero skipped and zero todo tests verified.");
+          '
       - run: node --check server.js
       - run: npm run docs:check
       - run: npm run contracts:test
@@ -64,6 +76,13 @@ jobs:
       - run: npm run v5:classifier
       - run: npm run v5:concurrency
       - run: npm run hygiene:check
+      - name: Upload Playwright Admin Screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-admin-screenshots
+          path: screenshots/
+          retention-days: 7
 
   docker:
     needs: test
