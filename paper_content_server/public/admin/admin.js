@@ -31,6 +31,13 @@ function api(path,opts){
       if(ACCESS_MODE==='token'&&!TOKEN){showLogin();throw new Error('unauthorized')}
     }
     if(r.status===204)return null;
+    if(!r.ok){
+      return r.text().then(function(t){
+        var msg=t;
+        try{var j=JSON.parse(t);msg=j.error||j.message||msg}catch(e){}
+        throw new Error(msg||'HTTP Error '+r.status);
+      });
+    }
     var ct=r.headers.get('content-type')||'';
     if(ct.indexOf('application/json')>=0)return r.json().catch(function(){return null});
     if(ct.indexOf('image/')>=0||ct.indexOf('application/octet')>=0)return r.blob();
@@ -451,20 +458,17 @@ function renderGalleryAssets(assets,label){
       '<div class="actions">'+
       '<button class="btn btn-sm btn-outline" onclick="openEditor(\''+a.assetId+'\')">'+icon('edit')+'编辑</button>'+
       '<button class="btn btn-sm btn-success" onclick="oneShotPublish(\''+a.assetId+'\',\''+esc(a.libraryType||'custom')+'\')">'+icon('publish')+'发布</button>'+
-      (a.lifecycleStatus!=='TOMBSTONED'&&a.lifecycleStatus!=='DELETED'?'<button class="btn btn-sm btn-danger" onclick="deleteAsset(\''+a.assetId+'\')">'+icon('trash')+'删除</button>':'')+
+      (a.lifecycleStatus!=='TOMBSTONED'&&a.lifecycleStatus!=='DELETED'?'<button class="btn btn-sm btn-danger" onclick="deleteAssetClick(\''+a.assetId+'\')">'+icon('trash')+'删除</button>':'')+
       '</div></div>';
     el.appendChild(item);
   });
 }
 
-function deleteAsset(id){
+function deleteAssetClick(id){
   if(!checkConsistent())return;
-  showConfirmInline('confirm-area','删除资源','确认删除此资源？需要提供原因。',function(){
-    api('/api/admin/library/'+id,{method:'DELETE',body:JSON.stringify({reason:'POLICY_BLOCKED'})}).then(function(){
-      toast('已删除','info');loadGallery();
-    }).catch(function(e){toast('删除失败: '+(e.message||e),'error')});
-  });
+  toast('删除功能未启用 (FEATURE_DISABLED)','warning');
 }
+
 
 function oneShotPublish(assetId,libraryType){
   if(!checkConsistent())return;
@@ -499,8 +503,8 @@ function openEditor(id){
   loadEditorImage();
 }
 
-function loadEditorImage(){
-  var id=STATE.editor.assetId;
+function loadEditorImage(id){
+  if(!id)id=STATE.editor.assetId;
   if(!id)return;
   var img=new Image();
   img.crossOrigin='anonymous';
@@ -664,10 +668,35 @@ function updateEditorZoomLabel(){
 }
 
 function saveEditor(){
-  api('/api/admin/photos/'+STATE.editor.assetId+'/save-edit',{method:'POST',body:JSON.stringify({recipe:{brightness:1,contrast:1,saturation:1,gamma:1,rotate:STATE.editor.rotation,flipH:STATE.editor.flipH,flipV:STATE.editor.flipV,sharpen:0,blur:0}})}).then(function(){
-    STATE.editor.saved=true;
-    toast('编辑已保存','success');
-  }).catch(function(e){toast('保存失败: '+(e.message||e),'error')});
+  var id=STATE.editor.assetId;
+  if(!id)return;
+  var r=STATE.editor;
+  api('/api/admin/photos/'+encodeURIComponent(id)+'/save-edit',{
+    method:'POST',
+    body:JSON.stringify({
+      recipe:{
+        mode: r.mode||'contain',
+        zoom: typeof r.zoom==='number'?r.zoom:1,
+        panX: typeof r.panX==='number'?r.panX:(r.pan?r.pan.x:0),
+        panY: typeof r.panY==='number'?r.panY:(r.pan?r.pan.y:0),
+        rotation: typeof r.rotation==='number'?r.rotation:(r.rotate||0),
+        flipH: !!r.flipH||!!r.flipHorizontal,
+        flipV: !!r.flipV||!!r.flipVertical,
+        brightness: typeof r.brightness==='number'?r.brightness:0,
+        contrast: typeof r.contrast==='number'?r.contrast:0,
+        saturation: typeof r.saturation==='number'?r.saturation:0,
+        gamma: typeof r.gamma==='number'?r.gamma:1,
+        sharpen: typeof r.sharpen==='number'?r.sharpen:0,
+        blur: typeof r.blur==='number'?r.blur:0,
+        cropRect: r.cropRect||null,
+      }
+    })
+  }).then(function(data){
+    loadEditorImage(id);
+    toast('保存成功','success');
+  }).catch(function(err){
+    toast('保存失败: '+(err.message||'unknown'),'error');
+  });
 }
 
 function publishEditorPhoto(){

@@ -154,6 +154,10 @@ class ImageRecipeService {
       saturation: canonicalRecipe.saturation,
     });
 
+    if (canonicalRecipe.contrast !== undefined && canonicalRecipe.contrast !== 1) {
+      img = img.linear(canonicalRecipe.contrast, 128 * (1 - canonicalRecipe.contrast));
+    }
+
     if (canonicalRecipe.gamma !== 1) {
       img = img.gamma(canonicalRecipe.gamma);
     }
@@ -185,7 +189,7 @@ class ImageRecipeService {
     if (!this.imageRasterizer) throw new Error('Image rasterizer not configured');
     options = options || {};
 
-    var asset = await this.assetRepository.getAsset(assetId);
+    var asset = await this.assetRepository.get(assetId);
     if (!asset) throw new Error('Asset not found: ' + assetId);
 
     if (asset.safetyStatus !== 'SAFE' && !options.skipSafetyCheck) {

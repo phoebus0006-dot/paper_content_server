@@ -14,17 +14,6 @@ function createApplication(options) {
   [dataDir, snapDir, pubDir].forEach(function(d) { fs.mkdirSync(d, { recursive: true }); });
 
   var adminToken = options.adminToken || 'test-e2e-token';
-  process.env.DATA_DIR = dataDir;
-  process.env.ADMIN_TOKEN = adminToken;
-  process.env.ADMIN_ACCESS_MODE = 'token';
-  process.env.MQTT_ENABLED = 'false';
-  process.env.TRANSLATION_PROVIDER = 'none';
-  process.env.FEEDS_FILE = path.join(dataDir, 'feeds.json');
-  process.env.IMAGE_INDEX_FILE = path.join(dataDir, 'image_index.json');
-  process.env.LIBRARY_STATE_FILE = path.join(dataDir, 'library_state.json');
-  process.env.NEWS_CACHE_FILE = path.join(dataDir, 'news_cache.json');
-  process.env.NEWS_ROTATION_STATE_FILE = path.join(dataDir, 'news_rotation_state.json');
-  process.env.NODE_ENV = 'test';
 
   fs.writeFileSync(path.join(dataDir, 'feeds.json'), '[]');
   fs.writeFileSync(path.join(dataDir, 'news_cache.json'), JSON.stringify({ version: 1, updatedAt: null, translations: {} }));
@@ -33,11 +22,6 @@ function createApplication(options) {
   fs.writeFileSync(path.join(dataDir, 'image_index.json'), '[]');
 
   var serverMod = require('../server.js');
-
-  // Build an isolated runtime for this application instance — never mutate
-  // the module-level serverMod.runtime singleton.
-  var customRuntime = Object.assign({}, serverMod.runtime);
-
   var lg = options.logger || { info: function() {}, warn: function() {}, error: function() {} };
 
   var R3_SnapshotStore = require('../src/snapshot/snapshot-store').SnapshotStore;
@@ -90,34 +74,77 @@ function createApplication(options) {
   var imageRasterizer = new ImageRasterizer();
   var imageRecipeService = new ImageRecipeService();
 
-  customRuntime.snapshotStore = snapshotStore;
-  customRuntime.snapshotCache = snapshotCache;
-  customRuntime.pinStore = pinStore;
-  customRuntime.publicationLock = publicationLock;
-  customRuntime.operatingModeService = operatingModeService;
-  customRuntime.publicationHistory = publicationHistory;
-  customRuntime.notificationPort = notificationPort;
-  customRuntime.publicationService = pubService;
-  customRuntime.adminStateService = adminStateService;
-  customRuntime.newsTitleService = newsTitleService;
-  customRuntime.safeImagePath = safeImagePath;
-  customRuntime.imageRasterizer = imageRasterizer;
-  customRuntime.overridePersistence = overridePersistence;
-  customRuntime.config = {
-    features: {
-      deletePipelineEnabled: false,
-      customLibraryEnabled: false,
-      learningLibraryEnabled: false,
-      renderShadowEnabled: false,
+  // Build the isolated request context — NOT touching module.exports.runtime.
+  // Each createApplication call has its own context with independent services.
+  var requestContext = {
+    snapshotStore: snapshotStore,
+    snapshotCache: snapshotCache,
+    pinStore: pinStore,
+    publicationLock: publicationLock,
+    operatingModeService: operatingModeService,
+    publicationHistory: publicationHistory,
+    notificationPort: notificationPort,
+    publicationService: pubService,
+    adminStateService: adminStateService,
+    newsTitleService: newsTitleService,
+    safeImagePath: safeImagePath,
+    imageRasterizer: imageRasterizer,
+    overridePersistence: overridePersistence,
+    imageRecipeService: imageRecipeService,
+    config: {
+      features: {
+        deletePipelineEnabled: false,
+        customLibraryEnabled: false,
+        learningLibraryEnabled: false,
+        renderShadowEnabled: false,
+      },
     },
+    renderCount: 0,
+    serverStartTime: Date.now(),
+    cachedFrames: new Map(),
+    cachedSnapshots: new Map(),
+    feeds: null,
+    newsCache: { version: 1, updatedAt: null, translations: {} },
+    newsRotation: { version: 1, updatedAt: null, shown: [] },
+    lastGoodNews: null,
+    fallbackStudyEntries: null,
+    fallbackStudyReady: false,
+    libraryState: { themeCursor: 0, currentTheme: null, currentImageIndex: 0, remainingThemeSlots: 1, lastSlotKey: null, lastSwitchDate: null, patternIndex: 0, currentKind: null },
+    imageIndex: [],
+    imageIndexLoadedAt: 0,
+    refreshPromise: null,
+    lastNewsRefreshAt: 0,
+    serverStartTime: Date.now(),
+    renderCount: 0,
+    nowProvider: null,
+    pinNowProvider: null,
+    customLibraryService: null,
+    safetyGate: null,
+    learningIngestionService: null,
+    learningLastIngestAt: null,
+    safetyClassifierPort: null,
+    assetRepository: null,
+    assetSelectionService: null,
+    assetDeleteService: null,
+    DATA_DIR: dataDir,
+    IMAGE_INDEX_FILE: path.join(dataDir, 'image_index.json'),
+    LIBRARY_STATE_FILE: path.join(dataDir, 'library_state.json'),
+    NEWS_CACHE_FILE: path.join(dataDir, 'news_cache.json'),
+    NEWS_ROTATION_FILE: path.join(dataDir, 'news_rotation_state.json'),
+    FEEDS_FILE: path.join(dataDir, 'feeds.json'),
+    LAST_GOOD_NEWS_FILE: path.join(dataDir, 'last_good_news.json'),
+    FALLBACK_STUDY_DIR: path.join(dataDir, 'fallback_study'),
+    TIMEZONE: 'UTC',
+    NEWS_REFRESH_MINUTES: 15,
+    adminAccessMode: 'token',
+    adminToken: adminToken,
+    adminAllowedCidrs: { valid: true, parsed: [{ network: 2130706432, mask: 4294967040 }] },
+    adminTrustProxy: false,
+    adminTrustedProxyCidrs: [],
+    adminAllowHeaderlessWrite: false,
   };
-  customRuntime.renderCount = 0;
-  customRuntime.serverStartTime = Date.now();
-  customRuntime.cachedFrames = new Map();
-  customRuntime.cachedSnapshots = new Map();
 
   operatingModeService.setMode('AUTO');
-
   overridePersistence.clearOverride();
 
   var fixtureImgSrc = path.join(__dirname, '..', 'resources', 'fallback-study', 'fb-color.png');
@@ -144,7 +171,7 @@ function createApplication(options) {
         theme: 'test',
         kind: 'shot',
         poolType: 'study_frames',
-        safetyStatus: 'approved',
+        safetyStatus: 'SAFE',
         reviewStatus: 'APPROVED',
         lifecycleStatus: 'SELECTABLE',
         width: 800,
@@ -159,12 +186,11 @@ function createApplication(options) {
   setupFixtureImageIndex();
 
   var entries = JSON.parse(fs.readFileSync(path.join(dataDir, 'image_index.json'), 'utf8'));
-  customRuntime.imageIndex = entries;
-  customRuntime.fullImageIndex = entries;
-  customRuntime.imageIndexLoadedAt = Date.now();
+  requestContext.imageIndex = entries;
+  requestContext.imageIndexLoadedAt = Date.now();
 
   var libState = JSON.parse(fs.readFileSync(path.join(dataDir, 'library_state.json'), 'utf8'));
-  customRuntime.libraryState = libState;
+  requestContext.libraryState = libState;
 
   var initialized = false;
   var initPromise = null;
@@ -197,8 +223,8 @@ function createApplication(options) {
   function close() {
     if (cleanedUp) return Promise.resolve();
     cleanedUp = true;
-    customRuntime.cachedFrames = new Map();
-    customRuntime.cachedSnapshots = new Map();
+    requestContext.cachedFrames = new Map();
+    requestContext.cachedSnapshots = new Map();
     return new Promise(function(resolve) {
       try {
         var rmDir = function(dirPath) {
@@ -222,9 +248,13 @@ function createApplication(options) {
     });
   }
 
+  // Use the server's createApplication to get the handler — no module-level
+  // runtime mutation, no global override, no mutex.
+  var app = serverMod.createApplication({ context: requestContext, close: close });
+
   return {
-    app: serverMod.createHandler(customRuntime),
-    runtime: customRuntime,
+    app: app.handler,
+    runtime: requestContext,
     close: close,
     ensureInitialized: ensureInitialized,
     dataDir: dataDir,

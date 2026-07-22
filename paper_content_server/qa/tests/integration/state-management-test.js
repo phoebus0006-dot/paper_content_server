@@ -29,9 +29,10 @@ describe('AdminStateService — single source of truth', () => {
   });
 
   it('should report consistent=false when snapshot mismatch exists', async () => {
+    var snapB = { snapshotId: 'snap-b', frameId: 'news:test-frame', mode: 'news', createdAt: new Date().toISOString(), frame: Buffer.alloc(192010, 0x11), frameLength: 192010, frameSha256: 'abc', payload: { metadata: {} } };
     var mockSnapshot = {
-      getActiveSnapshot: async () => ({ snapshotId: 'snap-b', frameId: 'news:test-frame', mode: 'news', createdAt: new Date().toISOString() }),
-      getFrame: async () => Buffer.alloc(192010, 0x11)
+      readActive: async () => ({ activeSnapshotId: 'snap-b' }),
+      load: async function(id) { if (id === 'snap-b') return snapB; return null; }
     };
     var mockHistory = {
       list: async () => [{ snapshotId: 'snap-a', publishedAt: new Date().toISOString(), type: 'news' }]
@@ -53,9 +54,10 @@ describe('AdminStateService — single source of truth', () => {
 
   it('should report consistent=true when all data is aligned', async () => {
     var snapId = 'snap-1';
+    var snap = { snapshotId: snapId, frameId: 'news:test-frame', mode: 'news', createdAt: new Date().toISOString(), frame: Buffer.alloc(192010, 0x11), frameLength: 192010, frameSha256: 'abc', payload: { metadata: {} } };
     var mockSnapshot = {
-      getActiveSnapshot: async () => ({ snapshotId: snapId, frameId: 'news:test-frame', mode: 'news', createdAt: new Date().toISOString() }),
-      getFrame: async () => Buffer.alloc(192010, 0x11)
+      readActive: async () => ({ activeSnapshotId: snapId }),
+      load: async function(id) { if (id === snapId) return snap; return null; }
     };
     var mockHistory = {
       list: async () => [{ snapshotId: snapId, publishedAt: new Date().toISOString(), type: 'news' }]

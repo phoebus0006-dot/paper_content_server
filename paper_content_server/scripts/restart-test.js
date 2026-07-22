@@ -3,12 +3,13 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 var exitCode = 0;
 var RUN_ID = Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex');
 var SRV = path.join(__dirname, '..', 'server.js');
 var CWD = path.dirname(SRV);
-var TMPDIR = path.join(CWD, 'test_restart_' + RUN_ID);
+var TMPDIR = path.join(os.tmpdir(), 'test_restart_' + RUN_ID);
 
 function sha256(buf) { return crypto.createHash('sha256').update(buf).digest('hex'); }
 

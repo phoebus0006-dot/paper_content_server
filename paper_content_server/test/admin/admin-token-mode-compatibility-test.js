@@ -1,5 +1,5 @@
-var http = require('http'); var path = require('path'); var fs = require('fs'); var { spawn } = require('child_process');
-var ROOT = path.join(__dirname, '..', '..'); var PORT = 8892; var TMPDIR = path.join(ROOT, 'test_token_' + Date.now());
+var http = require('http'); var path = require('path'); var fs = require('fs'); var os = require('os'); var { spawn } = require('child_process');
+var ROOT = path.join(__dirname, '..', '..'); var PORT = 8892; var TMPDIR = path.join(os.tmpdir(), 'test_token_' + Date.now());
 var passed = 0, failed = 0, exitCode = 0, TOKEN = 'test-admin-token-abc123';
 function check(l, c) { if (c) { passed++; console.log('PASS', l) } else { failed++; exitCode = 1; console.log('FAIL', l) } }
 function get(url, token) {
@@ -12,7 +12,7 @@ async function waitSrv() { for (var i = 0; i < 30; i++) { try { var r = await ge
 async function main() {
   console.log('=== Admin Token Mode Compatibility Test ===');
   try { fs.mkdirSync(TMPDIR, { recursive: true }); } catch(e) {}
-  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'token', ADMIN_TOKEN: TOKEN, DATA_DIR: TMPDIR, TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
+  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'token', ADMIN_TOKEN: TOKEN, DATA_DIR: TMPDIR, FEEDS_FILE: path.join(TMPDIR, 'feeds.json'), NEWS_CACHE_FILE: path.join(TMPDIR, 'news_cache.json'), LIBRARY_STATE_FILE: path.join(TMPDIR, 'library_state.json'), NEWS_ROTATION_FILE: path.join(TMPDIR, 'news_rotation_state.json'), IMAGE_INDEX_FILE: path.join(TMPDIR, 'image_index.json'), LAST_GOOD_NEWS_FILE: path.join(TMPDIR, 'last_good_news.json'), TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
   var srv = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env: env, cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   if (!await waitSrv()) { console.log('FAIL: server did not start'); srv.kill(); process.exit(1); }
   var r1 = await get('/api/admin/dashboard'); check('TOKEN_MODE_NO_TOKEN=401', r1.s === 401);

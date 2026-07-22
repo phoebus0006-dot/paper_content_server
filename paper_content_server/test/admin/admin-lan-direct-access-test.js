@@ -1,11 +1,12 @@
 var http = require('http');
 var path = require('path');
 var fs = require('fs');
+var os = require('os');
 var { spawn } = require('child_process');
 var ROOT = path.join(__dirname, '..', '..');
 var PORT = 8891;
 var BASE = 'http://127.0.0.1:' + PORT;
-var TMPDIR = path.join(ROOT, 'test_lan_' + Date.now());
+var TMPDIR = path.join(os.tmpdir(), 'test_lan_' + Date.now());
 var passed = 0, failed = 0, exitCode = 0;
 function check(label, cond) { if (cond) { passed++; console.log('PASS', label) } else { failed++; exitCode = 1; console.log('FAIL', label) } }
 function get(url) {
@@ -30,7 +31,7 @@ async function waitForServer() {
 async function main() {
   console.log('=== Admin LAN Direct Access Test ===');
   try { fs.mkdirSync(TMPDIR, { recursive: true }); } catch(e) {}
-  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8', TRUST_PROXY: 'false', DATA_DIR: TMPDIR, TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
+  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8', TRUST_PROXY: 'false', DATA_DIR: TMPDIR, FEEDS_FILE: path.join(TMPDIR, 'feeds.json'), NEWS_CACHE_FILE: path.join(TMPDIR, 'news_cache.json'), LIBRARY_STATE_FILE: path.join(TMPDIR, 'library_state.json'), NEWS_ROTATION_FILE: path.join(TMPDIR, 'news_rotation_state.json'), IMAGE_INDEX_FILE: path.join(TMPDIR, 'image_index.json'), LAST_GOOD_NEWS_FILE: path.join(TMPDIR, 'last_good_news.json'), TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
   var server = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env: env, cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   if (!await waitForServer()) { console.log('FAIL: server did not start'); server.kill(); process.exit(1); }
   var r1 = await get('/admin/'); check('LAN_ADMIN_PAGE_NO_TOKEN=200', r1.s === 200);

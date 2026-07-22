@@ -1,5 +1,5 @@
-var http = require('http'); var path = require('path'); var fs = require('fs'); var { spawn } = require('child_process');
-var ROOT = path.join(__dirname, '..', '..'); var PORT = 8893; var TMPDIR = path.join(ROOT, 'test_cidr_' + Date.now());
+var http = require('http'); var path = require('path'); var fs = require('fs'); var os = require('os'); var { spawn } = require('child_process');
+var ROOT = path.join(__dirname, '..', '..'); var PORT = 8893; var TMPDIR = path.join(os.tmpdir(), 'test_cidr_' + Date.now());
 var passed = 0, failed = 0, exitCode = 0;
 function check(l, c) { if (c) { passed++; console.log('PASS', l) } else { failed++; exitCode = 1; console.log('FAIL', l) } }
 function get(url) {
@@ -18,7 +18,7 @@ async function waitSrv() { for (var i = 0; i < 30; i++) { try { var r = await ge
 async function testPhaseA() {
   console.log('--- Phase A: ALLOW 10.0.0.0/8 only ---');
   try { fs.mkdirSync(TMPDIR, { recursive: true }); } catch(e) {}
-  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '10.0.0.0/8', TRUST_PROXY: 'false', DATA_DIR: TMPDIR, TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
+  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '10.0.0.0/8', TRUST_PROXY: 'false', DATA_DIR: TMPDIR, FEEDS_FILE: path.join(TMPDIR, 'feeds.json'), NEWS_CACHE_FILE: path.join(TMPDIR, 'news_cache.json'), LIBRARY_STATE_FILE: path.join(TMPDIR, 'library_state.json'), NEWS_ROTATION_FILE: path.join(TMPDIR, 'news_rotation_state.json'), IMAGE_INDEX_FILE: path.join(TMPDIR, 'image_index.json'), LAST_GOOD_NEWS_FILE: path.join(TMPDIR, 'last_good_news.json'), TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
   var srv = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env: env, cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   if (!await waitSrv()) { console.log('FAIL: server did not start'); srv.kill(); process.exit(1); }
   var r1 = await get('/admin/'); check('CIDR_DENY_ADMIN_PAGE', r1.s === 403);
@@ -30,9 +30,9 @@ async function testPhaseA() {
 // Phase B: allow 127.0.0.0/8 — 127.0.0.1 should be ALLOWED
 async function testPhaseB() {
   console.log('--- Phase B: ALLOW 127.0.0.0/8 ---');
-  var TMPDIR2 = path.join(ROOT, 'test_cidr_b_' + Date.now());
+  var TMPDIR2 = path.join(os.tmpdir(), 'test_cidr_b_' + Date.now());
   try { fs.mkdirSync(TMPDIR2, { recursive: true }); } catch(e) {}
-  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8', TRUST_PROXY: 'false', DATA_DIR: TMPDIR2, TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
+  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '127.0.0.0/8', TRUST_PROXY: 'false', DATA_DIR: TMPDIR2, FEEDS_FILE: path.join(TMPDIR2, 'feeds.json'), NEWS_CACHE_FILE: path.join(TMPDIR2, 'news_cache.json'), LIBRARY_STATE_FILE: path.join(TMPDIR2, 'library_state.json'), NEWS_ROTATION_FILE: path.join(TMPDIR2, 'news_rotation_state.json'), IMAGE_INDEX_FILE: path.join(TMPDIR2, 'image_index.json'), LAST_GOOD_NEWS_FILE: path.join(TMPDIR2, 'last_good_news.json'), TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
   var srv = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env: env, cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   if (!await waitSrv()) { console.log('FAIL: server did not start'); srv.kill(); process.exit(1); }
   var r1 = await get('/admin/'); check('CIDR_ALLOW_ADMIN_PAGE', r1.s === 200);
@@ -43,9 +43,9 @@ async function testPhaseB() {
 // Phase C: XFF ignored when TRUST_PROXY=false
 async function testPhaseC() {
   console.log('--- Phase C: XFF ignored (TRUST_PROXY=false) ---');
-  var TMPDIR3 = path.join(ROOT, 'test_cidr_c_' + Date.now());
+  var TMPDIR3 = path.join(os.tmpdir(), 'test_cidr_c_' + Date.now());
   try { fs.mkdirSync(TMPDIR3, { recursive: true }); } catch(e) {}
-  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '1.2.3.4/32', TRUST_PROXY: 'false', DATA_DIR: TMPDIR3, TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
+  var env = Object.assign({}, process.env, { PORT: String(PORT), ADMIN_ACCESS_MODE: 'lan', ADMIN_ALLOWED_CIDRS: '1.2.3.4/32', TRUST_PROXY: 'false', DATA_DIR: TMPDIR3, FEEDS_FILE: path.join(TMPDIR3, 'feeds.json'), NEWS_CACHE_FILE: path.join(TMPDIR3, 'news_cache.json'), LIBRARY_STATE_FILE: path.join(TMPDIR3, 'library_state.json'), NEWS_ROTATION_FILE: path.join(TMPDIR3, 'news_rotation_state.json'), IMAGE_INDEX_FILE: path.join(TMPDIR3, 'image_index.json'), LAST_GOOD_NEWS_FILE: path.join(TMPDIR3, 'last_good_news.json'), TRANSLATION_PROVIDER: 'none', TZ: 'UTC', MQTT_ENABLED: 'false' });
   var srv = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env: env, cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   if (!await waitSrv()) { console.log('FAIL: server did not start'); srv.kill(); process.exit(1); }
   var r1 = await getWithXFF('/admin/'); check('UNTRUSTED_XFF_IGNORED_ACCESS_DENIED', r1.s === 403);

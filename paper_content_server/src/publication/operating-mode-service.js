@@ -23,6 +23,19 @@ function OperatingModeService(initialMode) {
 
   function getMode() { return mode; }
 
+  function getCurrentMode() {
+    var ctx = mode === MODE_ONE_SHOT_OVERRIDE ? oneShotContext
+            : mode === MODE_FOCUS_LOCK ? focusLockContext
+            : null;
+    return {
+      mode: mode,
+      scheduleMode: mode === MODE_ONE_SHOT_OVERRIDE ? 'news' : mode,
+      nextSwitchAt: ctx && ctx.expiresAt ? new Date(ctx.expiresAt) : null,
+      expiresAt: ctx && ctx.expiresAt ? new Date(ctx.expiresAt) : null,
+      snapshotId: ctx ? ctx.snapshotId : null,
+    };
+  }
+
   function setMode(newMode) {
     if (newMode !== MODE_AUTO
         && newMode !== MODE_LEGACY_ADMIN_OVERRIDE
@@ -96,6 +109,7 @@ function OperatingModeService(initialMode) {
 
   return {
     getMode: getMode,
+    getCurrentMode: getCurrentMode,
     setMode: setMode,
     enterOneShot: enterOneShot,
     exitOneShot: exitOneShot,

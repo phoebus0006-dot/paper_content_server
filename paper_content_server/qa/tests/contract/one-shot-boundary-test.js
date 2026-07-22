@@ -289,15 +289,15 @@ describe('one-shot frameId — content type determines prefix', () => {
     assert.notEqual(newsBranch, null, 'one-shot handler should call buildNewsSnapshot for news content');
   });
 
-  it('one-shot handler calls buildPhotoSnapshot or buildPhotoSnapshotFromAsset for photo content', () => {
+  it('one-shot handler calls buildPhotoSnapshotFromAsset for explicit assetId and getContentForNow for no-asset photo', () => {
     const serverPath = path.join(__dirname, '..', '..', '..', 'server.js');
     const serverSrc = fs.readFileSync(serverPath, 'utf8');
     // Photo with explicit assetId → buildPhotoSnapshotFromAsset
     const assetBranch = serverSrc.match(/buildPhotoSnapshotFromAsset/);
-    // Photo without assetId → buildPhotoSnapshot (the else branch)
-    const photoBranch = serverSrc.match(/else\s*\{[^}]*\n[^}]*buildPhotoSnapshot\b/);
+    // Photo without assetId → getContentForNow (shared context-aware helper, internally routes to buildPhotoSnapshot for photo mode)
+    const noAssetBranch = serverSrc.match(/else\s*\{[^}]*getContentForNow\b/);
     assert.notEqual(assetBranch, null, 'one-shot handler should call buildPhotoSnapshotFromAsset when assetId provided');
-    assert.notEqual(photoBranch, null, 'one-shot handler should call buildPhotoSnapshot when no assetId');
+    assert.notEqual(noAssetBranch, null, 'one-shot handler should call getContentForNow when no assetId');
   });
 
   it('one-shot response osFrameId uses "one-shot:{contentType}:" prefix', () => {

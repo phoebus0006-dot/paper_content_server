@@ -1,69 +1,371 @@
-#!/usr/bin/env node
-// R3 test: history failure semantics — activation committed even if history/notification fails
-var path=require('path'),fs=require('fs'),os=require('os');
-var ROOT=path.join(__dirname,'..','..');
-var ec=0,pass=0,fail=0;
-function t(n,o,d){console.log((o?'PASS':'FAIL')+' '+n+(d?': '+d:''));if(o)pass++;else{ec=1;fail++}}
-function mf(){var b=Buffer.alloc(192010);b.write('EPF1',0,'ascii');b.writeUInt16LE(800,4);b.writeUInt16LE(480,6);b[8]=49;b[9]=1;return b;}
-var sm=require(path.join(ROOT,'src','snapshot','snapshot-model'));
-var SS=require(path.join(ROOT,'src','snapshot','snapshot-store')).SnapshotStore;
-var SC=require(path.join(ROOT,'src','snapshot','snapshot-cache')).SnapshotCache;
-var PS=require(path.join(ROOT,'src','snapshot','pin-store')).PinStore;
-var PL=require(path.join(ROOT,'src','publication','publication-lock')).PublicationLock;
-var PH=require(path.join(ROOT,'src','publication','publication-history')).PublicationHistory;
-var PubSvc=require(path.join(ROOT,'src','publication','publication-service')).PublicationService;
-var tmp=path.join(os.tmpdir(),'r3_hf_'+Date.now());fs.mkdirSync(tmp,{recursive:true});
-var logEntries=[];
-var lg={info:function(){},warn:function(){},error:function(m){logEntries.push(m);}};
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
-function makeServices(histReject){
-  var store=SS(path.join(tmp,'snap'),path.join(tmp,'pub'),lg);
-  var hist=PH(path.join(tmp,'h_'+Date.now()+'_'+Math.random()+'.json'),lg);
-  var origAppend=hist.append;
-  if(histReject) hist.append=function(){return Promise.reject(new Error('hist down'));};
-  var svc=PubSvc(store,SC(),PS(),PL(),
-    {notify:function(){return Promise.resolve();},name:'nop'},null,hist,lg);
-  return {store:store,svc:svc,hist:hist};
+const ROOT = path.join(__dirname, '..', '..');
+const { PublicationService } = require(path.join(ROOT, 'src', 'publication', 'publication-service'));
+const { createSnapshot } = require(path.join(ROOT, 'src', 'snapshot', 'snapshot-model'));
+const { SnapshotStore } = require(path.join(ROOT, 'src/snapshot/snapshot-store'));
+const { PublicationHistory } = require(path.join(ROOT, 'src/publication/publication-history'));
+
+function makeFrame() {
+  var b = Buffer.alloc(192010);
+  b.write('EPF1', 0, 'ascii'); b.writeUInt16LE(800, 4); b.writeUInt16LE(480, 6); b[8] = 49; b[9] = 1;
+  return b;
 }
 
-async function run(){
-  // HISTORY FAILURE: history.append rejects -> publish still resolves, committed=true
-  var s1=makeServices(true);await s1.store.ensureDirs();
-  var snap=sm.createSnapshot('news:hf-test',{mode:'news'},mf(),'news');
-  var result=await s1.svc.publish(snap);
-  t('HISTORY_FAIL_ACTIVE_COMMITTED',result.snapshotId===snap.snapshotId&&result.committed===true,'');
-  t('HISTORY_STATUS_FAILED',result.historyStatus==='FAILED',result.historyStatus);
-  t('NOTIFICATION_STILL_ATTEMPTED',result.notificationStatus==='OK',result.notificationStatus);
-  t('HISTORY_FAIL_PUBLISH_RESOLVES',true,'publish did not reject');
-  var active=await s1.svc.getActive();
-  t('HISTORY_FAIL_ACTIVE_SNAPSHOTID',active.snapshotId===snap.snapshotId,'');
-  t('HISTORY_FAIL_LOGGER_ERROR',logEntries.some(function(m){return m.indexOf('history append failed')>=0;}),'');
-
-  // ROLLBACK HISTORY FAILURE
-  logEntries=[];
-  var s2=makeServices(false);await s2.store.ensureDirs();
-  var snapA=sm.createSnapshot('news:rb-a',{mode:'news'},mf(),'news');
-  var snapB=sm.createSnapshot('news:rb-b',{mode:'news'},mf(),'news');
-  await s2.svc.publish(snapA);
-  await s2.svc.publish(snapB);
-  // Make hist append reject for rollback
-  s2.hist.append=function(){return Promise.reject(new Error('hist down'));};
-  var rbResult=await s2.svc.rollback(snapA.snapshotId);
-  t('ROLLBACK_ACTIVE_TARGET_COMMITTED',rbResult.snapshotId===snapA.snapshotId&&rbResult.committed===true,'');
-  t('ROLLBACK_HISTORY_STATUS_FAILED',rbResult.historyStatus==='FAILED',rbResult.historyStatus);
-  t('ROLLBACK_DOES_NOT_REJECT_AFTER_ACTIVATION',true,'');
-  var activeRb=await s2.svc.getActive();
-  t('ROLLBACK_ACTIVE_IS_TARGET',activeRb.snapshotId===snapA.snapshotId,'');
-  t('ROLLBACK_LOGGER_ERROR',logEntries.some(function(m){return m.indexOf('history append failed')>=0;}),'');
-
-  // NOTIFICATION AFTER HISTORY FAILURE: notification still attempted
-  logEntries=[];
-  var s3=makeServices(true);await s3.store.ensureDirs();
-  s3.svc.publish(sm.createSnapshot('news:notif-after-hist',{mode:'news'},mf(),'news'));
-  // (notification port is nop, so it always succeeds — the key is history failure doesn't prevent notification attempt)
-
-  console.log('\n=== Summary: '+pass+' passed, '+fail+' failed ===');
-  try{fs.rmdirSync(tmp,{recursive:true})}catch(e){}
-  process.exit(ec);
+function makeSnapshot(frameId, mode) {
+  return createSnapshot(frameId || 'news:test:1', { mode: mode || 'news' }, makeFrame(), mode || 'news');
 }
-run().catch(function(e){console.log('CRASH: '+e.message);try{fs.rmdirSync(tmp,{recursive:true})}catch(e2){}process.exit(1)});
+
+// ── Mock factories ──
+
+function mockLock() {
+  var release = function() {};
+  return { acquire: function() { return Promise.resolve(release); } };
+}
+
+function mockNotificationPort(fail) {
+  return {
+    notify: fail
+      ? function() { return Promise.reject(new Error('notif fail')); }
+      : function() { return Promise.resolve(); }
+  };
+}
+
+function mockOperatingModeService(initialMode) {
+  var mode = initialMode || 'AUTO';
+  return {
+    getMode: function() { return mode; },
+    setMode: function(m) { mode = m; },
+  };
+}
+
+function mockHistory(failOnAppend, entries) {
+  var data = entries || [];
+  return {
+    list: function() { return Promise.resolve(data); },
+    append: failOnAppend
+      ? function() { return Promise.reject(new Error('history fail')); }
+      : function(e) { data.unshift(e); return Promise.resolve(); },
+  };
+}
+
+function mockOverridePersistence(initialOverride) {
+  var override = initialOverride || null;
+  return {
+    loadOverride: function() { return override; },
+    saveOverride: function(o) { override = o; },
+    clearOverride: function() { override = null; },
+  };
+}
+
+function mockSnapshotCache(initial) {
+  var map = new Map();
+  if (initial) { initial.forEach(function(e) { map.set(e.key, e.value); }); }
+  return {
+    get: function(k) { return map.get(k) || null; },
+    set: function(k, v) { map.set(k, v); },
+    delete: function(k) { map.delete(k); },
+    clear: function() { map.clear(); },
+    size: function() { return map.size; },
+    keys: function() { return Array.from(map.keys()); },
+    has: function(k) { return map.has(k); },
+  };
+}
+
+function mockFrameCache(initial) {
+  var map = new Map();
+  if (initial) { initial.forEach(function(e) { map.set(e.key, e.value); }); }
+  return {
+    get: function(k) { return map.get(k); },
+    set: function(k, v) { map.set(k, v); },
+    clear: function() { map.clear(); },
+    keys: function() { return map.keys(); },
+  };
+}
+
+function mockSnapshotStore(failOnSave, failOnActivate, failOnReadActive) {
+  var store = {};
+  var activeId = null;
+  var cleared = false;
+  return {
+    save: failOnSave
+      ? function() { return Promise.reject(new Error('save fail')); }
+      : function(snap) { store[snap.snapshotId] = snap; return Promise.resolve(snap.snapshotId); },
+    load: function(id) { return store[id] ? Promise.resolve(store[id]) : Promise.reject(new Error('not found: ' + id)); },
+    activate: failOnActivate
+      ? function() { return Promise.reject(new Error('activate fail')); }
+      : function(id) { activeId = id; return Promise.resolve(); },
+    readActive: failOnReadActive
+      ? function() { return Promise.reject(new Error('readActive fail')); }
+      : function() { return activeId ? Promise.resolve({ activeSnapshotId: activeId, frameSha256: store[activeId] ? store[activeId].frameSha256 : null, frameLength: 192010 }) : Promise.resolve(cleared ? { activeSnapshotId: null, frameSha256: null } : null); },
+    listSnapshots: function() { return Promise.resolve(Object.keys(store)); },
+    ensureDirs: function() { return Promise.resolve(); },
+    clearActive: function() { activeId = null; cleared = true; return Promise.resolve(); },
+  };
+}
+
+var logger = { info: function() {}, warn: function() {}, error: function() {} };
+
+describe('R3 — history failure semantics', () => {
+
+  it('should rollback and reject when history.append fails on publish (no prior active)', async () => {
+    var store = mockSnapshotStore(false, false, false);
+    var cache = mockSnapshotCache();
+    var opMode = mockOperatingModeService('AUTO');
+    var hist = mockHistory(true, []);
+    var op = mockOverridePersistence();
+    var fc = mockFrameCache();
+
+    var svc = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, logger, op, fc);
+    var snap = makeSnapshot('news:no-prior', 'news');
+
+    assert.equal(await store.readActive(), null, 'no prior active snapshot');
+    assert.equal(opMode.getMode(), 'AUTO');
+
+    try {
+      await svc.publish(snap);
+      assert.fail('should have thrown');
+    } catch(e) {
+      assert.ok(e.message.includes('history fail'), 'throws history fail error');
+    }
+
+    // Rollback: must have called clearActive (since there was no prior active)
+    var active = await store.readActive();
+    assert.notEqual(active, null, 'readActive returns object after clearActive');
+    assert.equal(active.activeSnapshotId, null, 'activeSnapshotId cleared');
+    assert.equal(opMode.getMode(), 'AUTO', 'mode restored');
+    assert.equal(op.loadOverride(), null, 'override unchanged');
+    assert.equal(cache.size(), 0, 'snapshot cache empty');
+    // History must NOT contain the new entry
+    var entries = await hist.list();
+    assert.equal(entries.length, 0, 'history unchanged after rollback');
+  });
+
+  it('should rollback and reject when history.append fails on publish (with prior active)', async () => {
+    var initialSnap = makeSnapshot('news:initial', 'news');
+    var store = mockSnapshotStore(false, false, false);
+    var cache = mockSnapshotCache();
+    var opMode = mockOperatingModeService('ONE_SHOT_OVERRIDE');
+    var hist = mockHistory(true, []);
+    var op = mockOverridePersistence({ mode: 'ONE_SHOT_OVERRIDE', assetId: 'a1' });
+    var fc = mockFrameCache();
+
+    // Pre-populate store with an active snapshot so rollback has a target
+    await store.save(initialSnap);
+    await store.activate(initialSnap.snapshotId);
+    cache.set(initialSnap.snapshotId, initialSnap);
+
+    var svc = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, logger, op, fc);
+    var snap = makeSnapshot('news:hist-fail', 'news');
+
+    assert.equal(opMode.getMode(), 'ONE_SHOT_OVERRIDE');
+    assert.deepEqual(op.loadOverride(), { mode: 'ONE_SHOT_OVERRIDE', assetId: 'a1' });
+
+    try {
+      await svc.publish(snap);
+      assert.fail('should have thrown');
+    } catch(e) {
+      assert.ok(e.message.includes('history fail'), 'throws history fail error');
+    }
+
+    // State must be fully restored to pre-publication state (committed=false)
+    var active = await store.readActive();
+    assert.equal(active.activeSnapshotId, initialSnap.snapshotId, 'active snapshot restored to initial');
+    assert.equal(opMode.getMode(), 'ONE_SHOT_OVERRIDE', 'mode restored');
+    assert.deepEqual(op.loadOverride(), { mode: 'ONE_SHOT_OVERRIDE', assetId: 'a1' }, 'override restored');
+
+    // History must NOT contain the new entry
+    var entries = await hist.list();
+    assert.equal(entries.length, 0, 'history unchanged after rollback');
+
+    // Cache must NOT contain the new snapshot
+    assert.equal(cache.has(snap.snapshotId), false, 'failed snapshot not in cache');
+    assert.equal(cache.has(initialSnap.snapshotId), true, 'initial snapshot preserved in cache');
+  });
+
+  it('should restore caches when history.append fails on publish', async () => {
+    var cachedSnap = makeSnapshot('news:cached-entry', 'news');
+    var cache = mockSnapshotCache([{ key: cachedSnap.snapshotId, value: cachedSnap }]);
+    var fc = mockFrameCache([{ key: 'existing-frame', value: Buffer.from('old-data') }]);
+    var store = mockSnapshotStore(false, false, false);
+    var opMode = mockOperatingModeService('AUTO');
+    var hist = mockHistory(true, []);
+    var op = mockOverridePersistence();
+
+    var svc = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, logger, op, fc);
+    var snap = makeSnapshot('news:hist-cache', 'news');
+
+    assert.ok(cache.has(cachedSnap.snapshotId), 'pre-existing snapshot cache entry');
+    assert.equal(Array.from(fc.keys()).length, 1, 'pre-existing frame cache entry');
+
+    try {
+      await svc.publish(snap);
+      assert.fail('should have thrown');
+    } catch(e) {
+      assert.ok(e.message.includes('history fail'));
+    }
+
+    // Both caches must be restored to pre-publication state
+    assert.ok(cache.has(cachedSnap.snapshotId), 'snapshot cache entry preserved after rollback');
+    assert.equal(cache.has(snap.snapshotId), false, 'new snapshot not in cache after rollback');
+    assert.equal(Array.from(fc.keys()).length, 1, 'frame cache preserved after rollback');
+    assert.deepEqual(fc.get('existing-frame'), Buffer.from('old-data'), 'frame cache data intact');
+  });
+
+  it('should rollback successfully when history.append fails during rollback', async () => {
+    var store = mockSnapshotStore(false, false, false);
+    var cache = mockSnapshotCache();
+    var opMode = mockOperatingModeService('AUTO');
+    var op = mockOverridePersistence();
+    var fc = mockFrameCache();
+
+    var histData = [];
+    var appendCalls = 0;
+    var hist = {
+      list: function() { return Promise.resolve(histData); },
+      append: function(e) {
+        appendCalls++;
+        if (appendCalls <= 2) {
+          histData.unshift(e);
+          return Promise.resolve();
+        }
+        return Promise.reject(new Error('history fail during rollback'));
+      }
+    };
+
+    var svc = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, logger, op, fc);
+    var snapA = makeSnapshot('news:rb-a', 'news');
+    var snapB = makeSnapshot('news:rb-b', 'news');
+
+    await svc.publish(snapA);
+    await svc.publish(snapB);
+
+    var active = await store.readActive();
+    assert.equal(active.activeSnapshotId, snapB.snapshotId, 'snapB is active before rollback');
+
+    var errorLogs = [];
+    var errLogger = { info: function() {}, warn: function() {}, error: function(m) { errorLogs.push(m); } };
+    var svc2 = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, errLogger, op, fc);
+
+    var result;
+    try {
+      result = await svc2.rollback(snapA.snapshotId);
+    } finally {
+    }
+
+    // Rollback still succeeds despite history failure
+    assert.equal(result.snapshotId, snapA.snapshotId, 'rollback result is snapA');
+    assert.equal(result.committed, true, 'rollback committed');
+    assert.equal(result.historyStatus, 'FAILED', 'historyStatus is FAILED');
+
+    // Active snapshot pointer is the target (snapA)
+    var activeAfter = await store.readActive();
+    assert.equal(activeAfter.activeSnapshotId, snapA.snapshotId, 'active snapshot is snapA after rollback');
+
+    // Cache has the target snapshot
+    var cachedTarget = cache.get(snapA.snapshotId);
+    assert.notEqual(cachedTarget, null, 'snapA is in snapshot cache');
+    assert.equal(cachedTarget.snapshotId, snapA.snapshotId, 'cached snapshot matches snapA');
+
+    // Load snapshot to verify data integrity
+    var loaded = await store.load(snapA.snapshotId);
+    assert.equal(loaded.snapshotId, snapA.snapshotId, 'loaded snapshot is snapA');
+    assert.equal(loaded.frameSha256, snapA.frameSha256, 'frame SHA256 matches');
+
+    // History failure was logged
+    assert.ok(errorLogs.some(function(m) { return m.indexOf('history append failed') >= 0; }), 'history failure logged');
+  });
+
+  it('should rollback successfully when history.append fails during rollback with prior mode/override', async () => {
+    var store = mockSnapshotStore(false, false, false);
+    var cache = mockSnapshotCache();
+    var opMode = mockOperatingModeService('FOCUS_LOCK');
+    var op = mockOverridePersistence({ mode: 'FOCUS_LOCK', assetId: 'a3', libraryType: 'custom' });
+    var fc = mockFrameCache();
+
+    var histData = [];
+    var appendCalls = 0;
+    var hist = {
+      list: function() { return Promise.resolve(histData); },
+      append: function(e) {
+        appendCalls++;
+        if (appendCalls <= 2) {
+          histData.unshift(e);
+          return Promise.resolve();
+        }
+        return Promise.reject(new Error('history fail during rollback'));
+      }
+    };
+
+    var svc = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, logger, op, fc);
+    var snapA = makeSnapshot('news:rb-a-op', 'news');
+    var snapB = makeSnapshot('news:rb-b-op', 'news');
+
+    await svc.publish(snapA);
+    await svc.publish(snapB);
+
+    var errorLogs = [];
+    var errLogger = { info: function() {}, warn: function() {}, error: function(m) { errorLogs.push(m); } };
+
+    var result;
+    try {
+      var svc2 = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, errLogger, op, fc);
+      result = await svc2.rollback(snapA.snapshotId);
+    } finally {
+    }
+
+    // Mode/override must be preserved (rollback doesn't change these)
+    assert.equal(opMode.getMode(), 'FOCUS_LOCK', 'operating mode preserved');
+    assert.deepEqual(op.loadOverride(), { mode: 'FOCUS_LOCK', assetId: 'a3', libraryType: 'custom' }, 'override preserved');
+    assert.equal(result.snapshotId, snapA.snapshotId, 'rollback result is snapA');
+    assert.equal(result.committed, true, 'rollback committed');
+    assert.equal(result.historyStatus, 'FAILED', 'historyStatus is FAILED');
+  });
+
+  it('should rollback on history.append failure with real SnapshotStore', async () => {
+    var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'r3-hist-'));
+    try {
+      var snapDir = path.join(tmpDir, 'snapshots');
+      var pubDir = path.join(tmpDir, 'publication');
+      fs.mkdirSync(snapDir, { recursive: true });
+      fs.mkdirSync(pubDir, { recursive: true });
+
+      var store = SnapshotStore(snapDir, pubDir, logger);
+      var hist = mockHistory(true, []);
+      var cache = mockSnapshotCache();
+      var fc = mockFrameCache();
+      var opMode = mockOperatingModeService('AUTO');
+      var op = mockOverridePersistence();
+
+      await store.ensureDirs();
+
+      var svc = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, logger, op, fc);
+      var snap = makeSnapshot('news:real-store-test', 'news');
+
+      var activeBefore = await store.readActive();
+      assert.equal(activeBefore, null);
+
+      try {
+        await svc.publish(snap);
+        assert.fail('should have thrown');
+      } catch(e) {
+        assert.ok(e.message.includes('history fail'));
+      }
+
+      var activeAfter = await store.readActive();
+      assert.notEqual(activeAfter, null, 'readActive returns object');
+    assert.equal(activeAfter.activeSnapshotId, null, 'activeSnapshotId cleared');
+
+      var entries = await hist.list();
+      assert.equal(entries.length, 0);
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch(e) {}
+    }
+  });
+
+});

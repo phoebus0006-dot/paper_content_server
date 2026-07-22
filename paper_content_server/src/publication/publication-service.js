@@ -67,13 +67,17 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
   // ── Full rollback: restore all captured pre-publication state ──
   function _restorePrePublicationState(state) {
     var chain = Promise.resolve();
-    if (state.activeSnapshotId) {
-      chain = chain.then(function() {
+    chain = chain.then(function() {
+      if (state.activeSnapshotId) {
         return snapshotStore.activate(state.activeSnapshotId).catch(function(err) {
           logger.error('ROLLBACK: failed to restore active pointer ' + state.activeSnapshotId + ': ' + (err.message || err));
         });
-      });
-    }
+      } else {
+        return snapshotStore.clearActive().catch(function(err) {
+          logger.error('ROLLBACK: failed to clear active pointer: ' + (err.message || err));
+        });
+      }
+    });
     chain = chain.then(function() {
       // Restore operating mode
       if (state.operatingMode !== null && operatingModeService) {
@@ -112,9 +116,9 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
     return chain;
   }
 
-  function publish(snapshot) {
+  function publish(snapshot, options) {
     return lock.acquire(LOCK_KEY_PUBLISH).then(function(release) {
-      return doPublish(snapshot).then(function(result) {
+      return doPublish(snapshot, options).then(function(result) {
         release();
         return result;
       }, function(err) {
@@ -124,7 +128,7 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
     });
   }
 
-  function doPublish(snapshot) {
+  function doPublish(snapshot, options) {
     var savedState = null;
     var histStatus = 'OK', notifStatus = 'OK';
     var committed = false;
@@ -148,6 +152,19 @@ function PublicationService(snapshotStore, snapshotCache, pinStore, lock, notifi
         throw new Error('READ-BACK FAILED: frame SHA256 mismatch (expected=' + snapshot.frameSha256 + ', got=' + actualSha + ')');
       }
       logger.info('Read-back verified: snapshotId=' + snapshot.snapshotId + ' frameSha=' + actualSha.slice(0, 8));
+    }).then(function() {
+      // State callback (pre-commit hook) — runs inside the transaction, before
+      // history append. If it throws, the existing rollback mechanism restores
+      // pre-publication state (active pointer, mode, override, caches) and the
+      // history entry is NOT appended.
+      if (options && options.stateCallback) {
+        return options.stateCallback({
+          snapshot: snapshot,
+          savedState: savedState,
+          operatingModeService: operatingModeService,
+          overridePersistence: overridePersistence,
+        });
+      }
     }).then(function() {
       // History append (pre-commit: failure triggers full rollback)
       return history.append({

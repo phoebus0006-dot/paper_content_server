@@ -87,6 +87,7 @@ function mockFrameCache(initial) {
 function mockSnapshotStore(failOnSave, failOnActivate, failOnReadActive) {
   var store = {};
   var activeId = null;
+  var cleared = false;
   return {
     save: failOnSave
       ? function() { return Promise.reject(new Error('save fail')); }
@@ -97,9 +98,10 @@ function mockSnapshotStore(failOnSave, failOnActivate, failOnReadActive) {
       : function(id) { activeId = id; return Promise.resolve(); },
     readActive: failOnReadActive
       ? function() { return Promise.reject(new Error('readActive fail')); }
-      : function() { return activeId ? Promise.resolve({ activeSnapshotId: activeId, frameSha256: store[activeId] ? store[activeId].frameSha256 : null, frameLength: 192010 }) : Promise.resolve(null); },
+      : function() { return activeId ? Promise.resolve({ activeSnapshotId: activeId, frameSha256: store[activeId] ? store[activeId].frameSha256 : null, frameLength: 192010 }) : Promise.resolve(cleared ? { activeSnapshotId: null, frameSha256: null } : null); },
     listSnapshots: function() { return Promise.resolve(Object.keys(store)); },
     ensureDirs: function() { return Promise.resolve(); },
+    clearActive: function() { activeId = null; cleared = true; return Promise.resolve(); },
   };
 }
 
@@ -130,7 +132,7 @@ describe('PublicationService transaction — fault injection', () => {
 
     // Rollback should have restored: no active snapshot, mode still AUTO
     var active = await store.readActive();
-    assert.equal(active, null, 'no active snapshot after rollback');
+    assert.equal(active.activeSnapshotId, null, 'no active snapshot after rollback');
     assert.equal(opMode.getMode(), 'AUTO', 'mode restored to AUTO');
     assert.equal(op.loadOverride(), null, 'override unchanged');
     var entries = await hist.list();
@@ -418,6 +420,48 @@ describe('PublicationService transaction — fault injection', () => {
     var entries = await hist.list();
     assert.equal(entries.length, 1, 'history entry preserved');
     assert.equal(entries[0].snapshotId, 'snap_old', 'original history entry intact');
+  });
+
+  it('should reject and rollback when stateCallback fails on first publish (no prior active)', async () => {
+    var store = mockSnapshotStore(false, false, false);
+    var cache = mockSnapshotCache();
+    var opMode = mockOperatingModeService('AUTO');
+    var hist = mockHistory(false, []);
+    var op = mockOverridePersistence();
+    var fc = mockFrameCache();
+    var svc = PublicationService(store, cache, mockLock(), mockLock(), mockNotificationPort(), opMode, hist, logger, op, fc);
+
+    var snap = {
+      snapshotId: 'snap_first_fail',
+      frameId: 'news:first-fail',
+      frame: Buffer.alloc(192010, 0x11),
+      frameSha256: crypto.createHash('sha256').update(Buffer.alloc(192010, 0x11)).digest('hex'),
+      mode: 'news',
+      publishReason: 'test_first_fail',
+    };
+
+    assert.equal(await store.readActive(), null, 'no prior active snapshot');
+    assert.equal(opMode.getMode(), 'AUTO');
+    assert.equal(op.loadOverride(), null);
+
+    try {
+      await svc.publish(snap, {
+        stateCallback: function() { throw new Error('stateCallback failed'); }
+      });
+      assert.fail('should have thrown');
+    } catch(e) {
+      assert.ok(e.message.includes('stateCallback failed'), 'throws stateCallback error');
+    }
+
+    // Rollback must have called clearActive
+    var active = await store.readActive();
+    assert.notEqual(active, null, 'readActive returns object after clearActive');
+    assert.equal(active.activeSnapshotId, null, 'activeSnapshotId cleared');
+    assert.equal(opMode.getMode(), 'AUTO', 'mode restored to AUTO');
+    assert.equal(op.loadOverride(), null, 'override is null');
+    var entries = await hist.list();
+    assert.equal(entries.length, 0, 'history empty');
+    assert.equal(cache.size(), 0, 'snapshot cache empty');
   });
 
 });

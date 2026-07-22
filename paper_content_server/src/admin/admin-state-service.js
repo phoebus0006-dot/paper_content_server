@@ -45,7 +45,9 @@ class AdminStateService {
     try {
       // 1. Operating Mode & Override
       if (this.operatingModeService) {
-        const opMode = this.operatingModeService.getCurrentMode();
+        const opMode = typeof this.operatingModeService.getCurrentMode === 'function'
+          ? this.operatingModeService.getCurrentMode()
+          : { mode: this.operatingModeService.getMode ? this.operatingModeService.getMode() : 'UNKNOWN', scheduleMode: 'news' };
         state.active.operatingMode = opMode.mode;
         state.schedule.currentMode = opMode.scheduleMode || 'news';
         state.schedule.nextSwitchAt = opMode.nextSwitchAt ? opMode.nextSwitchAt.toISOString() : null;
@@ -59,24 +61,33 @@ class AdminStateService {
 
       // 2. Active Snapshot & Frame
       if (this.snapshotStore) {
-        const activeSnap = await this.snapshotStore.getActiveSnapshot();
+        let activeSnap = null;
+        if (typeof this.snapshotStore.readActive === 'function') {
+          var activePtr = await this.snapshotStore.readActive();
+          if (activePtr && activePtr.activeSnapshotId) {
+            activeSnap = await this.snapshotStore.load(activePtr.activeSnapshotId);
+          }
+        } else if (typeof this.snapshotStore.getActiveSnapshot === 'function') {
+          activeSnap = await this.snapshotStore.getActiveSnapshot();
+        }
+
         if (activeSnap) {
           state.active.snapshotId = activeSnap.snapshotId;
           state.active.frameId = activeSnap.frameId;
           state.active.contentMode = activeSnap.mode || (activeSnap.frameId && activeSnap.frameId.includes('photo') ? 'photo' : 'news');
           state.active.activatedAt = activeSnap.createdAt;
           
-          if (activeSnap.metadata) {
-             state.active.assetId = activeSnap.metadata.assetId || null;
-             state.active.recipeHash = activeSnap.metadata.recipeHash || null;
+          if (activeSnap.payload && activeSnap.payload.metadata) {
+            state.active.assetId = activeSnap.payload.metadata.assetId || null;
+            state.active.recipeHash = activeSnap.payload.metadata.recipeHash || null;
           }
 
-          const frame = await this.snapshotStore.getFrame(activeSnap.frameId);
-          if (frame) {
-            state.active.frameLength = frame.length;
-            const crypto = require('crypto');
-            state.active.frameSha256 = crypto.createHash('sha256').update(frame).digest('hex');
+          var frameBuf = activeSnap.frame;
+          if (!frameBuf && typeof this.snapshotStore.getFrame === 'function') {
+            frameBuf = await this.snapshotStore.getFrame(activeSnap.snapshotId || activeSnap.frameId);
           }
+          state.active.frameLength = activeSnap.frameLength || (frameBuf ? frameBuf.length : 0);
+          state.active.frameSha256 = activeSnap.frameSha256 || null;
         }
       }
 
@@ -130,8 +141,8 @@ class AdminStateService {
     }
     
     // lastPublication 与 active snapshot 可对应
-    if (state.lastPublication && state.active.snapshotId && state.lastPublication.snapshotId !== state.active.snapshotId) {
-      this._addInconsistency(state, 'SNAPSHOT_MISMATCH', 'lastPublication.snapshotId', state.active.snapshotId);
+    if (state.lastPublication && state.lastPublication.snapshotId !== state.active.snapshotId) {
+      this._addInconsistency(state, 'SNAPSHOT_MISMATCH', state.lastPublication.snapshotId, state.active.snapshotId);
     }
   }
 

@@ -110,6 +110,81 @@ async function run() {
   var activeNotif = await notifServices.svc.getActive();
   t('NOTIF_FAIL_ACTIVE_SWITCHED', activeNotif.snapshotId === notifSnap.snapshotId, '');
 
+  // 11. stateCallback failure rolls back transaction — active pointer, mode, override unchanged
+  var cbDir = path.join(os.tmpdir(), 'r3_cb_test_' + Date.now());
+  fs.mkdirSync(cbDir, { recursive: true });
+  var cbStore = SnapshotStore(path.join(cbDir, 'snap'), path.join(cbDir, 'pub'), logger);
+  await cbStore.ensureDirs();
+  var cbCache = SnapshotCache();
+  var cbHist = PublicationHistory(path.join(cbDir, 'hist.json'), logger);
+  var cbMode = { _mode: 'AUTO', getMode: function() { return this._mode; }, setMode: function(m) { this._mode = m; } };
+  var cbOverride = { _override: null, loadOverride: function() { return this._override; }, saveOverride: function(o) { this._override = o; }, clearOverride: function() { this._override = null; } };
+  var cbSvc = PublicationService(cbStore, cbCache, PinStore(), PublicationLock(), { notify: function() { return Promise.resolve(); }, name: 'cb' }, cbMode, cbHist, logger, cbOverride);
+  // Publish initial snapshot to set a baseline
+  var initFrame = makeFrame();
+  var initSnap = snapshotModel.createSnapshot('news:cb-baseline', { mode: 'news' }, initFrame, 'news');
+  await cbSvc.publish(initSnap);
+  var priorActiveId = initSnap.snapshotId;
+  var priorMode = cbMode.getMode();
+  cbMode.setMode('AUTO');
+  var cbFrame = makeFrame();
+  var cbSnap = snapshotModel.createSnapshot('news:cb-fail', { mode: 'news' }, cbFrame, 'news');
+  try {
+    await cbSvc.publish(cbSnap, {
+      stateCallback: function(ctx) {
+        throw new Error('simulated state callback failure');
+      }
+    });
+    t('CB_FAIL_SHOULD_REJECT', false, 'publish should have rejected');
+  } catch(e) {
+    t('CB_FAIL_REJECTS', e.message.indexOf('simulated state callback failure') >= 0, e.message);
+  }
+  var cbActive = await cbStore.readActive();
+  t('CB_FAIL_ACTIVE_UNCHANGED', cbActive && cbActive.activeSnapshotId === priorActiveId, (cbActive ? cbActive.activeSnapshotId : 'null') + ' vs ' + priorActiveId);
+  t('CB_FAIL_MODE_UNCHANGED', cbMode._mode === priorMode, cbMode._mode + ' vs ' + priorMode);
+  t('CB_FAIL_OVERRIDE_NULL', cbOverride._override === null, String(cbOverride._override));
+  var cbHistory = await cbHist.list();
+  t('CB_FAIL_NO_HISTORY_ENTRY', cbHistory.length === 1, 'expected 1 (baseline only), got ' + cbHistory.length);
+  try { fs.rmdirSync(cbDir, { recursive: true }); } catch(e) {}
+
+  // 12. overridePersistence.saveOverride throws inside stateCallback — rolls back
+  var cb2Dir = path.join(os.tmpdir(), 'r3_cb2_test_' + Date.now());
+  fs.mkdirSync(cb2Dir, { recursive: true });
+  var cb2Store = SnapshotStore(path.join(cb2Dir, 'snap'), path.join(cb2Dir, 'pub'), logger);
+  await cb2Store.ensureDirs();
+  var cb2Cache = SnapshotCache();
+  var cb2Hist = PublicationHistory(path.join(cb2Dir, 'hist.json'), logger);
+  var cb2Mode = { _mode: 'AUTO', getMode: function() { return this._mode; }, setMode: function(m) { this._mode = m; } };
+  var cb2Override = { _override: null, loadOverride: function() { return this._override; }, saveOverride: function(o) { throw new Error('override persist failed'); }, clearOverride: function() { this._override = null; } };
+  var cb2Svc = PublicationService(cb2Store, cb2Cache, PinStore(), PublicationLock(), { notify: function() { return Promise.resolve(); }, name: 'cb2' }, cb2Mode, cb2Hist, logger, cb2Override);
+  // Publish baseline
+  var init2Frame = makeFrame();
+  var init2Snap = snapshotModel.createSnapshot('news:cb2-baseline', { mode: 'news' }, init2Frame, 'news');
+  await cb2Svc.publish(init2Snap);
+  // Mode is AUTO after baseline publish
+  var prior2ActiveId = init2Snap.snapshotId;
+  var cb2Frame = makeFrame();
+  var cb2Snap = snapshotModel.createSnapshot('news:cb2-fail', { mode: 'news' }, cb2Frame, 'news');
+  try {
+    await cb2Svc.publish(cb2Snap, {
+      stateCallback: function(ctx) {
+        ctx.operatingModeService.setMode('LEGACY_ADMIN_OVERRIDE');
+        ctx.overridePersistence.saveOverride({ mode: 'LEGACY_ADMIN_OVERRIDE', snapshotId: ctx.snapshot.snapshotId });
+      }
+    });
+    t('CB2_SAVEOVERRIDE_SHOULD_REJECT', false, 'publish should have rejected');
+  } catch(e) {
+    t('CB2_SAVEOVERRIDE_REJECTS', e.message.indexOf('override persist failed') >= 0, e.message);
+  }
+  var cb2Active = await cb2Store.readActive();
+  t('CB2_ACTIVE_UNCHANGED', cb2Active && cb2Active.activeSnapshotId === prior2ActiveId, (cb2Active ? cb2Active.activeSnapshotId : 'null') + ' vs ' + prior2ActiveId);
+  // Pre-publication mode was AUTO; stateCallback set LEGACY_ADMIN_OVERRIDE then saveOverride threw;
+  // rollback must restore mode to pre-publication value (AUTO).
+  t('CB2_MODE_ROLLED_BACK', cb2Mode._mode === 'AUTO', cb2Mode._mode);
+  var cb2History = await cb2Hist.list();
+  t('CB2_NO_HISTORY_ENTRY', cb2History.length === 1, 'expected 1 (baseline only), got ' + cb2History.length);
+  try { fs.rmdirSync(cb2Dir, { recursive: true }); } catch(e) {}
+
   // Cleanup
   fs.rmdirSync(tmpDir, { recursive: true });
   console.log('\n=== Summary: ' + pass + ' passed, ' + fail + ' failed ===');
