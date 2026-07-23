@@ -58,16 +58,11 @@ function createApplication(options) {
     clearOverride: function() { this._data = null; },
   };
 
-  var adminStateService = new AdminStateService({
-    operatingModeService: operatingModeService,
-    snapshotStore: snapshotStore,
-    publicationHistory: publicationHistory,
-    mqttClient: null,
-  });
-  var newsTitleService = new NewsTitleService();
-  var safeImagePath = new SafeImagePath({ rootDir: path.join(__dirname, '..') });
-  var imageRasterizer = new ImageRasterizer();
-  var imageRecipeService = new ImageRecipeService();
+  var adminStateService = boot.services.adminStateService;
+  var newsTitleService = boot.services.newsTitleService;
+  var safeImagePath = boot.services.safeImagePath;
+  var imageRasterizer = boot.services.imageRasterizer;
+  var imageRecipeService = boot.services.imageRecipeService;
 
   // Build the isolated request context — NOT touching module.exports.runtime.
   // Each createApplication call has its own context with independent services.
@@ -88,16 +83,9 @@ function createApplication(options) {
     imageRecipeService: imageRecipeService,
     deviceRegistryService: deviceRegistryService,
     boot: boot,
-    config: {
-      debug: {
-        enableDebugRoutes: (process.env.ENABLE_DEBUG_ROUTES === 'true') || (process.env.ENABLE_TEST_ENDPOINTS === 'true'),
-      },
-      features: {
-        deletePipelineEnabled: false,
-        customLibraryEnabled: false,
-        learningLibraryEnabled: false,
-        renderShadowEnabled: false,
-      },
+    config: boot.config || {
+      debug: { enableDebugRoutes: false },
+      features: {},
     },
     renderCount: 0,
     serverStartTime: Date.now(),
