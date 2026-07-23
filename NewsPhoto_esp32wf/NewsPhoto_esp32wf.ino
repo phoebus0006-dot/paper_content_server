@@ -33,6 +33,10 @@ static String pendingFrameSha256;
 static unsigned long mqttReconnectMs = 0;
 static unsigned long mqttRetryMs = 0;
 
+static bool isTimeReached(uint32_t now, uint32_t deadline) {
+  return (int32_t)(now - deadline) >= 0;
+}
+
 void clearPendingMqttNotification() {
   publicationPending = false;
   pendingFrameId = String();
@@ -248,8 +252,13 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
 
   int contentLength = http.getSize();
   Serial.printf("frame download start, contentLength=%d\n", contentLength);
-  if (contentLength > 0 && contentLength != 192010) {
-    Serial.printf("unexpected content length: %d\n", contentLength);
+  if (contentLength <= 0) {
+    Serial.println("EPF1_CONTENT_LENGTH_REQUIRED: Content-Length header missing or non-positive");
+    http.end();
+    return false;
+  }
+  if (contentLength != 192010) {
+    Serial.printf("EPF1_LENGTH_MISMATCH: expected 192010, got %d\n", contentLength);
     http.end();
     return false;
   }
@@ -286,12 +295,6 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
 
   if (width != 800 || height != 480 || panelIndex != PANEL_INDEX || expectedLen != 192010L) {
     Serial.println("frame header mismatch");
-    http.end();
-    return false;
-  }
-
-  if (contentLength > 0 && contentLength != expectedLen) {
-    Serial.printf("length mismatch: got=%d expected=%ld\n", contentLength, expectedLen);
     http.end();
     return false;
   }
@@ -364,7 +367,7 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
 }
 
 void periodicPoll() {
-  if (millis() - lastPollMs < REFRESH_INTERVAL_MS) return;
+  if (!isTimeReached(millis(), lastPollMs + REFRESH_INTERVAL_MS)) return;
   lastPollMs = millis();
   if (!connectWiFi()) return;
 
@@ -384,7 +387,7 @@ void periodicPoll() {
 
 void handleMqttNotification() {
   if (!publicationPending) return;
-  if (millis() < mqttRetryMs) return;
+  if (!isTimeReached(millis(), mqttRetryMs)) return;
 
   if (pendingFrameId.isEmpty() || pendingFrameId == lastFrameId) {
     clearPendingMqttNotification();
@@ -392,14 +395,12 @@ void handleMqttNotification() {
   }
 
   if (!connectWiFi()) {
-    clearPendingMqttNotification();
     mqttRetryMs = millis() + 5000;
     return;
   }
 
   StateInfo state;
   if (!fetchState(state)) {
-    clearPendingMqttNotification();
     mqttRetryMs = millis() + 5000;
     return;
   }
@@ -423,12 +424,12 @@ void handleMqttNotification() {
     clearPendingMqttNotification();
     lastPollMs = millis();
   } else {
-    clearPendingMqttNotification();
     mqttRetryMs = millis() + 5000;
   }
 }
 
 // MQTT callback — MUST be lightweight: no HTTP, no display, no long blocking
+void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
 // MQTT callback — MUST be lightweight: no HTTP, no display, no long blocking
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
@@ -504,7 +505,7 @@ void connectMqtt() {
   if (!mqttEnabled) return;
   if (mqttClient.connected()) return;
 
-  if (millis() < mqttReconnectMs) return;
+  if (!isTimeReached(millis(), mqttReconnectMs)) return;
 
   String clientId = String(MQTT_DEVICE_ID) + "_" + String(random(0xFFFF), HEX);
   Serial.printf("MQTT connecting to %s as %s\n", MQTT_BROKER, clientId.c_str());
