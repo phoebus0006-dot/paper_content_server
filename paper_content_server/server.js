@@ -349,18 +349,18 @@ async function main() {
     }
   }
 
-  var boot = R1_bootstrap({
-    handlerFactory: function(ctx) {
-      return createHandler(ctx);
-    },
+  var createProductionBootMod = require('./src/app/create-production-boot');
+  var prodBoot = await createProductionBootMod.createProductionBoot({
     env: process.env,
     cwd: ROOT_DIR,
     listen: false,
     port: PORT,
+    logger: r1Logger,
     notificationPort: notificationPort || undefined,
     mqttClient: mqttClient || undefined,
   });
 
+  var boot = prodBoot.boot;
   runtime = boot.context;
   var requestContext = runtime;
   runtime.boot = boot;
@@ -4795,43 +4795,15 @@ if (require.main === module) {
   });
 }
 
+var createApplicationMod = require('./src/app/create-application');
+var createProductionBootMod = require('./src/app/create-production-boot');
+
 function createApplication(options) {
-  options = options || {};
-  var ctx = options.context;
-  if (!ctx) {
-    throw new Error('CANONICAL_CONTEXT_REQUIRED');
-  }
-  return {
-    handler: createHandler(ctx),
-    context: ctx,
-    close: typeof options.close === 'function' ? options.close : function() { return Promise.resolve(); }
-  };
+  return createApplicationMod.createApplication(options);
 }
 
-async function createProductionBoot(options) {
-  options = options || {};
-  var env = Object.assign({}, process.env, options.env || {});
-  var cwd = options.cwd || ROOT_DIR;
-  var logger = options.logger || r1Logger;
-
-  var boot = R1_bootstrap({
-    handlerFactory: function(ctx) {
-      return createHandler(ctx);
-    },
-    env: env,
-    cwd: cwd,
-    listen: options.listen !== undefined ? options.listen : false,
-    port: options.port || PORT,
-    logger: logger,
-  });
-
-  return {
-    boot: boot,
-    context: boot.context,
-    runtime: boot.context,
-    services: boot.services,
-    app: boot.app,
-  };
+function createProductionBoot(options) {
+  return createProductionBootMod.createProductionBoot(options);
 }
 
 // ── Runtime injection for test isolation ────────────────────────────────
