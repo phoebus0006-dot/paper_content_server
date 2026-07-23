@@ -24,7 +24,7 @@ function JsonStore(filePath, options) {
       try {
         data = JSON.parse(text);
       } catch(e) {
-        var corruptPath = filePath + '.corrupt-' + Date.now();
+        var corruptPath = filePath + '.corrupt-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
         return fsp.copyFile(filePath, corruptPath).catch(function() {}).then(function() {
           return Promise.reject(new JsonError(ERR_INVALID_JSON, 'JSON parse failed: ' + e.message + ' (backed up to ' + corruptPath + ')', e));
         });
