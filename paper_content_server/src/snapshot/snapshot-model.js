@@ -2,6 +2,7 @@
 // Includes integrity metadata: frameSha256, frameLength, contentHash.
 
 var crypto = require('crypto');
+var epf1Contract = require('../publication/epf1-contract');
 
 var SCHEMA_VERSION = 2;
 var ERR_INTEGRITY = 'SNAPSHOT_INTEGRITY_ERROR';
@@ -12,7 +13,7 @@ function SnapshotIntegrityError(message) {
 }
 
 function computeFrameSha256(frame) {
-  return crypto.createHash('sha256').update(frame).digest('hex');
+  return epf1Contract.computeEpf1FrameSha256(frame);
 }
 
 function computeContentHash(frameId, payload, mode) {
@@ -24,6 +25,11 @@ function createSnapshot(frameId, payload, frame, mode, options) {
   if (!payload || typeof payload !== 'object') throw new Error('payload must be an object');
   if (!Buffer.isBuffer(frame) || frame.length === 0) throw new Error('frame must be a non-empty Buffer');
   if (mode !== 'news' && mode !== 'photo') throw new Error('mode must be "news" or "photo"');
+
+  var validation = epf1Contract.validateEpf1Frame(frame);
+  if (!validation.ok) {
+    throw new SnapshotIntegrityError('invalid EPF1 frame: ' + validation.errors.join('; '));
+  }
 
   options = options || {};
   var snapshotId = 'snap_' + Date.now().toString(36) + '_' + crypto.randomBytes(4).toString('hex');

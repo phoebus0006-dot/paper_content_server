@@ -37,7 +37,6 @@ function parseEpf1Header(buffer) {
 }
 
 function validateEpf1Frame(buffer) {
-  var epf1 = require('../epaper/epf1');
   var frameValidator = require('../epaper/frame-validator');
   return frameValidator.validateFrameBuffer(buffer);
 }

@@ -18,16 +18,17 @@ function SnapshotIntegrityError(message) {
   this.message = message;
 }
 
+var epf1Contract = require('../publication/epf1-contract');
+
 function computeSha256(buf) {
-  return crypto.createHash('sha256').update(buf).digest('hex');
+  return epf1Contract.computeEpf1FrameSha256(buf);
 }
 
 function validateFrameWithFullValidator(frame, expectedLength, expectedSha256) {
   if (frame.length !== expectedLength) {
     throw new SnapshotIntegrityError('frame length mismatch: expected ' + expectedLength + ' got ' + frame.length);
   }
-  var { validateFrameBuffer } = require(path.join(__dirname, '..', 'epaper', 'frame-validator'));
-  var validation = validateFrameBuffer(frame);
+  var validation = epf1Contract.validateEpf1Frame(frame);
   if (!validation.ok) {
     throw new SnapshotIntegrityError('invalid EPF1 frame: ' + validation.errors.join('; '));
   }

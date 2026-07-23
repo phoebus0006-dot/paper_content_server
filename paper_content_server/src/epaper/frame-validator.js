@@ -1,12 +1,18 @@
-// frame-validator.js — EPF1 frame buffer validation
-// Validates but does NOT modify frames.
-
-var epf1 = require('./epf1');
 var palette = require('./palette');
+var epf1Contract = require('../publication/epf1-contract');
 
 function validateFrameBuffer(buffer) {
   var errors = [];
-  var C = epf1.EPF1_CONSTANTS;
+  var C = {
+    TOTAL_BYTES: epf1Contract.EPF1_FRAME_LENGTH,
+    MAGIC: epf1Contract.EPF1_MAGIC,
+    WIDTH: epf1Contract.EPF1_WIDTH,
+    HEIGHT: epf1Contract.EPF1_HEIGHT,
+    PANEL: epf1Contract.EPF1_PANEL_CODE,
+    VERSION: epf1Contract.EPF1_VERSION,
+    HEADER_BYTES: epf1Contract.EPF1_HEADER_LENGTH,
+    PAYLOAD_BYTES: epf1Contract.EPF1_PAYLOAD_LENGTH,
+  };
 
   if (!Buffer.isBuffer(buffer)) {
     return { ok: false, errors: ['Input is not a Buffer'], header: null, invalidCodeCount: 0, code4Count: 0 };
