@@ -3,22 +3,26 @@
 /**
  * Dependency boundary test for src/http/ modules.
  *
- * Confirms that HTTP-layer modules only depend on:
- *   - Node.js standard library
- *   - Other src/http/ modules (internal to the layer)
+ * Two tiers of enforcement:
  *
- * They must NOT:
- *   - require('../../server') or require('../server')
- *   - read process.env for business config
- *   - read/write data/ directories
- *   - require Express, Fastify, or other third-party web frameworks
- *   - require business services from src/app/, src/news/, etc.
+ * Tier 1 — Core HTTP modules (src/http/*.js, non-recursive)
+ *   Only depend on Node.js standard library and other src/http/ modules.
+ *   Must NOT require business modules, server.js, read process.env, or data/.
+ *
+ * Tier 2 — HTTP handlers (src/http/handlers/*.js)
+ *   MAY require business modules (they are the bridge layer), but must NOT:
+ *     - require('../../server') or require('../server')
+ *     - require Express / Fastify / Koa / Hapi / Restify
+ *     - access data/ directory directly
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const HTTP_SRC = path.join(__dirname, '..', '..', 'src', 'http');
+const CORE_GLOB = path.join(HTTP_SRC, '*.js');
+const HANDLERS_DIR = path.join(HTTP_SRC, 'handlers');
+
 const ALLOWED_PREFIXES = [
   // Node.js built-in modules
   'assert', 'buffer', 'child_process', 'crypto', 'events', 'fs', 'http',
@@ -27,15 +31,8 @@ const ALLOWED_PREFIXES = [
   // src/http/ internal modules
   '../http/',
   './',
-  // Special: they may use require('url') etc. which are built-ins
   'url',
-  // Also allow the package.json requires that are already in production
-  // but the HTTP layer should not use them directly.
-  // Actually the HTTP layer should NOT require third-party packages.
 ];
-
-// Extensions we care about
-const JS_FILES = fs.readdirSync(HTTP_SRC).filter(f => f.endsWith('.js'));
 
 let pass = 0;
 let fail = 0;
@@ -52,59 +49,100 @@ function check(ok, msg) {
   }
 }
 
-// 1. Check each file's require() calls
-for (const file of JS_FILES) {
-  const filePath = path.join(HTTP_SRC, file);
-  const content = fs.readFileSync(filePath, 'utf8');
-
-  // Find all require(...) calls
-  const requireRegex = /require\(['"]([^'"]+)['"]\)/g;
-  let match;
-  let requires = [];
-
-  while ((match = requireRegex.exec(content)) !== null) {
-    requires.push(match[1]);
+function findJsFiles(dir, recurse) {
+  let results = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isFile() && e.name.endsWith('.js')) {
+      results.push(full);
+    } else if (e.isDirectory() && recurse) {
+      results = results.concat(findJsFiles(full, true));
+    }
   }
+  return results;
+}
 
-  for (const req of requires) {
-    const isAllowed = ALLOWED_PREFIXES.some(p => req.startsWith(p));
-    // Also check it's not an Express/Fastify/etc require
-    const isFramework = /express|fastify|koa|hapi|restify/.test(req);
-    const isBusiness = /\.\.\/(app|news|render|publication|snapshot|safety|infra|config|admin|assets|devices|epaper|custom-library|files|images|learning|mqtt|server)/.test(req);
+function getRelativeName(absolutePath) {
+  return path.relative(HTTP_SRC, absolutePath);
+}
 
-    check(isAllowed && !isFramework && !isBusiness,
-      `${file}: require('${req}') is allowed within HTTP layer`);
-  }
+// ── Collect files ─────────────────────────────────────────────────────────
 
-  // Check for process.env usage (business reads)
+const coreFiles = fs.readdirSync(HTTP_SRC)
+  .filter(f => f.endsWith('.js'))
+  .map(f => path.join(HTTP_SRC, f));
+
+const handlerFiles = fs.existsSync(HANDLERS_DIR)
+  ? findJsFiles(HANDLERS_DIR, true)
+  : [];
+
+// ── Shared checks (both tiers) ────────────────────────────────────────────
+
+for (const file of coreFiles.concat(handlerFiles)) {
+  const content = fs.readFileSync(file, 'utf8');
+  const rel = getRelativeName(file);
+
+  // Must not require server.js
+  const hasServerRequire = /require\(['"](\.\.\/)*server['"]\)/.test(content);
+  check(!hasServerRequire, `${rel}: must not require server.js`);
+
+  // Must not require Express / Fastify / etc.
+  const hasFramework = /require\(['"](express|fastify|koa|hapi|restify)['"]\)/.test(content);
+  check(!hasFramework, `${rel}: must not require third-party web framework`);
+
+  // Must not access data/ directory directly
+  const hasDataDirRead = /['"]data\//.test(content) || /path\.join\(.*DATA_DIR/.test(content);
+  check(!hasDataDirRead, `${rel}: must not reference data/ directory directly`);
+
+  // Check process.env usage
   const envMatches = content.match(/process\.env\.\w+/g);
   if (envMatches) {
     for (const envRef of envMatches) {
-      // Allow NODE_ENV or PORT which are generic infra env vars
       const isGeneric = envRef === 'process.env.NODE_ENV' || envRef === 'process.env.PORT';
       if (!isGeneric) {
-        check(false, `${file}: should not read ${envRef}`);
+        check(false, `${rel}: should not read ${envRef}`);
       }
     }
   }
 }
 
-// 2. Check that no file directly reads/writes data/ directory
-for (const file of JS_FILES) {
-  const filePath = path.join(HTTP_SRC, file);
-  const content = fs.readFileSync(filePath, 'utf8');
+// ── Tier 1: Strict checks for core HTTP modules ───────────────────────────
 
-  const hasDataDirRead = /['"]data\//.test(content) || /path\.join\(.*DATA_DIR/.test(content);
-  check(!hasDataDirRead, `${file}: must not reference data/ directory directly`);
+for (const file of coreFiles) {
+  const content = fs.readFileSync(file, 'utf8');
+  const rel = getRelativeName(file);
+
+  const requireRegex = /require\(['"]([^'"]+)['"]\)/g;
+  let match;
+
+  while ((match = requireRegex.exec(content)) !== null) {
+    const req = match[1];
+    const isAllowed = ALLOWED_PREFIXES.some(p => req.startsWith(p));
+    const isFramework = /express|fastify|koa|hapi|restify/.test(req);
+    const isBusiness = /\.\.\/(app|news|render|publication|snapshot|safety|infra|config|admin|assets|devices|epaper|custom-library|files|images|learning|mqtt|server)/.test(req);
+
+    check(isAllowed && !isFramework && !isBusiness,
+      `${rel}: require('${req}') must be stdlib or src/http/ internal`);
+  }
 }
 
-// 3. Check that src/http/ doesn't import server.js
-for (const file of JS_FILES) {
-  const filePath = path.join(HTTP_SRC, file);
-  const content = fs.readFileSync(filePath, 'utf8');
+// ── Tier 2: Relaxed checks for handlers ───────────────────────────────────
 
-  const hasServerRequire = /require\(['"](\.\.\/)*server['"]\)/.test(content);
-  check(!hasServerRequire, `${file}: must not require('../../server')`);
+for (const file of handlerFiles) {
+  const content = fs.readFileSync(file, 'utf8');
+  const rel = getRelativeName(file);
+
+  const requireRegex = /require\(['"]([^'"]+)['"]\)/g;
+  let match;
+
+  while ((match = requireRegex.exec(content)) !== null) {
+    const req = match[1];
+    const isFramework = /express|fastify|koa|hapi|restify/.test(req);
+
+    check(!isFramework,
+      `${rel}: handler must not require third-party web framework '${req}'`);
+  }
 }
 
 console.log(`\n=== dependency-boundary: ${pass} passed, ${fail} failed ===`);

@@ -36,6 +36,21 @@ var epaperImageFrame = require('./src/epaper/image-frame');
 var epaperEpf1 = require('./src/epaper/epf1');
 var epaperFrameValidator = require('./src/epaper/frame-validator');
 
+// Phase A2 — P0 route registry + handlers
+const { createRouteRegistry } = require('./src/http/route-registry');
+const { handleHealthLive, handleHealthReady, handleHealthJson } = require('./src/http/handlers/health-handler');
+const { handleStateJson } = require('./src/http/handlers/state-handler');
+const { handleFrameBin } = require('./src/http/handlers/frame-handler');
+var p0Routes = (() => {
+  var r = createRouteRegistry();
+  r.get('/health/live', handleHealthLive);
+  r.get('/health/ready', handleHealthReady);
+  r.get('/api/health.json', handleHealthJson);
+  r.get('/api/state.json', handleStateJson);
+  r.get('/api/frame.bin', handleFrameBin);
+  return r;
+})();
+
 // R3 Snapshot + Publication Core
 var R3_snapshotModel = require('./src/snapshot/snapshot-model');
 var R3_SnapshotStore = require('./src/snapshot/snapshot-store').SnapshotStore;
@@ -2924,6 +2939,9 @@ async function handleRequest(req, res, ctx) {
   const now = R.nowProvider ? R.nowProvider() : new Date();
 
   try {
+    // Phase A2: P0 routes via route registry
+    if (await p0Routes.dispatch(req, res, { R, panelIndex, now, BUILD_GIT_SHA, APP_CONFIG, DATA_DIR, TIMEZONE }) !== 'NOT_FOUND') return;
+
     if (parsed.pathname === '/') {
       const state = computeSnapshot(now, R);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
