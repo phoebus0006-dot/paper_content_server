@@ -4583,32 +4583,21 @@ async function handleRequest(req, res, ctx) {
       return;
     }
 
-    if (parsed.pathname === '/health/ready') {
-      var issues = [];
-      if (R.boot && typeof R.boot.getState === 'function' && R.boot.getState() !== 'ready') {
-        issues.push({ code: 'BOOTSTRAP_NOT_READY', component: 'bootstrap' });
-      }
-      if (!R.snapshotStore) {
-        issues.push({ code: 'SNAPSHOT_STORE_UNAVAILABLE', component: 'snapshotStore' });
-      }
-      if (!R.deviceRegistryService) {
-        issues.push({ code: 'DEVICE_REGISTRY_UNAVAILABLE', component: 'deviceRegistry' });
-      }
-      if (!R.feeds || !Array.isArray(R.feeds) || R.feeds.length === 0 || R.feeds.filter(function(f) { return f && f.enabled !== false; }).length === 0) {
-        issues.push({ code: 'FEEDS_CONFIG_INVALID', component: 'feeds' });
-      }
+    var evaluateReadiness = require('./src/app/readiness-evaluator').evaluateReadiness;
 
-      if (issues.length > 0) {
+    if (parsed.pathname === '/health/ready') {
+      var readiness = evaluateReadiness(R, R.boot);
+      if (!readiness.isReady) {
         res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ status: 'not_ready', issues: issues }, null, 2));
+        res.end(JSON.stringify({ status: 'not_ready', issues: readiness.issues }, null, 2));
         return;
       }
-
       respondJson(res, { status: 'ready', issues: [] });
       return;
     }
 
     if (parsed.pathname === '/api/health.json') {
+      var readiness = evaluateReadiness(R, R.boot);
       var uptime = Math.floor((Date.now() - R.serverStartTime) / 1000);
       var hSnap = (R.cachedFrames && R.cachedFrames.size > 0) ? Array.from(R.cachedFrames.values())[0].snapshot : null;
       var hNewsCount = 0;
@@ -4621,8 +4610,11 @@ async function handleRequest(req, res, ctx) {
         var hIdxPath = (R && R.IMAGE_INDEX_FILE) || path.join(R.DATA_DIR || DATA_DIR, 'image_index.json');
         if (fs.existsSync(hIdxPath)) { hPhotoCount = JSON.parse(fs.readFileSync(hIdxPath, 'utf8')).length; }
       } catch(e) {}
-      respondJson(res, {
-        status: 'ok', uptimeSeconds: uptime, timezone: (R && R.TIMEZONE) || TIMEZONE,
+      var healthPayload = {
+        status: readiness.isReady ? 'ok' : 'not_ready',
+        readinessStatus: readiness.status,
+        issues: readiness.issues,
+        uptimeSeconds: uptime, timezone: (R && R.TIMEZONE) || TIMEZONE,
         currentMode: hSnap ? hSnap.mode : null,
         currentSlot: hSnap ? hSnap.slotKey : null,
         frameId: hSnap ? hSnap.frameId : null,
@@ -4642,7 +4634,15 @@ async function handleRequest(req, res, ctx) {
         manualOverride: R.manualOverride || null,
         overrideExpiresAt: R.overrideExpiresAt || null,
         lastPublishedAt: R.lastPublishedAt || null
-      });
+      };
+
+      if (!readiness.isReady) {
+        res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(healthPayload, null, 2));
+        return;
+      }
+
+      respondJson(res, healthPayload);
       return;
     }
 
