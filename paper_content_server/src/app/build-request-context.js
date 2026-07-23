@@ -1,5 +1,5 @@
 // build-request-context.js — Single authoritative request context builder
-// Derives ALL production configuration strictly from loaded boot.config (R3-06, R4-08).
+// Derives ALL production configuration strictly from loaded boot.config (R3-06, R4-08, R5-04, R6-05).
 
 function buildRequestContext(boot, options) {
   options = options || {};
@@ -8,9 +8,31 @@ function buildRequestContext(boot, options) {
   var deps = boot.deps || {};
   var paths = config.paths || {};
 
-  var adminConfig = config.admin || {};
-  var serverConfig = config.server || {};
-  var newsConfig = config.news || {};
+  var adminConfig = config.admin;
+  var serverConfig = config.server;
+  var newsConfig = config.news;
+
+  if (!config.isValid || !adminConfig || !serverConfig || !newsConfig || !paths) {
+    var err = new Error('CONFIG_INCOMPLETE');
+    err.code = 'CONFIG_INCOMPLETE';
+    throw err;
+  }
+
+  var timezone = options.timezone !== undefined ? options.timezone : serverConfig.timezone;
+  var newsRefreshMinutes = options.newsRefreshMinutes !== undefined ? options.newsRefreshMinutes : newsConfig.refreshMinutes;
+
+  var adminAccessMode = options.adminAccessMode !== undefined ? options.adminAccessMode : adminConfig.accessMode;
+  var adminToken = options.adminToken !== undefined ? options.adminToken : adminConfig.token;
+  var adminAllowedCidrs = options.adminAllowedCidrs !== undefined ? options.adminAllowedCidrs : adminConfig.allowedCidrs;
+  var adminTrustProxy = options.adminTrustProxy !== undefined ? options.adminTrustProxy : adminConfig.trustProxy;
+  var adminTrustedProxyCidrs = options.adminTrustedProxyCidrs !== undefined ? options.adminTrustedProxyCidrs : (adminConfig.trustedProxyCidrs && adminConfig.trustedProxyCidrs.parsed);
+  var adminAllowHeaderlessWrite = options.adminAllowHeaderlessWrite !== undefined ? options.adminAllowHeaderlessWrite : adminConfig.allowHeaderlessWrite;
+
+  if (timezone === undefined || newsRefreshMinutes === undefined || adminAccessMode === undefined || adminToken === undefined || adminAllowedCidrs === undefined || adminTrustProxy === undefined || adminAllowHeaderlessWrite === undefined) {
+    var errConfig = new Error('CONFIG_INCOMPLETE');
+    errConfig.code = 'CONFIG_INCOMPLETE';
+    throw errConfig;
+  }
 
   var context = {
     snapshotStore: deps.snapshotStore || null,
@@ -69,16 +91,16 @@ function buildRequestContext(boot, options) {
     LAST_GOOD_NEWS_FILE: paths.lastGoodNewsFile,
     FALLBACK_STUDY_DIR: paths.fallbackStudyDir,
 
-    // Production settings derived directly from loaded config (R3-06, R4-08)
-    TIMEZONE: options.timezone !== undefined ? options.timezone : (serverConfig.timezone || 'UTC'),
-    NEWS_REFRESH_MINUTES: options.newsRefreshMinutes !== undefined ? options.newsRefreshMinutes : (newsConfig.refreshMinutes || 15),
+    // Production settings derived directly from loaded config (R3-06, R4-08, R5-04, R6-05)
+    TIMEZONE: timezone,
+    NEWS_REFRESH_MINUTES: newsRefreshMinutes,
 
-    adminAccessMode: options.adminAccessMode !== undefined ? options.adminAccessMode : (adminConfig.accessMode || 'token'),
-    adminToken: options.adminToken !== undefined ? options.adminToken : (adminConfig.token || null),
-    adminAllowedCidrs: options.adminAllowedCidrs !== undefined ? options.adminAllowedCidrs : (adminConfig.allowedCidrs || { valid: true, parsed: [{ network: 2130706432, mask: 4294967040 }] }),
-    adminTrustProxy: options.adminTrustProxy !== undefined ? options.adminTrustProxy : (adminConfig.trustProxy || false),
-    adminTrustedProxyCidrs: options.adminTrustedProxyCidrs !== undefined ? options.adminTrustedProxyCidrs : ((adminConfig.trustedProxyCidrs && adminConfig.trustedProxyCidrs.parsed) || []),
-    adminAllowHeaderlessWrite: options.adminAllowHeaderlessWrite !== undefined ? options.adminAllowHeaderlessWrite : (adminConfig.allowHeaderlessWrite || false),
+    adminAccessMode: adminAccessMode,
+    adminToken: adminToken,
+    adminAllowedCidrs: adminAllowedCidrs,
+    adminTrustProxy: adminTrustProxy,
+    adminTrustedProxyCidrs: adminTrustedProxyCidrs,
+    adminAllowHeaderlessWrite: adminAllowHeaderlessWrite,
   };
 
   return context;
