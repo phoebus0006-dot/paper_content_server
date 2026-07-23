@@ -222,6 +222,11 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
     return true;
   }
 
+  if (expectedSha.length() != 64 || !isValidShaHex(expectedSha)) {
+    Serial.printf("fetchFrameAndDisplay reject: invalid expected SHA256 format: %s\n", expectedSha.c_str());
+    return false;
+  }
+
   HTTPClient http;
   http.setTimeout(HTTP_TIMEOUT_MS);
   http.addHeader("Accept", "application/octet-stream");
@@ -281,7 +286,7 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
   Serial.printf("EPF1 header width=%u height=%u panel=%u flags=%u payload=%ld total=%ld\n",
                 width, height, panelIndex, flags, payloadLen, expectedLen);
 
-  if (width != 800 || height != 480 || panelIndex != PANEL_INDEX) {
+  if (width != 800 || height != 480 || panelIndex != PANEL_INDEX || expectedLen != 192010L) {
     Serial.println("frame header mismatch");
     http.end();
     return false;
@@ -310,20 +315,37 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
 
   http.end();
 
-  // SHA256 verification: compute hash of frame payload and compare
-  if (expectedSha.length() == 64) {
-    Serial.printf("SHA256: computing hash of %ld bytes\n", payloadLen);
-    String computedSha = sha256Hex(frame, (size_t)payloadLen);
-    if (computedSha != expectedSha) {
-      Serial.printf("FRAME_SHA256_MISMATCH: computed=%s expected=%s\n",
-                    computedSha.c_str(), expectedSha.c_str());
-      free(frame);
-      return false;
-    }
-    Serial.printf("SHA256 match: %s\n", computedSha.substring(0, 16).c_str());
-  } else {
-    Serial.println("SHA256: no expected hash, skipping verification");
+  // Full 192010-byte frame SHA256 verification (header + payload)
+  mbedtls_sha256_context shaCtx;
+  mbedtls_sha256_init(&shaCtx);
+  bool shaOk = true;
+  if (mbedtls_sha256_starts_ret(&shaCtx, 0) != 0) shaOk = false;
+  if (shaOk && mbedtls_sha256_update_ret(&shaCtx, header, sizeof(header)) != 0) shaOk = false;
+  if (shaOk && mbedtls_sha256_update_ret(&shaCtx, frame, payloadLen) != 0) shaOk = false;
+  uint8_t digest[32];
+  if (shaOk && mbedtls_sha256_finish_ret(&shaCtx, digest) != 0) shaOk = false;
+  mbedtls_sha256_free(&shaCtx);
+
+  if (!shaOk) {
+    Serial.println("mbedtls sha256 computation failed");
+    free(frame);
+    return false;
   }
+
+  char hex[65];
+  for (int i = 0; i < 32; i++) {
+    sprintf(hex + (i * 2), "%02x", digest[i]);
+  }
+  hex[64] = '\0';
+  String computedSha = String(hex);
+
+  if (computedSha != expectedSha) {
+    Serial.printf("FRAME_SHA256_MISMATCH: computed=%s expected=%s\n",
+                  computedSha.c_str(), expectedSha.c_str());
+    free(frame);
+    return false;
+  }
+  Serial.printf("SHA256 full-frame match: %s\n", computedSha.substring(0, 16).c_str());
 
   Serial.printf("frame downloaded bytes=%ld\n", payloadLen);
   bool ok = displayFrameBuffer(frame, payloadLen);
@@ -343,15 +365,16 @@ void periodicPoll() {
   StateInfo state;
   if (!fetchState(state)) return;
 
-  // HTTP polling: use frameSha256 from state.json for verification
-  String expectedSha;
-  if (state.frameSha256.length() == 64 && isValidShaHex(state.frameSha256)) {
-    expectedSha = normalizeShaHex(state.frameSha256);
+  if (state.frameSha256.isEmpty() || !isValidShaHex(state.frameSha256)) {
+    Serial.println("periodicPoll reject: state.frameSha256 is missing or invalid");
+    return;
   }
 
+  String expectedSha = normalizeShaHex(state.frameSha256);
   if (fetchFrameAndDisplay(state, expectedSha)) {
     publicationPending = false;
     pendingFrameId = String();
+    pendingFrameSha256 = String();
   }
 }
 
@@ -366,22 +389,37 @@ void handleMqttNotification() {
   if (!fetchState(state)) { return; }
 
   if (state.frameId != pendingFrameId) {
-    Serial.printf("MQTT pending frameId=%s != server frameId=%s, using server\n",
+    Serial.printf("MQTT pending frameId=%s != server state frameId=%s; dropping stale notification\n",
                   pendingFrameId.c_str(), state.frameId.c_str());
+    publicationPending = false;
+    pendingFrameId = String();
+    pendingFrameSha256 = String();
+    return;
   }
 
-  // Use pendingFrameSha256 from MQTT notification for verification
-  if (fetchFrameAndDisplay(state, pendingFrameSha256)) {
+  String stateSha = normalizeShaHex(state.frameSha256);
+  if (pendingFrameSha256 != stateSha) {
+    Serial.printf("MQTT sha256=%s != server state sha256=%s; aborting refresh\n",
+                  pendingFrameSha256.c_str(), stateSha.c_str());
     publicationPending = false;
     pendingFrameId = String();
+    pendingFrameSha256 = String();
+    return;
+  }
+
+  if (fetchFrameAndDisplay(state, stateSha)) {
+    publicationPending = false;
+    pendingFrameId = String();
+    pendingFrameSha256 = String();
     lastPollMs = millis();
   } else {
-    // On failure (including SHA mismatch), clear pending flag to avoid tight retry
-    // Next notification or periodic poll will retry
     publicationPending = false;
     pendingFrameId = String();
+    pendingFrameSha256 = String();
   }
 }
+
+// MQTT callback — MUST be lightweight: no HTTP, no display, no long blocking
 
 // MQTT callback — MUST be lightweight: no HTTP, no display, no long blocking
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
@@ -481,8 +519,17 @@ void refreshOnce() {
 
   StateInfo state;
   if (!fetchState(state)) return;
-  // Cold boot: no expected SHA available, EPF1 validation only
-  if (!fetchFrameAndDisplay(state, String())) return;
+
+  if (state.frameSha256.isEmpty() || !isValidShaHex(state.frameSha256)) {
+    Serial.println("refreshOnce reject: missing or invalid frameSha256 in state");
+    return;
+  }
+
+  String expectedSha = normalizeShaHex(state.frameSha256);
+  if (!fetchFrameAndDisplay(state, expectedSha)) {
+    Serial.println("refreshOnce frame fetch/display failed");
+    return;
+  }
 }
 
 void setup() {
