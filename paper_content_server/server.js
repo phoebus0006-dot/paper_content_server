@@ -330,7 +330,8 @@ async function main() {
     await ensureDir(IMAGES_DIR);
 
     // Load persisted runtime state into runtime
-    runtime.feeds = await readJson(FEEDS_FILE, null);
+    const rawFeeds = await readJson(FEEDS_FILE, null);
+    runtime.feeds = Array.isArray(rawFeeds) ? rawFeeds : (rawFeeds && Array.isArray(rawFeeds.feeds) ? rawFeeds.feeds : rawFeeds);
     validateFeeds(runtime.feeds);
 
     runtime.newsCache = await readJson(NEWS_CACHE_FILE, { version: 1, updatedAt: null, translations: {} });
@@ -4744,6 +4745,9 @@ function renderIndexHtml(state) {
 </html>`;
 }
 
+var createApplicationMod = require('./src/app/create-application');
+var createProductionBootMod = require('./src/app/create-production-boot');
+
 if (require.main === module) {
   main().catch(function(error) {
     r1Logger.error('top-level crash: ' + (error.stack || error.message));
@@ -4751,8 +4755,6 @@ if (require.main === module) {
   });
 }
 
-var createApplicationMod = require('./src/app/create-application');
-var createProductionBootMod = require('./src/app/create-production-boot');
 
 function createApplication(options) {
   options = options || {};

@@ -1,5 +1,9 @@
 paper-content-*.tar.gz
 public/admin/build-info.json
 
-# Test runtime directories
+# Test runtime directories & local backups
 qa/runtime/
+.env
+.pio/
+current-frame.epf1
+data_backup_mvp/
