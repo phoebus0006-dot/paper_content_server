@@ -433,9 +433,6 @@ async function main() {
     }
   }
 
-  var app = createApplication({ context: requestContext });
-  var server = boot.server;
-
   var effectiveTimeZone = r1Clock.timezone();
   if (effectiveTimeZone !== TIMEZONE) {
     r1Logger.warn('configured timezone is ' + TIMEZONE + ' but effective is ' + effectiveTimeZone);
@@ -4767,15 +4764,22 @@ function createApplication(options) {
 
 function createProductionBoot(options) {
   options = options || {};
-  var handlerFactory = options.handlerFactory || options.handler;
-  if (!handlerFactory) {
-    handlerFactory = function(context) {
+  var nextOptions = Object.assign({}, options);
+
+  if (typeof options.handlerFactory === 'function') {
+    nextOptions.handlerFactory = options.handlerFactory;
+    delete nextOptions.handler;
+  } else if (typeof options.handler === 'function') {
+    nextOptions.handler = options.handler;
+    delete nextOptions.handlerFactory;
+  } else {
+    nextOptions.handlerFactory = function(context) {
       return createHandler(context);
     };
+    delete nextOptions.handler;
   }
-  return createProductionBootMod.createProductionBoot(Object.assign({}, options, {
-    handlerFactory: typeof handlerFactory === 'function' ? handlerFactory : function() { return handlerFactory; }
-  }));
+
+  return createProductionBootMod.createProductionBoot(nextOptions);
 }
 
 // ── Runtime injection for test isolation ────────────────────────────────
