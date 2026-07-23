@@ -3,16 +3,17 @@
 // Do NOT change magic, dimensions, panel, version, nibble packing, or constants.
 
 var palette = require('./palette');
+var epf1Contract = require('../publication/epf1-contract');
 
 var EPF1_CONSTANTS = {
-  MAGIC: 'EPF1',
-  WIDTH: 800,
-  HEIGHT: 480,
-  PANEL: 49,
-  VERSION: 1,
-  HEADER_BYTES: 10,
-  get PAYLOAD_BYTES() { return Math.ceil((this.WIDTH * this.HEIGHT) / 2); },
-  get TOTAL_BYTES() { return this.HEADER_BYTES + this.PAYLOAD_BYTES; },
+  MAGIC: epf1Contract.EPF1_MAGIC,
+  WIDTH: epf1Contract.EPF1_WIDTH,
+  HEIGHT: epf1Contract.EPF1_HEIGHT,
+  PANEL: epf1Contract.EPF1_PANEL_CODE,
+  VERSION: epf1Contract.EPF1_VERSION,
+  HEADER_BYTES: epf1Contract.EPF1_HEADER_LENGTH,
+  PAYLOAD_BYTES: epf1Contract.EPF1_PAYLOAD_LENGTH,
+  TOTAL_BYTES: epf1Contract.EPF1_FRAME_LENGTH,
 };
 
 function packPixels(leftCode, rightCode) {
