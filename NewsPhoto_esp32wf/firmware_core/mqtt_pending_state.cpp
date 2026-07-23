@@ -55,71 +55,70 @@ bool MqttPendingState_SetPending(MqttPendingState *state, const char *frameId, c
   safe_strcpy(state->pendingSnapshotId, snapshotId, sizeof(state->pendingSnapshotId));
   safe_strcpy(state->pendingFrameSha256, sha256, sizeof(state->pendingFrameSha256));
   state->publicationPending = true;
-  state->mqttRetryMs = 0; // Reset retry deadline for new notification
+  state->mqttRetryMs = 0;
   return true;
 }
 
-MqttNotificationEvalResult MqttPendingState_Evaluate(
-    MqttPendingState *state,
+MqttPendingDecision MqttPendingState_CanAttempt(
+    const MqttPendingState *state,
     uint32_t nowMs,
-    const char *lastFrameId,
-    bool wifiOk,
-    bool fetchStateOk,
-    const char *serverFrameId,
-    const char *serverFrameSha256,
-    bool fetchAndDisplayOk
+    const char *lastFrameId
 ) {
-  if (!state || !state->publicationPending) return MQTT_EVAL_NO_PENDING;
+  if (!state || !state->publicationPending) return MQTT_DECISION_NO_PENDING;
 
   if (!isTimeReached(nowMs, state->mqttRetryMs)) {
-    return MQTT_EVAL_WAIT_RETRY_DEADLINE;
+    return MQTT_DECISION_WAIT_RETRY;
   }
 
   if (state->pendingFrameId[0] == '\0' || (lastFrameId && strcmp(state->pendingFrameId, lastFrameId) == 0)) {
-    MqttPendingState_Clear(state);
-    return MQTT_EVAL_CLEAR_ALREADY_RENDERED;
+    return MQTT_DECISION_CLEAR_ALREADY_RENDERED;
   }
 
-  if (!wifiOk) {
-    state->mqttRetryMs = nowMs + 5000;
-    return MQTT_EVAL_RETAIN_WIFI_FAILURE;
-  }
+  return MQTT_DECISION_ATTEMPT;
+}
 
-  if (!fetchStateOk) {
-    state->mqttRetryMs = nowMs + 5000;
-    return MQTT_EVAL_RETAIN_STATE_FAILURE;
-  }
+void MqttPendingState_OnTemporaryFailure(
+    MqttPendingState *state,
+    uint32_t nowMs
+) {
+  if (!state || !state->publicationPending) return;
+  state->mqttRetryMs = nowMs + 5000;
+}
+
+MqttPendingDecision MqttPendingState_OnServerState(
+    MqttPendingState *state,
+    const char *serverFrameId,
+    const char *serverSha
+) {
+  if (!state || !state->publicationPending) return MQTT_DECISION_NO_PENDING;
 
   if (!serverFrameId || strcmp(serverFrameId, state->pendingFrameId) != 0) {
     MqttPendingState_Clear(state);
-    return MQTT_EVAL_CLEAR_STALE_FRAME;
+    return MQTT_DECISION_CLEAR_STALE_FRAME;
   }
 
-  if (!serverFrameSha256 || strcmp(serverFrameSha256, state->pendingFrameSha256) != 0) {
+  if (!serverSha || strcmp(serverSha, state->pendingFrameSha256) != 0) {
     MqttPendingState_Clear(state);
-    return MQTT_EVAL_CLEAR_SHA_MISMATCH;
+    return MQTT_DECISION_CLEAR_SHA_MISMATCH;
   }
 
-  if (fetchAndDisplayOk) {
-    MqttPendingState_Clear(state);
-    return MQTT_EVAL_SUCCESS_RENDERED;
-  } else {
-    state->mqttRetryMs = nowMs + 5000;
-    return MQTT_EVAL_RETAIN_FETCH_FAILURE;
-  }
+  return MQTT_DECISION_ATTEMPT;
 }
 
-const char *MqttNotificationEvalResult_ToString(MqttNotificationEvalResult result) {
-  switch (result) {
-    case MQTT_EVAL_NO_PENDING: return "MQTT_EVAL_NO_PENDING";
-    case MQTT_EVAL_WAIT_RETRY_DEADLINE: return "MQTT_EVAL_WAIT_RETRY_DEADLINE";
-    case MQTT_EVAL_CLEAR_ALREADY_RENDERED: return "MQTT_EVAL_CLEAR_ALREADY_RENDERED";
-    case MQTT_EVAL_RETAIN_WIFI_FAILURE: return "MQTT_EVAL_RETAIN_WIFI_FAILURE";
-    case MQTT_EVAL_RETAIN_STATE_FAILURE: return "MQTT_EVAL_RETAIN_STATE_FAILURE";
-    case MQTT_EVAL_CLEAR_STALE_FRAME: return "MQTT_EVAL_CLEAR_STALE_FRAME";
-    case MQTT_EVAL_CLEAR_SHA_MISMATCH: return "MQTT_EVAL_CLEAR_SHA_MISMATCH";
-    case MQTT_EVAL_RETAIN_FETCH_FAILURE: return "MQTT_EVAL_RETAIN_FETCH_FAILURE";
-    case MQTT_EVAL_SUCCESS_RENDERED: return "MQTT_EVAL_SUCCESS_RENDERED";
-    default: return "MQTT_EVAL_UNKNOWN";
+void MqttPendingState_OnSuccess(
+    MqttPendingState *state
+) {
+  MqttPendingState_Clear(state);
+}
+
+const char *MqttPendingDecision_ToString(MqttPendingDecision decision) {
+  switch (decision) {
+    case MQTT_DECISION_ATTEMPT: return "MQTT_DECISION_ATTEMPT";
+    case MQTT_DECISION_NO_PENDING: return "MQTT_DECISION_NO_PENDING";
+    case MQTT_DECISION_WAIT_RETRY: return "MQTT_DECISION_WAIT_RETRY";
+    case MQTT_DECISION_CLEAR_ALREADY_RENDERED: return "MQTT_DECISION_CLEAR_ALREADY_RENDERED";
+    case MQTT_DECISION_CLEAR_STALE_FRAME: return "MQTT_DECISION_CLEAR_STALE_FRAME";
+    case MQTT_DECISION_CLEAR_SHA_MISMATCH: return "MQTT_DECISION_CLEAR_SHA_MISMATCH";
+    default: return "MQTT_DECISION_UNKNOWN";
   }
 }

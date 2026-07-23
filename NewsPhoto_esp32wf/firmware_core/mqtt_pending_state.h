@@ -10,16 +10,13 @@ extern "C" {
 #endif
 
 typedef enum {
-  MQTT_EVAL_NO_PENDING = 0,
-  MQTT_EVAL_WAIT_RETRY_DEADLINE = 1,
-  MQTT_EVAL_CLEAR_ALREADY_RENDERED = 2,
-  MQTT_EVAL_RETAIN_WIFI_FAILURE = 3,
-  MQTT_EVAL_RETAIN_STATE_FAILURE = 4,
-  MQTT_EVAL_CLEAR_STALE_FRAME = 5,
-  MQTT_EVAL_CLEAR_SHA_MISMATCH = 6,
-  MQTT_EVAL_RETAIN_FETCH_FAILURE = 7,
-  MQTT_EVAL_SUCCESS_RENDERED = 8
-} MqttNotificationEvalResult;
+  MQTT_DECISION_ATTEMPT = 0,
+  MQTT_DECISION_NO_PENDING = 1,
+  MQTT_DECISION_WAIT_RETRY = 2,
+  MQTT_DECISION_CLEAR_ALREADY_RENDERED = 3,
+  MQTT_DECISION_CLEAR_STALE_FRAME = 4,
+  MQTT_DECISION_CLEAR_SHA_MISMATCH = 5
+} MqttPendingDecision;
 
 typedef struct {
   bool publicationPending;
@@ -33,18 +30,28 @@ void MqttPendingState_Init(MqttPendingState *state);
 void MqttPendingState_Clear(MqttPendingState *state);
 bool MqttPendingState_SetPending(MqttPendingState *state, const char *frameId, const char *snapshotId, const char *sha256);
 
-MqttNotificationEvalResult MqttPendingState_Evaluate(
-    MqttPendingState *state,
+MqttPendingDecision MqttPendingState_CanAttempt(
+    const MqttPendingState *state,
     uint32_t nowMs,
-    const char *lastFrameId,
-    bool wifiOk,
-    bool fetchStateOk,
-    const char *serverFrameId,
-    const char *serverFrameSha256,
-    bool fetchAndDisplayOk
+    const char *lastFrameId
 );
 
-const char *MqttNotificationEvalResult_ToString(MqttNotificationEvalResult result);
+void MqttPendingState_OnTemporaryFailure(
+    MqttPendingState *state,
+    uint32_t nowMs
+);
+
+MqttPendingDecision MqttPendingState_OnServerState(
+    MqttPendingState *state,
+    const char *serverFrameId,
+    const char *serverSha
+);
+
+void MqttPendingState_OnSuccess(
+    MqttPendingState *state
+);
+
+const char *MqttPendingDecision_ToString(MqttPendingDecision decision);
 
 #ifdef __cplusplus
 }
