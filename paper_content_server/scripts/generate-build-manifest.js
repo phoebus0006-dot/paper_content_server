@@ -93,8 +93,31 @@ try {
 }
 
 try {
-  var serverCode = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  manifest.sourceSha256 = crypto.createHash('sha256').update(serverCode).digest('hex');
+  var hash = crypto.createHash('sha256');
+  var relFiles = ['package.json', 'package-lock.json', 'server.js'];
+  function collectJs(dir) {
+    if (!fs.existsSync(dir)) return;
+    fs.readdirSync(dir, { withFileTypes: true }).forEach(function(entry) {
+      var full = path.join(dir, entry.name);
+      var rel = path.relative(ROOT, full).replace(/\\/g, '/');
+      if (entry.isDirectory()) {
+        collectJs(full);
+      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        relFiles.push(rel);
+      }
+    });
+  }
+  collectJs(path.join(ROOT, 'src'));
+  relFiles.sort();
+  relFiles.forEach(function(rel) {
+    var full = path.join(ROOT, rel);
+    if (fs.existsSync(full)) {
+      hash.update(rel + '\n');
+      hash.update(fs.readFileSync(full));
+      hash.update('\n');
+    }
+  });
+  manifest.sourceSha256 = hash.digest('hex');
 } catch(e) {}
 
 manifest.builtAt = new Date().toISOString();
