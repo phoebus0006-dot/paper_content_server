@@ -126,13 +126,13 @@
 
 ## Local HEAD
 
-- `789745305eb64dc7d462974c23caa7b370f0965c` (`docs: add NAS staging deployment and rollback report`)
+- `b1f0b04cfaefee1b14dcaeecab3b6e8fe2bf9c6e` (`docs: add REPOSITORY_CLEANUP_AND_SYNC_REPORT.md`)
 
 ---
 
 ## Remote HEAD
 
-- `789745305eb64dc7d462974c23caa7b370f0965c` (`origin/fix/master-production-p0-baseline`)
+- `b1f0b04cfaefee1b14dcaeecab3b6e8fe2bf9c6e` (`origin/fix/master-production-p0-baseline`)
 
 ---
 
@@ -140,9 +140,9 @@
 
 - **命令**: `git fetch origin && git ls-remote origin refs/heads/fix/master-production-p0-baseline`
 - **结果**:
-  - `LOCAL_HEAD`: `789745305eb64dc7d462974c23caa7b370f0965c`
-  - `REMOTE_HEAD`: `789745305eb64dc7d462974c23caa7b370f0965c`
-  - `LS_REMOTE_HEAD`: `789745305eb64dc7d462974c23caa7b370f0965c`
+  - `LOCAL_HEAD`: `b1f0b04cfaefee1b14dcaeecab3b6e8fe2bf9c6e`
+  - `REMOTE_HEAD`: `b1f0b04cfaefee1b14dcaeecab3b6e8fe2bf9c6e`
+  - `LS_REMOTE_HEAD`: `b1f0b04cfaefee1b14dcaeecab3b6e8fe2bf9c6e`
 - **结论**: `EXACT_MATCH` (完全一致，未强制推送)
 
 ---
@@ -151,7 +151,7 @@
 
 - **文件**: `paper-content-clean-latest.bundle`
 - **校验结果**: `git bundle verify paper-content-clean-latest.bundle` -> `paper-content-clean-latest.bundle is okay`
-- **bundle SHA256**: `12B0030D4888F56248B740ABFCFB2DC37D1A37DCA5193138BC1B870932991311`
+- **bundle SHA256**: `3B603866F6E0C87C625D8C7381A400F62CF10CB7DA63CB4584C4F2E07580D056`
 
 ---
 
@@ -161,7 +161,7 @@
 - **包含内容**:
   - `paper-content-clean-latest.bundle`
   - `repository-cleanup-evidence/` (包含 24 份包含完整 diff, log, tree, branch, checksum 的证据文件)
-- **压缩包 SHA256**: `D01F6D6E80A313813792523309196F9F1D70ED0D1A7B2D5C2BB08FD00F49151D`
+- **压缩包 SHA256**: `1E8458BCFF62E1F8BC1B0CC3684F6DFA404F57A05A7576611557097A28DF170E`
 
 ---
 
