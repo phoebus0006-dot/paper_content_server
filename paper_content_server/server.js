@@ -285,46 +285,6 @@ let runtime = {
   adminAllowHeaderlessWrite: ADMIN_ALLOW_HEADERLESS_WRITE,
 };
 
-function createApplication(options) {
-  options = options || {};
-  var ctx = options.context;
-  if (!ctx) {
-    ctx = Object.assign({}, runtime, {
-      cachedFrames: new Map(),
-      cachedSnapshots: new Map(),
-      imageIndex: [],
-      libraryState: { themeCursor: 0, currentTheme: null, currentImageIndex: 0, remainingThemeSlots: 1, lastSlotKey: null, lastSwitchDate: null, patternIndex: 0, currentKind: null },
-      renderCount: 0,
-      serverStartTime: Date.now(),
-      lastNewsRefreshAt: 0,
-      feedsLoadedAt: 0,
-      newsCache: { version: 1, updatedAt: null, translations: {} },
-      newsRotation: { version: 1, updatedAt: null, shown: [] },
-      DATA_DIR: DATA_DIR,
-      IMAGE_INDEX_FILE: IMAGE_INDEX_FILE,
-      LIBRARY_STATE_FILE: LIBRARY_STATE_FILE,
-      NEWS_CACHE_FILE: NEWS_CACHE_FILE,
-      NEWS_ROTATION_FILE: NEWS_ROTATION_FILE,
-      FEEDS_FILE: FEEDS_FILE,
-      LAST_GOOD_NEWS_FILE: LAST_GOOD_NEWS_FILE,
-      FALLBACK_STUDY_DIR: FALLBACK_STUDY_DIR,
-      TIMEZONE: TIMEZONE,
-      NEWS_REFRESH_MINUTES: NEWS_REFRESH_MINUTES,
-      adminAccessMode: ADMIN_ACCESS_MODE,
-      adminToken: ADMIN_TOKEN,
-      adminAllowedCidrs: ADM_PARSED_CIDRS,
-      adminTrustProxy: TRUST_PROXY,
-      adminTrustedProxyCidrs: ADM_TRUSTED_PROXY_CIDRS,
-      adminAllowHeaderlessWrite: ADMIN_ALLOW_HEADERLESS_WRITE,
-    });
-  }
-  var h = options.handler || createHandler(ctx);
-  return {
-    handler: h,
-    context: ctx,
-    close: options.close || function() { return Promise.resolve(); },
-  };
-}
 
 async function main() {
   r1Logger.info('Starting NewsPhoto content server via R1 bootstrap');
@@ -349,8 +309,7 @@ async function main() {
     }
   }
 
-  var createProductionBootMod = require('./src/app/create-production-boot');
-  var prodBoot = await createProductionBootMod.createProductionBoot({
+  var prodBoot = await createProductionBoot({
     env: process.env,
     cwd: ROOT_DIR,
     listen: false,
@@ -4799,11 +4758,24 @@ var createApplicationMod = require('./src/app/create-application');
 var createProductionBootMod = require('./src/app/create-production-boot');
 
 function createApplication(options) {
+  options = options || {};
+  if (!options.handler && options.context) {
+    options.handler = createHandler(options.context);
+  }
   return createApplicationMod.createApplication(options);
 }
 
 function createProductionBoot(options) {
-  return createProductionBootMod.createProductionBoot(options);
+  options = options || {};
+  var handlerFactory = options.handlerFactory || options.handler;
+  if (!handlerFactory) {
+    handlerFactory = function(context) {
+      return createHandler(context);
+    };
+  }
+  return createProductionBootMod.createProductionBoot(Object.assign({}, options, {
+    handlerFactory: typeof handlerFactory === 'function' ? handlerFactory : function() { return handlerFactory; }
+  }));
 }
 
 // ── Runtime injection for test isolation ────────────────────────────────
