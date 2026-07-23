@@ -21,6 +21,7 @@ var R1_SystemClock = require('./src/infra/clock').SystemClock;
 var R1_ConsoleLogger = require('./src/infra/logger').ConsoleLogger;
 var R1_JsonStore = require('./src/infra/json-store').JsonStore;
 var R1_bootstrap = require('./src/app/bootstrap').bootstrap;
+var buildRequestContext = require('./src/app/build-request-context').buildRequestContext;
 var R1_createApp = require('./src/app/create-app').createApp;
 var R1_writeFileAtomic = require('./src/infra/atomic-file').writeFileAtomic;
 var R1_createHttpClient = require('./src/infra/http-client').createHttpClient;
@@ -382,7 +383,14 @@ async function main() {
     notificationPort: notificationPort || undefined,
     mqttClient: mqttClient || undefined,
   });
-  runtime.boot = requestContext.boot = boot;
+
+  var builtContext = buildRequestContext(boot, {
+    adminAccessMode: ADMIN_ACCESS_MODE,
+    adminToken: ADMIN_TOKEN,
+    adminAllowedCidrs: ADM_ALLOWED_CIDRS,
+  });
+  Object.assign(requestContext, builtContext);
+  Object.assign(runtime, builtContext);
 
   try {
     // Ensure data directories exist
@@ -399,32 +407,6 @@ async function main() {
     runtime.libraryState = requestContext.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
     runtime.imageIndex = requestContext.imageIndex = await loadImageIndex();
     runtime.lastGoodNews = requestContext.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
-
-    // Wire R3 snapshot/publication services from single composition root
-    runtime.snapshotStore = requestContext.snapshotStore = boot.deps.snapshotStore;
-    runtime.snapshotCache = requestContext.snapshotCache = boot.deps.snapshotCache;
-    runtime.pinStore = requestContext.pinStore = boot.deps.pinStore;
-    runtime.publicationLock = requestContext.publicationLock = boot.deps.publicationLock;
-    runtime.operatingModeService = requestContext.operatingModeService = boot.deps.operatingModeService;
-    runtime.publicationHistory = requestContext.publicationHistory = boot.deps.publicationHistory;
-    runtime.notificationPort = requestContext.notificationPort = boot.deps.notificationPort;
-    runtime.publicationService = requestContext.publicationService = boot.services.publicationService;
-    runtime.adminQueryService = requestContext.adminQueryService = boot.services.adminQueryService || null;
-    runtime.adminStateService = requestContext.adminStateService = boot.services.adminStateService || null;
-    runtime.newsTitleService = requestContext.newsTitleService = boot.services.newsTitleService || null;
-    runtime.safeImagePath = requestContext.safeImagePath = boot.services.safeImagePath || null;
-    runtime.imageRasterizer = requestContext.imageRasterizer = boot.services.imageRasterizer || null;
-    runtime.imageRecipeService = requestContext.imageRecipeService = boot.services.imageRecipeService || null;
-    runtime.featureFlagView = requestContext.featureFlagView = boot.services.featureFlagView || null;
-    runtime.assetRepository = requestContext.assetRepository = boot.services.assetRepository || null;
-    runtime.customLibraryService = requestContext.customLibraryService = boot.services.customLibraryService || null;
-    runtime.safetyGate = requestContext.safetyGate = boot.services.safetyGate || null;
-    runtime.learningIngestionService = requestContext.learningIngestionService = boot.services.learningIngestionService || null;
-    runtime.learningScheduler = requestContext.learningScheduler = boot.services.learningScheduler || null;
-    runtime.assetSelectionService = requestContext.assetSelectionService = boot.services.assetSelectionService || null;
-    runtime.assetDeleteService = requestContext.assetDeleteService = boot.services.assetDeleteService || null;
-    runtime.overridePersistence = requestContext.overridePersistence = boot.services.overridePersistence || null;
-    runtime.deviceRegistryService = requestContext.deviceRegistryService = boot.services.deviceRegistryService || null;
   } catch (err) {
     if (boot) boot.setState('failed');
     r1Logger.error('Initialization failed: ' + err.message);
