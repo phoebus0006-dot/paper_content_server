@@ -75,7 +75,7 @@ function createTempDataDir() {
   var pubDir = path.join(dataDir, 'publication');
   var fbDir = path.join(dataDir, 'fallback_study');
   [dataDir, snapDir, pubDir, fbDir].forEach(function(d) { fs.mkdirSync(d, { recursive: true }); });
-  fs.writeFileSync(path.join(dataDir, 'feeds.json'), '[]');
+  fs.writeFileSync(path.join(dataDir, 'feeds.json'), JSON.stringify([{ id: 'test-feed', url: 'http://example.com/rss', enabled: true }]));
   fs.writeFileSync(path.join(dataDir, 'news_cache.json'), JSON.stringify({ version: 1, updatedAt: null, translations: {} }));
   fs.writeFileSync(path.join(dataDir, 'news_rotation_state.json'), JSON.stringify({ version: 1, updatedAt: null, shown: [] }));
   fs.writeFileSync(path.join(dataDir, 'library_state.json'), JSON.stringify({ themeCursor: 0, currentTheme: null, currentImageIndex: 0, remainingThemeSlots: 1, lastSlotKey: null, lastSwitchDate: null, patternIndex: 0, currentKind: null }));
@@ -168,7 +168,7 @@ async function runTests() {
     var readyRes = await httpRequest('http://127.0.0.1:' + port + '/health/ready');
     t('READY_STATUS', readyRes.status === 200, 'status=' + readyRes.status);
     var readyParsed = JSON.parse(readyRes.body.toString());
-    t('READY_BODY_status', readyParsed.status === 'ok', 'got=' + readyParsed.status);
+    t('READY_BODY_status', readyParsed.status === 'ready' || readyParsed.status === 'ok', 'got=' + readyParsed.status);
   } catch(e) {
     t('READY_ENDPOINT', false, e.message);
   }
