@@ -4564,18 +4564,27 @@ async function handleRequest(req, res, ctx) {
     }
 
     if (parsed.pathname === '/health/ready') {
-      var ready = { status: 'ok' };
       var issues = [];
-      if (!R.snapshotStore) issues.push('SNAPSHOT_STORE_UNAVAILABLE');
-      try {
-        var r = fs.existsSync(path.join(R.DATA_DIR || DATA_DIR, 'config.json')) || fs.existsSync(path.join(ROOT_DIR, 'config.json'));
-        if (!r) issues.push('CONFIG_NOT_FOUND');
-      } catch(e) { issues.push('CONFIG_CHECK_FAILED'); }
-      if (issues.length > 0) {
-        ready.status = 'degraded';
-        ready.issues = issues;
+      if (R.boot && typeof R.boot.getState === 'function' && R.boot.getState() !== 'ready') {
+        issues.push({ code: 'BOOTSTRAP_NOT_READY', component: 'bootstrap' });
       }
-      respondJson(res, ready);
+      if (!R.snapshotStore) {
+        issues.push({ code: 'SNAPSHOT_STORE_UNAVAILABLE', component: 'snapshotStore' });
+      }
+      if (!R.deviceRegistryService) {
+        issues.push({ code: 'DEVICE_REGISTRY_UNAVAILABLE', component: 'deviceRegistry' });
+      }
+      if (!R.feeds || !Array.isArray(R.feeds) || R.feeds.length === 0 || R.feeds.filter(function(f) { return f && f.enabled !== false; }).length === 0) {
+        issues.push({ code: 'FEEDS_CONFIG_INVALID', component: 'feeds' });
+      }
+
+      if (issues.length > 0) {
+        res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ status: 'not_ready', issues: issues }, null, 2));
+        return;
+      }
+
+      respondJson(res, { status: 'ready', issues: [] });
       return;
     }
 

@@ -37,8 +37,14 @@ echo "CONTAINER=$CONTAINER"
 LIVE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health/live")
 check "health/live=200" "$([ "$LIVE" = "200" ] && echo true || echo false)"
 
-READY=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health/ready")
-check "health/ready=200" "$([ "$READY" = "200" ] && echo true || echo false)"
+READY_TMP="/tmp/ready-$$.json"
+READY_CODE=$(curl -s -o "$READY_TMP" -w "%{http_code}" "$BASE_URL/health/ready")
+check "health/ready=200" "$([ "$READY_CODE" = "200" ] && echo true || echo false)"
+READY_STATUS=$(grep -o '"status":"[^"]*"' "$READY_TMP" | cut -d'"' -f4 || echo "")
+check "health/ready status=ready" "$([ "$READY_STATUS" = "ready" ] && echo true || echo false)"
+READY_ISSUES=$(grep -o '"issues":\[\]' "$READY_TMP" || echo "")
+check "health/ready no issues" "$([ -n "$READY_ISSUES" ] && echo true || echo false)"
+rm -f "$READY_TMP"
 
 ADMIN=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/admin")
 check "admin=200" "$([ "$ADMIN" = "200" ] && echo true || echo false)"
