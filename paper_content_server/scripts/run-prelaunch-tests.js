@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// run-prelaunch-tests.js — Cross-platform test runner for prelaunch Node.js & host C++ firmware tests (R3-07, R4-10)
+// run-prelaunch-tests.js — Cross-platform test runner for prelaunch Node.js & host C++ firmware tests (R3-07, R4-10, R5-11)
 
 const path = require('path');
 const { spawnSync } = require('child_process');
@@ -45,12 +45,13 @@ function runHostCppTests() {
   const cppFile = path.join(ROOT, 'test', 'firmware-host', 'firmware_host_test.cpp');
   const pendingCpp = path.join(WORKSPACE_ROOT, 'NewsPhoto_esp32wf', 'firmware_core', 'mqtt_pending_state.cpp');
   const transportCpp = path.join(WORKSPACE_ROOT, 'NewsPhoto_esp32wf', 'firmware_core', 'frame_transport_policy.cpp');
+  const renderGateCpp = path.join(WORKSPACE_ROOT, 'NewsPhoto_esp32wf', 'firmware_core', 'frame_render_gate.cpp');
 
   let compileArgs = [];
   if (compiler.startsWith('cl')) {
-    compileArgs = ['/EHsc', '/Fe:' + outBinary, cppFile, pendingCpp, transportCpp];
+    compileArgs = ['/EHsc', '/Fe:' + outBinary, cppFile, pendingCpp, transportCpp, renderGateCpp];
   } else {
-    compileArgs = ['-O2', '-Wall', cppFile, pendingCpp, transportCpp, '-o', outBinary];
+    compileArgs = ['-O2', '-Wall', cppFile, pendingCpp, transportCpp, renderGateCpp, '-o', outBinary];
   }
 
   console.log('Compiling with: ' + compiler + ' ' + compileArgs.join(' '));

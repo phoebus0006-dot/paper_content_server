@@ -6,7 +6,7 @@
 #include <string.h>
 #include <assert.h>
 
-// R4-09: Verify headers support multiple inclusion without redefinition errors
+// R4-09, R5-01: Verify headers support multiple inclusion without redefinition errors
 #include "../../../NewsPhoto_esp32wf/firmware_core/time_utils.h"
 #include "../../../NewsPhoto_esp32wf/firmware_core/time_utils.h"
 
@@ -15,6 +15,9 @@
 
 #include "../../../NewsPhoto_esp32wf/firmware_core/mqtt_pending_state.h"
 #include "../../../NewsPhoto_esp32wf/firmware_core/mqtt_pending_state.h"
+
+#include "../../../NewsPhoto_esp32wf/firmware_core/frame_render_gate.h"
+#include "../../../NewsPhoto_esp32wf/firmware_core/frame_render_gate.h"
 
 void test_time_utils() {
   assert(isTimeReached(1000, 500) == true);
@@ -47,26 +50,33 @@ void test_mqtt_pending_state() {
   assert(state.publicationPending == true);
   assert(state.mqttRetryMs == 0);
 
-  // WiFi failure retains pending state and sets 5s retry deadline
-  MqttNotificationEvalResult res1 = MqttPendingState_Evaluate(&state, 1000, "", false, true, NULL, NULL, false);
-  assert(res1 == MQTT_EVAL_RETAIN_WIFI_FAILURE);
+  // MqttPendingState_CanAttempt check
+  MqttPendingDecision dec1 = MqttPendingState_CanAttempt(&state, 1000, "");
+  assert(dec1 == MQTT_DECISION_ATTEMPT);
+
+  // Wi-Fi temporary failure sets retry deadline
+  MqttPendingState_OnTemporaryFailure(&state, 1000);
   assert(state.publicationPending == true);
   assert(state.mqttRetryMs == 6000);
 
-  // Attempt before retry deadline -> WAIT
-  MqttNotificationEvalResult res2 = MqttPendingState_Evaluate(&state, 3000, "", true, true, NULL, NULL, false);
-  assert(res2 == MQTT_EVAL_WAIT_RETRY_DEADLINE);
-  assert(state.publicationPending == true);
+  // Attempt before deadline -> WAIT_RETRY
+  MqttPendingDecision dec2 = MqttPendingState_CanAttempt(&state, 3000, "");
+  assert(dec2 == MQTT_DECISION_WAIT_RETRY);
 
-  // New notification resets retry deadline to 0 (does not inherit 5s backoff)
+  // New notification resets retry deadline to 0 (does not inherit previous 5s backoff)
   const char *validSha2 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   assert(MqttPendingState_SetPending(&state, "frame-200", "snap-200", validSha2) == true);
   assert(state.mqttRetryMs == 0);
-  assert(state.publicationPending == true);
 
-  // Attempt immediately succeeds deadline check
-  MqttNotificationEvalResult res3 = MqttPendingState_Evaluate(&state, 3500, "", true, true, "frame-200", validSha2, true);
-  assert(res3 == MQTT_EVAL_SUCCESS_RENDERED);
+  // Server state mismatch clears pending
+  MqttPendingDecision dec3 = MqttPendingState_OnServerState(&state, "frame-999", validSha2);
+  assert(dec3 == MQTT_DECISION_CLEAR_STALE_FRAME);
+  assert(state.publicationPending == false);
+  assert(state.mqttRetryMs == 0);
+
+  // Re-set pending and test success transition
+  assert(MqttPendingState_SetPending(&state, "frame-300", "snap-300", validSha2) == true);
+  MqttPendingState_OnSuccess(&state);
   assert(state.publicationPending == false);
   assert(state.mqttRetryMs == 0);
 
@@ -88,7 +98,6 @@ void test_frame_transport_policy() {
   p.payloadBytesRead = 192000;
   p.streamHasExtraBytes = false;
   p.shaMatched = true;
-  p.displayOk = true;
 
   assert(FrameTransport_Evaluate(&p) == FRAME_TRANSPORT_OK);
 
@@ -127,11 +136,76 @@ void test_frame_transport_policy() {
   printf("PASS: test_frame_transport_policy\n");
 }
 
+typedef struct {
+  int callCount;
+  bool returnSuccess;
+} FakeDisplayCtx;
+
+static bool fakeDisplayCb(const uint8_t *frame, size_t len, void *userData) {
+  (void)frame;
+  (void)len;
+  FakeDisplayCtx *ctx = (FakeDisplayCtx *)userData;
+  if (ctx) {
+    ctx->callCount++;
+    return ctx->returnSuccess;
+  }
+  return true;
+}
+
+void test_frame_render_gate() {
+  uint8_t dummyFrame[192000];
+  memset(dummyFrame, 0x55, sizeof(dummyFrame));
+
+  FrameTransportParams p;
+  memset(&p, 0, sizeof(p));
+  p.contentLength = 192010;
+  p.headerBytesRead = 10;
+  p.header[0] = 'E'; p.header[1] = 'P'; p.header[2] = 'F'; p.header[3] = '1';
+  p.header[4] = 0x20; p.header[5] = 0x03;
+  p.header[6] = 0xE0; p.header[7] = 0x01;
+  p.header[8] = 49;
+  p.header[9] = 1;
+  p.payloadBytesRead = 192000;
+  p.streamHasExtraBytes = false;
+  p.shaMatched = false; // Invalid SHA
+
+  FakeDisplayCtx ctx = { 0, true };
+
+  // Case 1: Transport invalid -> display callback MUST NOT be invoked (R5-01, R5-07)
+  FrameRenderResult res1 = FrameRenderGate_Execute(&p, dummyFrame, sizeof(dummyFrame), fakeDisplayCb, &ctx);
+  assert(res1.transportResult == FRAME_TRANSPORT_SHA_MISMATCH);
+  assert(res1.displayAttempted == false);
+  assert(res1.displaySuccess == false);
+  assert(res1.lastFrameUpdated == false);
+  assert(ctx.callCount == 0);
+
+  // Case 2: Transport valid -> display callback IS invoked exactly once
+  p.shaMatched = true;
+  FrameRenderResult res2 = FrameRenderGate_Execute(&p, dummyFrame, sizeof(dummyFrame), fakeDisplayCb, &ctx);
+  assert(res2.transportResult == FRAME_TRANSPORT_OK);
+  assert(res2.displayAttempted == true);
+  assert(res2.displaySuccess == true);
+  assert(res2.lastFrameUpdated == true);
+  assert(ctx.callCount == 1);
+
+  // Case 3: Transport valid, but display execution fails -> lastFrame NOT updated
+  ctx.returnSuccess = false;
+  FrameRenderResult res3 = FrameRenderGate_Execute(&p, dummyFrame, sizeof(dummyFrame), fakeDisplayCb, &ctx);
+  assert(res3.transportResult == FRAME_TRANSPORT_OK);
+  assert(res3.displayAttempted == true);
+  assert(res3.displaySuccess == false);
+  assert(res3.lastFrameUpdated == false);
+  assert(ctx.callCount == 2);
+
+  printf("PASS: test_frame_render_gate\n");
+}
+
 int main() {
   printf("Running Production Firmware C++ Host Tests...\n");
   test_time_utils();
   test_mqtt_pending_state();
   test_frame_transport_policy();
+  test_frame_render_gate();
   printf("ALL FIRMWARE HOST C++ TESTS PASSED SUCCESSFULLY.\n");
   return 0;
 }
