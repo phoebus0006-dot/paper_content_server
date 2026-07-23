@@ -361,8 +361,8 @@ async function main() {
     mqttClient: mqttClient || undefined,
   });
 
-  var requestContext = boot.context;
-  Object.assign(runtime, boot.context);
+  runtime = boot.context;
+  var requestContext = runtime;
   runtime.boot = boot;
 
   try {
@@ -370,16 +370,15 @@ async function main() {
     await ensureDir(DATA_DIR);
     await ensureDir(IMAGES_DIR);
 
-    // Load persisted runtime state into both module-level runtime (for helper
-    // functions) and requestContext (for the handler closure).
-    runtime.feeds = requestContext.feeds = await readJson(FEEDS_FILE, null);
+    // Load persisted runtime state into runtime
+    runtime.feeds = await readJson(FEEDS_FILE, null);
     validateFeeds(runtime.feeds);
 
-    runtime.newsCache = requestContext.newsCache = await readJson(NEWS_CACHE_FILE, { version: 1, updatedAt: null, translations: {} });
-    runtime.newsRotation = requestContext.newsRotation = await readJson(NEWS_ROTATION_FILE, { version: 1, updatedAt: null, shown: [] });
-    runtime.libraryState = requestContext.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
-    runtime.imageIndex = requestContext.imageIndex = await loadImageIndex();
-    runtime.lastGoodNews = requestContext.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
+    runtime.newsCache = await readJson(NEWS_CACHE_FILE, { version: 1, updatedAt: null, translations: {} });
+    runtime.newsRotation = await readJson(NEWS_ROTATION_FILE, { version: 1, updatedAt: null, shown: [] });
+    runtime.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
+    runtime.imageIndex = await loadImageIndex();
+    runtime.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
   } catch (err) {
     if (boot) boot.setState('failed');
     r1Logger.error('Initialization failed: ' + err.message);
@@ -393,9 +392,9 @@ async function main() {
       frameCache: runtime.cachedFrames,
     });
   }
-  runtime.safetyClassifierPort = requestContext.safetyClassifierPort = boot.services.safetyClassifierPort || null;
-  runtime.config = requestContext.config = boot.config || null;
-  runtime.mqttClient = requestContext.mqttClient = boot.deps.mqttClient || null;
+  runtime.safetyClassifierPort = boot.services.safetyClassifierPort || null;
+  runtime.config = boot.config || null;
+  runtime.mqttClient = boot.deps.mqttClient || null;
   await runtime.snapshotStore.ensureDirs();
 
   // V6: initialize the safety classifier async lifecycle (load model + smoke
@@ -4826,12 +4825,10 @@ async function createProductionBoot(options) {
     logger: logger,
   });
 
-  var context = boot.context;
-  Object.assign(runtime, context);
-
   return {
     boot: boot,
-    context: context,
+    context: boot.context,
+    runtime: boot.context,
     services: boot.services,
     app: boot.app,
   };
