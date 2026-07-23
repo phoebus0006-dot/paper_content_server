@@ -2929,9 +2929,27 @@ function readBody(req, limit) {
   return new Promise(function(ok, fail) {
     var chunks = [];
     var total = 0;
-    req.on('data', function(c) { total += c.length; if (limit && total > limit) { req.destroy(); fail(new Error('too large')); return; } chunks.push(c); });
-    req.on('end', function() { ok(Buffer.concat(chunks).toString('utf8')); });
-    req.on('error', fail);
+    var maxLimit = limit || 1048576;
+    var destroyed = false;
+    req.on('data', function(c) {
+      if (destroyed) return;
+      total += c.length;
+      if (total > maxLimit) {
+        destroyed = true;
+        req.destroy();
+        var err = new Error('payload too large');
+        err.code = 'PAYLOAD_TOO_LARGE';
+        fail(err);
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', function() {
+      if (!destroyed) ok(Buffer.concat(chunks).toString('utf8'));
+    });
+    req.on('error', function(err) {
+      if (!destroyed) fail(err);
+    });
   });
 }
 
@@ -4649,13 +4667,25 @@ async function handleRequest(req, res, ctx) {
           res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
           return;
         }
-        var provBodyRaw = await readBody(req) || '{}';
-        if (Buffer.byteLength(provBodyRaw, 'utf8') > 16384) {
-          res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
+        var provBodyRaw;
+        try {
+          provBodyRaw = await readBody(req, 16384) || '{}';
+        } catch(e) {
+          if (e.code === 'PAYLOAD_TOO_LARGE') {
+            res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
+            return;
+          }
+          throw e;
+        }
+        var provBody;
+        try {
+          provBody = JSON.parse(provBodyRaw);
+        } catch(e) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'INVALID_JSON', message: 'invalid JSON body' }));
           return;
         }
-        var provBody = JSON.parse(provBodyRaw);
         var provToken = req.headers['x-provisioning-token'] || provBody.provisioningToken;
         var provObservedIp = req.socket ? req.socket.remoteAddress : null;
         var provRes = await R.deviceRegistryService.registerDevice(provBody, { provisioningToken: provToken, observedIp: provObservedIp });
@@ -4686,13 +4716,25 @@ async function handleRequest(req, res, ctx) {
           res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
           return;
         }
-        var hbBodyRaw = await readBody(req) || '{}';
-        if (Buffer.byteLength(hbBodyRaw, 'utf8') > 16384) {
-          res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
+        var hbBodyRaw;
+        try {
+          hbBodyRaw = await readBody(req, 16384) || '{}';
+        } catch(e) {
+          if (e.code === 'PAYLOAD_TOO_LARGE') {
+            res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: 'payload too large (max 16KB)' }));
+            return;
+          }
+          throw e;
+        }
+        var hbBody;
+        try {
+          hbBody = JSON.parse(hbBodyRaw);
+        } catch(e) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'INVALID_JSON', message: 'invalid JSON body' }));
           return;
         }
-        var hbBody = JSON.parse(hbBodyRaw);
         var devToken = req.headers['x-device-token'] || (req.headers['authorization'] ? String(req.headers['authorization']).replace(/^Bearer\s+/i, '') : null);
         var observedIp = req.socket ? req.socket.remoteAddress : null;
         var updatedDev = await R.deviceRegistryService.heartbeat(devId, hbBody, { deviceToken: devToken, observedIp: observedIp });
