@@ -5,7 +5,11 @@ function evaluateReadiness(runtime, boot) {
   var issues = [];
   var R = runtime || {};
 
-  if (boot && typeof boot.getState === 'function' && boot.getState() !== 'ready') {
+  if (!boot) {
+    issues.push({ code: 'BOOTSTRAP_UNAVAILABLE', component: 'bootstrap' });
+  } else if (typeof boot.getState !== 'function') {
+    issues.push({ code: 'BOOTSTRAP_INVALID', component: 'bootstrap' });
+  } else if (boot.getState() !== 'ready') {
     issues.push({ code: 'BOOTSTRAP_NOT_READY', component: 'bootstrap' });
   }
 
