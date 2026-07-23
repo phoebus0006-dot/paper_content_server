@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 
 function createApplication(options) {
   options = options || {};
@@ -24,116 +23,38 @@ function createApplication(options) {
   var serverMod = require('../server.js');
   var lg = options.logger || { info: function() {}, warn: function() {}, error: function() {} };
   var { bootstrap } = require('./app/bootstrap');
-
+  var { buildRequestContext } = require('./app/build-request-context');
   var R3_snapshotModel = require('../src/snapshot/snapshot-model');
-  var { AdminStateService } = require('../src/admin/admin-state-service');
-  var { NewsTitleService } = require('../src/news/news-title-service');
-  var { SafeImagePath } = require('../src/files/safe-image-path');
-  var { ImageRasterizer } = require('../src/images/image-rasterizer-v2');
-  var { ImageRecipeService } = require('../src/images/image-recipe-service');
 
   var testEnv = Object.assign({}, process.env, options.env || {}, { DATA_DIR: dataDir });
+
+  var serviceOverrides = Object.assign({}, options.serviceOverrides || {});
+  if (options.deviceRegistryService) {
+    serviceOverrides.deviceRegistryService = options.deviceRegistryService;
+  }
+
   var boot = bootstrap({
     env: testEnv,
     cwd: path.join(__dirname, '..'),
     clock: options.clock,
     logger: lg,
     listen: false,
+    serviceOverrides: serviceOverrides,
   });
 
-  var snapshotStore = boot.deps.snapshotStore;
-  var snapshotCache = boot.deps.snapshotCache;
-  var pinStore = boot.deps.pinStore;
-  var publicationLock = boot.deps.publicationLock;
-  var operatingModeService = boot.deps.operatingModeService;
-  var publicationHistory = boot.deps.publicationHistory;
-  var notificationPort = boot.deps.notificationPort;
-  var pubService = boot.services.publicationService;
-  var deviceRegistryService = options.deviceRegistryService || boot.services.deviceRegistryService;
+  var requestContext = buildRequestContext(boot, { adminToken: adminToken });
 
-  var overridePersistence = boot.services.overridePersistence || {
-    _data: null,
-    loadOverride: function() { return this._data; },
-    saveOverride: function(d) { this._data = d; },
-    clearOverride: function() { this._data = null; },
-  };
+  var snapshotStore = requestContext.snapshotStore;
+  var operatingModeService = requestContext.operatingModeService;
+  var pubService = requestContext.publicationService;
+  var overridePersistence = requestContext.overridePersistence;
 
-  var adminStateService = boot.services.adminStateService;
-  var newsTitleService = boot.services.newsTitleService;
-  var safeImagePath = boot.services.safeImagePath;
-  var imageRasterizer = boot.services.imageRasterizer;
-  var imageRecipeService = boot.services.imageRecipeService;
-
-  // Build the isolated request context — NOT touching module.exports.runtime.
-  // Each createApplication call has its own context with independent services.
-  var requestContext = {
-    snapshotStore: snapshotStore,
-    snapshotCache: snapshotCache,
-    pinStore: pinStore,
-    publicationLock: publicationLock,
-    operatingModeService: operatingModeService,
-    publicationHistory: publicationHistory,
-    notificationPort: notificationPort,
-    publicationService: pubService,
-    adminStateService: adminStateService,
-    newsTitleService: newsTitleService,
-    safeImagePath: safeImagePath,
-    imageRasterizer: imageRasterizer,
-    overridePersistence: overridePersistence,
-    imageRecipeService: imageRecipeService,
-    deviceRegistryService: deviceRegistryService,
-    boot: boot,
-    config: boot.config || {
-      debug: { enableDebugRoutes: false },
-      features: {},
-    },
-    renderCount: 0,
-    serverStartTime: Date.now(),
-    cachedFrames: new Map(),
-    cachedSnapshots: new Map(),
-    feeds: null,
-    newsCache: { version: 1, updatedAt: null, translations: {} },
-    newsRotation: { version: 1, updatedAt: null, shown: [] },
-    lastGoodNews: null,
-    fallbackStudyEntries: null,
-    fallbackStudyReady: false,
-    libraryState: { themeCursor: 0, currentTheme: null, currentImageIndex: 0, remainingThemeSlots: 1, lastSlotKey: null, lastSwitchDate: null, patternIndex: 0, currentKind: null },
-    imageIndex: [],
-    imageIndexLoadedAt: 0,
-    refreshPromise: null,
-    lastNewsRefreshAt: 0,
-    serverStartTime: Date.now(),
-    renderCount: 0,
-    nowProvider: null,
-    pinNowProvider: null,
-    customLibraryService: null,
-    safetyGate: null,
-    learningIngestionService: null,
-    learningLastIngestAt: null,
-    safetyClassifierPort: null,
-    assetRepository: null,
-    assetSelectionService: null,
-    assetDeleteService: null,
-    DATA_DIR: dataDir,
-    IMAGE_INDEX_FILE: path.join(dataDir, 'image_index.json'),
-    LIBRARY_STATE_FILE: path.join(dataDir, 'library_state.json'),
-    NEWS_CACHE_FILE: path.join(dataDir, 'news_cache.json'),
-    NEWS_ROTATION_FILE: path.join(dataDir, 'news_rotation_state.json'),
-    FEEDS_FILE: path.join(dataDir, 'feeds.json'),
-    LAST_GOOD_NEWS_FILE: path.join(dataDir, 'last_good_news.json'),
-    FALLBACK_STUDY_DIR: path.join(dataDir, 'fallback_study'),
-    TIMEZONE: 'UTC',
-    NEWS_REFRESH_MINUTES: 15,
-    adminAccessMode: 'token',
-    adminToken: adminToken,
-    adminAllowedCidrs: { valid: true, parsed: [{ network: 2130706432, mask: 4294967040 }] },
-    adminTrustProxy: false,
-    adminTrustedProxyCidrs: [],
-    adminAllowHeaderlessWrite: false,
-  };
-
-  operatingModeService.setMode('AUTO');
-  overridePersistence.clearOverride();
+  if (operatingModeService && typeof operatingModeService.setMode === 'function') {
+    operatingModeService.setMode('AUTO');
+  }
+  if (overridePersistence && typeof overridePersistence.clearOverride === 'function') {
+    overridePersistence.clearOverride();
+  }
 
   var fixtureImgSrc = path.join(__dirname, '..', 'resources', 'fallback-study', 'fb-color.png');
   var fixtureImgDest = path.join(dataDir, 'fixture-test-image.png');
@@ -236,8 +157,6 @@ function createApplication(options) {
     });
   }
 
-  // Use the server's createApplication to get the handler — no module-level
-  // runtime mutation, no global override, no mutex.
   var app = serverMod.createApplication({ context: requestContext, close: close });
 
   return {

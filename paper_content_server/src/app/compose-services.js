@@ -56,6 +56,7 @@ function composeServices(deps) {
   var publicationHistory = deps.publicationHistory;
   var notificationPort = deps.notificationPort;
   var mqttClient = deps.mqttClient;
+  var serviceOverrides = deps.serviceOverrides || {};
 
   var path = require('path');
   var fs = require('fs');
@@ -367,7 +368,7 @@ function composeServices(deps) {
     var JsonStore = require('../infra/json-store').JsonStore;
     var devicesFile = stores.devices ? (stores.devices._filePath || path.join(config.paths.dataDir, 'devices.json')) : path.join(config.paths.dataDir, 'devices.json');
     var devicesStore = stores.devices || JsonStore(devicesFile, { schemaVersion: 1 });
-    deviceRegistryService = deps.deviceRegistryService || new DeviceRegistryService({
+    deviceRegistryService = deps.deviceRegistryService || serviceOverrides.deviceRegistryService || new DeviceRegistryService({
       jsonStore: devicesStore,
       provisioningEnabled: (config && config.deviceProvisioning && config.deviceProvisioning.enabled === true) ? true : false,
       provisioningToken: (config && config.deviceProvisioning && config.deviceProvisioning.token) ? config.deviceProvisioning.token : null,
@@ -376,11 +377,11 @@ function composeServices(deps) {
   } catch (e) { logger.warn('deviceRegistryService init: ' + e.message); }
 
   // --- AdminStateService & Image/News Helpers ---
-  var adminStateService = null;
-  var newsTitleService = null;
-  var safeImagePath = null;
-  var imageRasterizer = null;
-  var imageRecipeService = null;
+  var adminStateService = serviceOverrides.adminStateService || null;
+  var newsTitleService = serviceOverrides.newsTitleService || null;
+  var safeImagePath = serviceOverrides.safeImagePath || null;
+  var imageRasterizer = serviceOverrides.imageRasterizer || null;
+  var imageRecipeService = serviceOverrides.imageRecipeService || null;
 
   try {
     var { AdminStateService } = require('../admin/admin-state-service');
@@ -389,16 +390,18 @@ function composeServices(deps) {
     var { ImageRasterizer } = require('../images/image-rasterizer-v2');
     var { ImageRecipeService } = require('../images/image-recipe-service');
 
-    adminStateService = new AdminStateService({
-      operatingModeService: operatingModeService,
-      snapshotStore: snapshotStore,
-      publicationHistory: publicationHistory,
-      mqttClient: mqttClient,
-    });
-    newsTitleService = new NewsTitleService();
-    safeImagePath = new SafeImagePath({ rootDir: path.join(__dirname, '..', '..') });
-    imageRasterizer = new ImageRasterizer();
-    imageRecipeService = new ImageRecipeService();
+    if (!adminStateService) {
+      adminStateService = new AdminStateService({
+        operatingModeService: operatingModeService,
+        snapshotStore: snapshotStore,
+        publicationHistory: publicationHistory,
+        mqttClient: mqttClient,
+      });
+    }
+    if (!newsTitleService) newsTitleService = new NewsTitleService();
+    if (!safeImagePath) safeImagePath = new SafeImagePath({ rootDir: path.join(__dirname, '..', '..') });
+    if (!imageRasterizer) imageRasterizer = new ImageRasterizer();
+    if (!imageRecipeService) imageRecipeService = new ImageRecipeService();
   } catch (e) { logger.warn('helper services init: ' + e.message); }
 
   return {

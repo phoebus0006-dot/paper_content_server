@@ -77,6 +77,8 @@ function bootstrap(overrides) {
     publicationHistory: publicationHistory,
     notificationPort: notificationPort,
     mqttClient: mqttClient,
+    deviceRegistryService: overrides.deviceRegistryService,
+    serviceOverrides: overrides.serviceOverrides || overrides.services || {},
   });
 
   var app = createApp({
