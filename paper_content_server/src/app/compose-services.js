@@ -360,9 +360,25 @@ function composeServices(deps) {
     logger.warn('adminQueryService init: ' + e.message);
   }
 
+  // --- deviceRegistryService: device registration and management ---
+  var deviceRegistryService = null;
+  try {
+    var { DeviceRegistryService } = require('../devices/device-registry-service');
+    var JsonStore = require('../infra/json-store').JsonStore;
+    var devicesFile = stores.devices ? (stores.devices._filePath || path.join(config.paths.dataDir, 'devices.json')) : path.join(config.paths.dataDir, 'devices.json');
+    var devicesStore = stores.devices || JsonStore(devicesFile, { schemaVersion: 1 });
+    deviceRegistryService = deps.deviceRegistryService || new DeviceRegistryService({
+      jsonStore: devicesStore,
+      provisioningEnabled: (config.deviceProvisioning && config.deviceProvisioning.enabled) != null ? config.deviceProvisioning.enabled : true,
+      provisioningToken: (config.deviceProvisioning && config.deviceProvisioning.token) || 'dev-token',
+      clock: clock,
+    });
+  } catch (e) { logger.warn('deviceRegistryService init: ' + e.message); }
+
   return {
     newsPipeline: newsPipeline,
     publicationService: pubService,
+    deviceRegistryService: deviceRegistryService,
     adminQueryService: adminQueryService,
     featureFlagView: featureFlagView || null,
     assetRepository: assetRepository,

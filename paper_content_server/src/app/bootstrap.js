@@ -95,6 +95,7 @@ function bootstrap(overrides) {
       publicationHistory: publicationHistory,
       notificationPort: notificationPort,
       publicationService: services.publicationService,
+      deviceRegistryService: services.deviceRegistryService,
       newsPipeline: services.newsPipeline,
       adminQueryService: services.adminQueryService,
       featureFlagView: services.featureFlagView,

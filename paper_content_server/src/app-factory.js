@@ -23,47 +23,40 @@ function createApplication(options) {
 
   var serverMod = require('../server.js');
   var lg = options.logger || { info: function() {}, warn: function() {}, error: function() {} };
+  var { bootstrap } = require('./app/bootstrap');
 
-  var R3_SnapshotStore = require('../src/snapshot/snapshot-store').SnapshotStore;
-  var R3_SnapshotCache = require('../src/snapshot/snapshot-cache').SnapshotCache;
-  var R3_PinStore = require('../src/snapshot/pin-store').PinStore;
-  var R3_PublicationLock = require('../src/publication/publication-lock').PublicationLock;
-  var R3_PublicationHistory = require('../src/publication/publication-history').PublicationHistory;
-  var R3_NoopNotificationPort = require('../src/publication/notification-port').NoopNotificationPort;
-  var R3_OperatingModeService = require('../src/publication/operating-mode-service').OperatingModeService;
-  var R3_PublicationService = require('../src/publication/publication-service').PublicationService;
   var R3_snapshotModel = require('../src/snapshot/snapshot-model');
-
   var { AdminStateService } = require('../src/admin/admin-state-service');
   var { NewsTitleService } = require('../src/news/news-title-service');
   var { SafeImagePath } = require('../src/files/safe-image-path');
   var { ImageRasterizer } = require('../src/images/image-rasterizer-v2');
   var { ImageRecipeService } = require('../src/images/image-recipe-service');
-  var { DeviceRegistryService } = require('../src/devices/device-registry-service');
-  var R1_JsonStore = require('../src/infra/json-store').JsonStore;
 
-  var snapshotStore = R3_SnapshotStore(snapDir, pubDir, lg);
-  var snapshotCache = R3_SnapshotCache();
-  var pinStore = R3_PinStore({ nowMs: function() { return Date.now(); } });
-  var publicationLock = R3_PublicationLock();
-  var operatingModeService = R3_OperatingModeService();
-  var publicationHistory = R3_PublicationHistory(path.join(pubDir, 'history.json'), lg);
-  var notificationPort = R3_NoopNotificationPort();
+  var testEnv = Object.assign({}, process.env, options.env || {}, { DATA_DIR: dataDir });
+  var boot = bootstrap({
+    env: testEnv,
+    cwd: path.join(__dirname, '..'),
+    clock: options.clock,
+    logger: lg,
+    listen: false,
+  });
 
-  var overridePersistence = {
+  var snapshotStore = boot.deps.snapshotStore;
+  var snapshotCache = boot.deps.snapshotCache;
+  var pinStore = boot.deps.pinStore;
+  var publicationLock = boot.deps.publicationLock;
+  var operatingModeService = boot.deps.operatingModeService;
+  var publicationHistory = boot.deps.publicationHistory;
+  var notificationPort = boot.deps.notificationPort;
+  var pubService = boot.services.publicationService;
+  var deviceRegistryService = options.deviceRegistryService || boot.services.deviceRegistryService;
+
+  var overridePersistence = boot.services.overridePersistence || {
     _data: null,
     loadOverride: function() { return this._data; },
     saveOverride: function(d) { this._data = d; },
     clearOverride: function() { this._data = null; },
   };
-
-  var frameCache = new Map();
-
-  var pubService = R3_PublicationService(
-    snapshotStore, snapshotCache, pinStore, publicationLock,
-    notificationPort, operatingModeService, publicationHistory, lg,
-    overridePersistence, frameCache
-  );
 
   var adminStateService = new AdminStateService({
     operatingModeService: operatingModeService,
@@ -75,15 +68,6 @@ function createApplication(options) {
   var safeImagePath = new SafeImagePath({ rootDir: path.join(__dirname, '..') });
   var imageRasterizer = new ImageRasterizer();
   var imageRecipeService = new ImageRecipeService();
-  var devicesStore = R1_JsonStore(path.join(dataDir, 'devices.json'), { schemaVersion: 1 });
-  var loadConfig = require('./config/load-config').loadConfig;
-  var appConfig = loadConfig({ env: options.env || process.env, cwd: path.join(__dirname, '..') });
-  var deviceRegistryService = options.deviceRegistryService || new DeviceRegistryService({
-    jsonStore: devicesStore,
-    provisioningEnabled: options.deviceProvisioningEnabled !== undefined ? options.deviceProvisioningEnabled : appConfig.deviceProvisioning.enabled,
-    provisioningToken: options.deviceProvisioningToken || appConfig.deviceProvisioning.token,
-    clock: options.clock || undefined
-  });
 
   // Build the isolated request context — NOT touching module.exports.runtime.
   // Each createApplication call has its own context with independent services.
@@ -103,6 +87,7 @@ function createApplication(options) {
     overridePersistence: overridePersistence,
     imageRecipeService: imageRecipeService,
     deviceRegistryService: deviceRegistryService,
+    boot: boot,
     config: {
       debug: {
         enableDebugRoutes: (process.env.ENABLE_DEBUG_ROUTES === 'true') || (process.env.ENABLE_TEST_ENDPOINTS === 'true'),
