@@ -107,15 +107,45 @@ function bootstrap(overrides) {
   // (MQTT disabled), disconnect() resolves immediately.
   var mqttClientPort = createMqttClientPort(mqttClient);
 
+  var bootState = 'starting';
   var server = null;
+
+  function getState() {
+    return bootState;
+  }
+
+  function setState(newState) {
+    bootState = newState;
+  }
+
+  function startListening(port, host) {
+    return new Promise(function(resolve, reject) {
+      if (!server) {
+        server = http.createServer(app.handler);
+      }
+      var listenPort = port || config.server.port;
+      var listenHost = host || '0.0.0.0';
+      function onError(err) {
+        bootState = 'failed';
+        reject(err);
+      }
+      server.once('error', onError);
+      server.listen(listenPort, listenHost, function() {
+        server.removeListener('error', onError);
+        bootState = 'ready';
+        logger.info('NewsPhoto content server listening on port ' + listenPort);
+        resolve(server);
+      });
+    });
+  }
+
   if (overrides.server) {
     // Testability hook: inject a fake server whose close() can fail/hang.
     server = overrides.server;
+    bootState = 'ready';
   } else if (overrides.listen) {
-    var listenPort = overrides.port || config.server.port;
-    server = http.createServer(app.handler);
-    server.listen(listenPort, '0.0.0.0', function() {
-      logger.info('NewsPhoto content server listening on port ' + listenPort);
+    startListening(overrides.port).catch(function(err) {
+      logger.error('Failed to listen: ' + err.message);
     });
   }
 
@@ -123,6 +153,7 @@ function bootstrap(overrides) {
   var shutdownPromise = null;
 
   function performShutdown() {
+    bootState = 'stopping';
     var tasks = [];
     if (server) {
       tasks.push(new Promise(function(resolve, reject) {
@@ -167,6 +198,10 @@ function bootstrap(overrides) {
     server: server,
     services: services,
     shutdown: shutdown,
+    state: bootState,
+    getState: getState,
+    setState: setState,
+    startListening: startListening,
     deps: { clock: clock, logger: logger, stores: stores, httpClient: httpClient, snapshotStore: snapshotStore, snapshotCache: snapshotCache, pinStore: pinStore, publicationLock: publicationLock, operatingModeService: operatingModeService, publicationHistory: publicationHistory, notificationPort: notificationPort, mqttClient: mqttClient },
   };
 }

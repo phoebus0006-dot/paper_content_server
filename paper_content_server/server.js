@@ -377,55 +377,68 @@ async function main() {
     handler: createHandler(requestContext),
     env: process.env,
     cwd: ROOT_DIR,
-    listen: true,
+    listen: false,
     port: PORT,
     notificationPort: notificationPort || undefined,
     mqttClient: mqttClient || undefined,
   });
+  runtime.boot = requestContext.boot = boot;
 
-  // Ensure data directories exist
-  await ensureDir(DATA_DIR);
-  await ensureDir(IMAGES_DIR);
+  try {
+    // Ensure data directories exist
+    await ensureDir(DATA_DIR);
+    await ensureDir(IMAGES_DIR);
 
-  // Load persisted runtime state into both module-level runtime (for helper
-  // functions) and requestContext (for the handler closure).
-  runtime.feeds = requestContext.feeds = await readJson(FEEDS_FILE, []);
-  runtime.newsCache = requestContext.newsCache = await readJson(NEWS_CACHE_FILE, { version: 1, updatedAt: null, translations: {} });
-  runtime.newsRotation = requestContext.newsRotation = await readJson(NEWS_ROTATION_FILE, { version: 1, updatedAt: null, shown: [] });
-  runtime.libraryState = requestContext.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
-  runtime.imageIndex = requestContext.imageIndex = await loadImageIndex();
-  runtime.lastGoodNews = requestContext.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
+    // Load persisted runtime state into both module-level runtime (for helper
+    // functions) and requestContext (for the handler closure).
+    runtime.feeds = requestContext.feeds = await readJson(FEEDS_FILE, null);
+    validateFeeds(runtime.feeds);
 
-  // Wire R3 snapshot/publication services from single composition root
-  runtime.snapshotStore = requestContext.snapshotStore = boot.deps.snapshotStore;
-  runtime.snapshotCache = requestContext.snapshotCache = boot.deps.snapshotCache;
-  runtime.pinStore = requestContext.pinStore = boot.deps.pinStore;
-  runtime.publicationLock = requestContext.publicationLock = boot.deps.publicationLock;
-  runtime.operatingModeService = requestContext.operatingModeService = boot.deps.operatingModeService;
-  runtime.publicationHistory = requestContext.publicationHistory = boot.deps.publicationHistory;
-  runtime.notificationPort = requestContext.notificationPort = boot.deps.notificationPort;
-  runtime.publicationService = requestContext.publicationService = boot.services.publicationService;
-  runtime.adminQueryService = requestContext.adminQueryService = boot.services.adminQueryService || null;
-  runtime.adminStateService = requestContext.adminStateService = new AdminStateService({
-    operatingModeService: requestContext.operatingModeService || null,
-    snapshotStore: requestContext.snapshotStore || null,
-    publicationHistory: requestContext.publicationHistory || null,
-    mqttClient: requestContext.mqttClient || null,
-  });
-  runtime.newsTitleService = requestContext.newsTitleService = new NewsTitleService();
-  runtime.safeImagePath = requestContext.safeImagePath = new SafeImagePath({ rootDir: ROOT_DIR });
-  runtime.imageRasterizer = requestContext.imageRasterizer = new ImageRasterizer();
-  runtime.featureFlagView = requestContext.featureFlagView = boot.services.featureFlagView || null;
-  runtime.assetRepository = requestContext.assetRepository = boot.services.assetRepository || null;
-  runtime.customLibraryService = requestContext.customLibraryService = boot.services.customLibraryService || null;
-  runtime.safetyGate = requestContext.safetyGate = boot.services.safetyGate || null;
-  runtime.learningIngestionService = requestContext.learningIngestionService = boot.services.learningIngestionService || null;
-  runtime.learningScheduler = requestContext.learningScheduler = boot.services.learningScheduler || null;
-  runtime.assetSelectionService = requestContext.assetSelectionService = boot.services.assetSelectionService || null;
-  runtime.assetDeleteService = requestContext.assetDeleteService = boot.services.assetDeleteService || null;
-  runtime.overridePersistence = requestContext.overridePersistence = boot.services.overridePersistence || null;
-  var devicesJsonStore = new R1_JsonStore(path.join(DATA_DIR, 'devices.json'), { schemaVersion: 1 });
-  runtime.deviceRegistryService = requestContext.deviceRegistryService = new DeviceRegistryService({ jsonStore: devicesJsonStore });
+    runtime.newsCache = requestContext.newsCache = await readJson(NEWS_CACHE_FILE, { version: 1, updatedAt: null, translations: {} });
+    runtime.newsRotation = requestContext.newsRotation = await readJson(NEWS_ROTATION_FILE, { version: 1, updatedAt: null, shown: [] });
+    runtime.libraryState = requestContext.libraryState = await readJson(LIBRARY_STATE_FILE, runtime.libraryState);
+    runtime.imageIndex = requestContext.imageIndex = await loadImageIndex();
+    runtime.lastGoodNews = requestContext.lastGoodNews = await readJson(LAST_GOOD_NEWS_FILE, null);
+
+    // Wire R3 snapshot/publication services from single composition root
+    runtime.snapshotStore = requestContext.snapshotStore = boot.deps.snapshotStore;
+    runtime.snapshotCache = requestContext.snapshotCache = boot.deps.snapshotCache;
+    runtime.pinStore = requestContext.pinStore = boot.deps.pinStore;
+    runtime.publicationLock = requestContext.publicationLock = boot.deps.publicationLock;
+    runtime.operatingModeService = requestContext.operatingModeService = boot.deps.operatingModeService;
+    runtime.publicationHistory = requestContext.publicationHistory = boot.deps.publicationHistory;
+    runtime.notificationPort = requestContext.notificationPort = boot.deps.notificationPort;
+    runtime.publicationService = requestContext.publicationService = boot.services.publicationService;
+    runtime.adminQueryService = requestContext.adminQueryService = boot.services.adminQueryService || null;
+    runtime.adminStateService = requestContext.adminStateService = new AdminStateService({
+      operatingModeService: requestContext.operatingModeService || null,
+      snapshotStore: requestContext.snapshotStore || null,
+      publicationHistory: requestContext.publicationHistory || null,
+      mqttClient: requestContext.mqttClient || null,
+    });
+    runtime.newsTitleService = requestContext.newsTitleService = new NewsTitleService();
+    runtime.safeImagePath = requestContext.safeImagePath = new SafeImagePath({ rootDir: ROOT_DIR });
+    runtime.imageRasterizer = requestContext.imageRasterizer = new ImageRasterizer();
+    runtime.featureFlagView = requestContext.featureFlagView = boot.services.featureFlagView || null;
+    runtime.assetRepository = requestContext.assetRepository = boot.services.assetRepository || null;
+    runtime.customLibraryService = requestContext.customLibraryService = boot.services.customLibraryService || null;
+    runtime.safetyGate = requestContext.safetyGate = boot.services.safetyGate || null;
+    runtime.learningIngestionService = requestContext.learningIngestionService = boot.services.learningIngestionService || null;
+    runtime.learningScheduler = requestContext.learningScheduler = boot.services.learningScheduler || null;
+    runtime.assetSelectionService = requestContext.assetSelectionService = boot.services.assetSelectionService || null;
+    runtime.assetDeleteService = requestContext.assetDeleteService = boot.services.assetDeleteService || null;
+    runtime.overridePersistence = requestContext.overridePersistence = boot.services.overridePersistence || null;
+    var devicesJsonStore = new R1_JsonStore(path.join(DATA_DIR, 'devices.json'), { schemaVersion: 1 });
+    runtime.deviceRegistryService = requestContext.deviceRegistryService = new DeviceRegistryService({
+      jsonStore: devicesJsonStore,
+      provisioningEnabled: boot.config && boot.config.deviceProvisioning ? boot.config.deviceProvisioning.enabled : false,
+      provisioningToken: boot.config && boot.config.deviceProvisioning ? boot.config.deviceProvisioning.token : null,
+    });
+  } catch (err) {
+    if (boot) boot.setState('failed');
+    r1Logger.error('Initialization failed: ' + err.message);
+    throw err;
+  }
   // Inject late-bound dependencies into publication service (overridePersistence,
   // frameCache are created after the service itself).
   if (runtime.publicationService && typeof runtime.publicationService.setInjections === 'function') {
@@ -537,6 +550,8 @@ async function main() {
     r1Logger.info('  http://' + ip + ':' + PORT + '/api/frame.bin');
     r1Logger.info('  http://' + ip + ':' + PORT + '/api/news.json');
   }
+
+  await boot.startListening(PORT);
 
   function gracefulShutdown(signal) {
     r1Logger.info('Received ' + signal + ', shutting down...');
@@ -665,6 +680,26 @@ function getLocalIPs() {
     }
   }
   return results;
+}
+
+function validateFeeds(feeds) {
+  if (!feeds || !Array.isArray(feeds)) {
+    var err = new Error('FEEDS_CONFIG_INVALID: feeds must be a valid JSON array');
+    err.code = 'FEEDS_CONFIG_INVALID';
+    throw err;
+  }
+  if (feeds.length === 0) {
+    var err = new Error('FEEDS_CONFIG_INVALID: feeds list is empty');
+    err.code = 'FEEDS_CONFIG_INVALID';
+    throw err;
+  }
+  var enabledFeeds = feeds.filter(function(f) { return f && f.enabled !== false; });
+  if (enabledFeeds.length === 0) {
+    var err = new Error('FEEDS_CONFIG_INVALID: no enabled feeds found in configuration');
+    err.code = 'FEEDS_CONFIG_INVALID';
+    throw err;
+  }
+  return true;
 }
 
 async function ensureDir(dirPath) {
