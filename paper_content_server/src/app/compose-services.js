@@ -369,17 +369,48 @@ function composeServices(deps) {
     var devicesStore = stores.devices || JsonStore(devicesFile, { schemaVersion: 1 });
     deviceRegistryService = deps.deviceRegistryService || new DeviceRegistryService({
       jsonStore: devicesStore,
-      provisioningEnabled: (config.deviceProvisioning && config.deviceProvisioning.enabled) != null ? config.deviceProvisioning.enabled : true,
-      provisioningToken: (config.deviceProvisioning && config.deviceProvisioning.token) || 'dev-token',
+      provisioningEnabled: (config && config.deviceProvisioning && config.deviceProvisioning.enabled === true) ? true : false,
+      provisioningToken: (config && config.deviceProvisioning && config.deviceProvisioning.token) ? config.deviceProvisioning.token : null,
       clock: clock,
     });
   } catch (e) { logger.warn('deviceRegistryService init: ' + e.message); }
+
+  // --- AdminStateService & Image/News Helpers ---
+  var adminStateService = null;
+  var newsTitleService = null;
+  var safeImagePath = null;
+  var imageRasterizer = null;
+  var imageRecipeService = null;
+
+  try {
+    var { AdminStateService } = require('../admin/admin-state-service');
+    var { NewsTitleService } = require('../news/news-title-service');
+    var { SafeImagePath } = require('../files/safe-image-path');
+    var { ImageRasterizer } = require('../images/image-rasterizer-v2');
+    var { ImageRecipeService } = require('../images/image-recipe-service');
+
+    adminStateService = new AdminStateService({
+      operatingModeService: operatingModeService,
+      snapshotStore: snapshotStore,
+      publicationHistory: publicationHistory,
+      mqttClient: mqttClient,
+    });
+    newsTitleService = new NewsTitleService();
+    safeImagePath = new SafeImagePath({ rootDir: path.join(__dirname, '..', '..') });
+    imageRasterizer = new ImageRasterizer();
+    imageRecipeService = new ImageRecipeService();
+  } catch (e) { logger.warn('helper services init: ' + e.message); }
 
   return {
     newsPipeline: newsPipeline,
     publicationService: pubService,
     deviceRegistryService: deviceRegistryService,
     adminQueryService: adminQueryService,
+    adminStateService: adminStateService,
+    newsTitleService: newsTitleService,
+    safeImagePath: safeImagePath,
+    imageRasterizer: imageRasterizer,
+    imageRecipeService: imageRecipeService,
     featureFlagView: featureFlagView || null,
     assetRepository: assetRepository,
     renderShadow: renderShadow,

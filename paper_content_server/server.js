@@ -410,15 +410,11 @@ async function main() {
     runtime.notificationPort = requestContext.notificationPort = boot.deps.notificationPort;
     runtime.publicationService = requestContext.publicationService = boot.services.publicationService;
     runtime.adminQueryService = requestContext.adminQueryService = boot.services.adminQueryService || null;
-    runtime.adminStateService = requestContext.adminStateService = new AdminStateService({
-      operatingModeService: requestContext.operatingModeService || null,
-      snapshotStore: requestContext.snapshotStore || null,
-      publicationHistory: requestContext.publicationHistory || null,
-      mqttClient: requestContext.mqttClient || null,
-    });
-    runtime.newsTitleService = requestContext.newsTitleService = new NewsTitleService();
-    runtime.safeImagePath = requestContext.safeImagePath = new SafeImagePath({ rootDir: ROOT_DIR });
-    runtime.imageRasterizer = requestContext.imageRasterizer = new ImageRasterizer();
+    runtime.adminStateService = requestContext.adminStateService = boot.services.adminStateService || null;
+    runtime.newsTitleService = requestContext.newsTitleService = boot.services.newsTitleService || null;
+    runtime.safeImagePath = requestContext.safeImagePath = boot.services.safeImagePath || null;
+    runtime.imageRasterizer = requestContext.imageRasterizer = boot.services.imageRasterizer || null;
+    runtime.imageRecipeService = requestContext.imageRecipeService = boot.services.imageRecipeService || null;
     runtime.featureFlagView = requestContext.featureFlagView = boot.services.featureFlagView || null;
     runtime.assetRepository = requestContext.assetRepository = boot.services.assetRepository || null;
     runtime.customLibraryService = requestContext.customLibraryService = boot.services.customLibraryService || null;
@@ -428,12 +424,7 @@ async function main() {
     runtime.assetSelectionService = requestContext.assetSelectionService = boot.services.assetSelectionService || null;
     runtime.assetDeleteService = requestContext.assetDeleteService = boot.services.assetDeleteService || null;
     runtime.overridePersistence = requestContext.overridePersistence = boot.services.overridePersistence || null;
-    var devicesJsonStore = new R1_JsonStore(path.join(DATA_DIR, 'devices.json'), { schemaVersion: 1 });
-    runtime.deviceRegistryService = requestContext.deviceRegistryService = new DeviceRegistryService({
-      jsonStore: devicesJsonStore,
-      provisioningEnabled: boot.config && boot.config.deviceProvisioning ? boot.config.deviceProvisioning.enabled : false,
-      provisioningToken: boot.config && boot.config.deviceProvisioning ? boot.config.deviceProvisioning.token : null,
-    });
+    runtime.deviceRegistryService = requestContext.deviceRegistryService = boot.services.deviceRegistryService || null;
   } catch (err) {
     if (boot) boot.setState('failed');
     r1Logger.error('Initialization failed: ' + err.message);
