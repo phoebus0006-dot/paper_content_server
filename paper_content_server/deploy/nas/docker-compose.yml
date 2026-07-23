@@ -21,5 +21,4 @@ services:
       - R9_RENDER_SHADOW_ENABLED=false
     volumes:
       - ./data:/app/data
-      - ./feeds.json:/app/feeds.json:ro
     restart: unless-stopped
