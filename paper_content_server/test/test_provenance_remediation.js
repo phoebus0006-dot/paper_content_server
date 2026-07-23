@@ -41,9 +41,11 @@ function testProvenanceRemediation() {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
   assert.strictEqual(manifest.gitSha, validSha);
+  assert.strictEqual(manifest.gitCommit, validSha);
   assert.strictEqual(manifest.gitTree, validTree);
   assert.strictEqual(manifest.dirty, false);
   assert.ok(manifest.sourceSha256, 'sourceSha256 should be present in manifest');
+  assert.ok(manifest.gitArchiveSha256, 'gitArchiveSha256 should be present in manifest');
 
   // Cleanup build-manifest.json created during test
   fs.unlinkSync(manifestPath);

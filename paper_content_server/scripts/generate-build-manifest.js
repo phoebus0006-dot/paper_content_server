@@ -92,6 +92,19 @@ try {
   process.exit(1);
 }
 
+manifest.gitCommit = manifest.gitSha;
+manifest.gitTree = manifest.gitTree;
+
+try {
+  var archiveBuf = cp.execSync('git archive --format=tar HEAD', { cwd: ROOT, maxBuffer: 50 * 1024 * 1024 });
+  manifest.gitArchiveSha256 = crypto.createHash('sha256').update(archiveBuf).digest('hex');
+} catch(e) {
+  manifest.gitArchiveSha256 = 'unavailable';
+}
+
+manifest.dockerContextSha256 = 'unavailable';
+manifest.imageDigest = process.env.BUILD_IMAGE_DIGEST || 'unavailable';
+
 try {
   var hash = crypto.createHash('sha256');
   var relFiles = ['package.json', 'package-lock.json', 'server.js'];
