@@ -100,6 +100,12 @@ function bootstrap(overrides) {
     handler = overrides.handlerFactory(context);
   }
 
+  if (overrides.requireHandler && typeof handler !== 'function') {
+    var errReq = new Error('PRODUCTION_HANDLER_REQUIRED');
+    errReq.code = 'PRODUCTION_HANDLER_REQUIRED';
+    throw errReq;
+  }
+
   var app = createApp({
     handler: handler,
     config: config,
