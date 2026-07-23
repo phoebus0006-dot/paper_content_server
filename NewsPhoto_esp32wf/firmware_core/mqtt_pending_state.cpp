@@ -1,6 +1,7 @@
 #include "mqtt_pending_state.h"
 #include "time_utils.h"
 #include <string.h>
+#include <ctype.h>
 
 static void safe_strcpy(char *dst, const char *src, size_t dstSize) {
   if (!dst || dstSize == 0) return;
@@ -12,6 +13,14 @@ static void safe_strcpy(char *dst, const char *src, size_t dstSize) {
   dst[dstSize - 1] = '\0';
 }
 
+static bool isValidSha64(const char *sha) {
+  if (!sha || strlen(sha) != 64) return false;
+  for (int i = 0; i < 64; i++) {
+    if (!isxdigit((unsigned char)sha[i])) return false;
+  }
+  return true;
+}
+
 void MqttPendingState_Init(MqttPendingState *state) {
   if (!state) return;
   state->publicationPending = false;
@@ -19,7 +28,6 @@ void MqttPendingState_Init(MqttPendingState *state) {
   state->pendingSnapshotId[0] = '\0';
   state->pendingFrameSha256[0] = '\0';
   state->mqttRetryMs = 0;
-  state->lastFrameId[0] = '\0';
 }
 
 void MqttPendingState_Clear(MqttPendingState *state) {
@@ -28,19 +36,33 @@ void MqttPendingState_Clear(MqttPendingState *state) {
   state->pendingFrameId[0] = '\0';
   state->pendingSnapshotId[0] = '\0';
   state->pendingFrameSha256[0] = '\0';
+  state->mqttRetryMs = 0;
 }
 
-void MqttPendingState_SetPending(MqttPendingState *state, const char *frameId, const char *snapshotId, const char *sha256) {
-  if (!state) return;
+bool MqttPendingState_SetPending(MqttPendingState *state, const char *frameId, const char *snapshotId, const char *sha256) {
+  if (!state) return false;
+  if (!frameId || frameId[0] == '\0' || strlen(frameId) >= sizeof(state->pendingFrameId)) {
+    return false;
+  }
+  if (snapshotId && strlen(snapshotId) >= sizeof(state->pendingSnapshotId)) {
+    return false;
+  }
+  if (!isValidSha64(sha256)) {
+    return false;
+  }
+
   safe_strcpy(state->pendingFrameId, frameId, sizeof(state->pendingFrameId));
   safe_strcpy(state->pendingSnapshotId, snapshotId, sizeof(state->pendingSnapshotId));
   safe_strcpy(state->pendingFrameSha256, sha256, sizeof(state->pendingFrameSha256));
   state->publicationPending = true;
+  state->mqttRetryMs = 0; // Reset retry deadline for new notification
+  return true;
 }
 
 MqttNotificationEvalResult MqttPendingState_Evaluate(
     MqttPendingState *state,
     uint32_t nowMs,
+    const char *lastFrameId,
     bool wifiOk,
     bool fetchStateOk,
     const char *serverFrameId,
@@ -53,7 +75,7 @@ MqttNotificationEvalResult MqttPendingState_Evaluate(
     return MQTT_EVAL_WAIT_RETRY_DEADLINE;
   }
 
-  if (state->pendingFrameId[0] == '\0' || strcmp(state->pendingFrameId, state->lastFrameId) == 0) {
+  if (state->pendingFrameId[0] == '\0' || (lastFrameId && strcmp(state->pendingFrameId, lastFrameId) == 0)) {
     MqttPendingState_Clear(state);
     return MQTT_EVAL_CLEAR_ALREADY_RENDERED;
   }
@@ -79,7 +101,6 @@ MqttNotificationEvalResult MqttPendingState_Evaluate(
   }
 
   if (fetchAndDisplayOk) {
-    safe_strcpy(state->lastFrameId, serverFrameId, sizeof(state->lastFrameId));
     MqttPendingState_Clear(state);
     return MQTT_EVAL_SUCCESS_RENDERED;
   } else {

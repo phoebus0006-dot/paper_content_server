@@ -27,16 +27,16 @@ typedef struct {
   char pendingSnapshotId[64];
   char pendingFrameSha256[65];
   uint32_t mqttRetryMs;
-  char lastFrameId[64];
 } MqttPendingState;
 
 void MqttPendingState_Init(MqttPendingState *state);
 void MqttPendingState_Clear(MqttPendingState *state);
-void MqttPendingState_SetPending(MqttPendingState *state, const char *frameId, const char *snapshotId, const char *sha256);
+bool MqttPendingState_SetPending(MqttPendingState *state, const char *frameId, const char *snapshotId, const char *sha256);
 
 MqttNotificationEvalResult MqttPendingState_Evaluate(
     MqttPendingState *state,
     uint32_t nowMs,
+    const char *lastFrameId,
     bool wifiOk,
     bool fetchStateOk,
     const char *serverFrameId,

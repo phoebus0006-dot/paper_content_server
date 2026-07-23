@@ -26,24 +26,15 @@ static String lastFrameId;
 static unsigned long lastPollMs = 0;
 static bool epdReady = false;
 
-// MQTT state
+// MQTT state — SINGLE AUTHORITATIVE OBJECT (R4-03)
 static WiFiClient mqttWifiClient;
 static PubSubClient mqttClient(mqttWifiClient);
 static bool mqttEnabled = false;
 static MqttPendingState mqttState;
-static bool publicationPending = false;
-static String pendingFrameId;
-static String pendingSnapshotId;
-static String pendingFrameSha256;
 static unsigned long mqttReconnectMs = 0;
-static unsigned long mqttRetryMs = 0;
 
 void clearPendingMqttNotification() {
   MqttPendingState_Clear(&mqttState);
-  publicationPending = false;
-  pendingFrameId = String();
-  pendingSnapshotId = String();
-  pendingFrameSha256 = String();
 }
 
 String endpoint(const char *path) {
@@ -58,116 +49,155 @@ bool connectWiFi() {
   Serial.printf("WiFi connect: %s\n", WIFI_SSID);
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
-  WiFi.disconnect(true, true);
-  delay(250);
+
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < HTTP_TIMEOUT_MS) {
-    delay(250);
-    Serial.print('.');
-  }
-  Serial.println();
-
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("WiFi failed, status=%d\n", WiFi.status());
-    return false;
+  while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT_MS) {
+    delay(200);
   }
 
-  Serial.printf("WiFi OK, IP=%s\n", WiFi.localIP().toString().c_str());
-  return true;
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("WiFi OK, IP: %s\n", WiFi.localIP().toString().c_str());
+    return true;
+  }
+
+  Serial.println("WiFi timeout");
+  return false;
 }
 
-void ensureEpdReady() {
-  if (epdReady) return;
-  Serial.printf("EPD pins BUSY=%d RST=%d DC=%d CS=%d DIN=%d SCLK=%d\n",
-                EPD_BUSY_PIN, EPD_RST_PIN, EPD_DC_PIN, EPD_CS_PIN, EPD_MOSI_PIN, EPD_SCK_PIN);
-  if (DEV_Module_Init() != 0) {
-    Serial.println("DEV_Module_Init failed");
-    return;
-  }
-  epdReady = true;
-}
-
-bool readExact(WiFiClient *stream, uint8_t *dst, size_t len, unsigned long timeoutMs) {
-  size_t got = 0;
+bool readExact(WiFiClient *stream, uint8_t *buf, size_t len, unsigned long timeoutMs) {
+  size_t read = 0;
   unsigned long start = millis();
-  while (got < len) {
-    int available = stream->available();
-    if (available > 0) {
-      int n = stream->read(dst + got, len - got);
-      if (n > 0) {
-        got += (size_t)n;
-        start = millis();
-      }
-      continue;
+
+  while (read < len && millis() - start < timeoutMs) {
+    while (stream->available() > 0 && read < len) {
+      int c = stream->read();
+      if (c < 0) break;
+      buf[read++] = (uint8_t)c;
+      start = millis();
     }
-    if (!stream->connected() && !stream->available()) return false;
-    if (millis() - start > timeoutMs) return false;
-    delay(1);
+    if (read < len) delay(1);
   }
-  return true;
-}
 
-String extractJsonString(const String &json, const char *key) {
-  String needle = String("\"") + key + "\"";
-  int keyPos = json.indexOf(needle);
-  if (keyPos < 0) return String();
-  int colon = json.indexOf(':', keyPos + needle.length());
-  if (colon < 0) return String();
-  int start = json.indexOf('"', colon + 1);
-  if (start < 0) return String();
-  int end = json.indexOf('"', start + 1);
-  if (end < 0) return String();
-  return json.substring(start + 1, end);
-}
-
-// extractJsonInt — parse a JSON numeric value for the given key.
-// Returns true only when the key exists and the value is a base-10 integer
-// (optional leading '-', digits only). Required because the server emits
-// schemaVersion as a JSON number (2), not a string ("2"); the legacy
-// extractJsonString helper above cannot parse raw numeric tokens and would
-// silently return an empty string, causing the ESP32 to reject v2 payloads.
-bool extractJsonInt(const String &json, const char *key, int &value) {
-  String needle = String("\"") + key + "\"";
-  int keyPos = json.indexOf(needle);
-  if (keyPos < 0) return false;
-  int colon = json.indexOf(':', keyPos + needle.length());
-  if (colon < 0) return false;
-  int i = colon + 1;
-  while (i < (int)json.length() && (json.charAt(i) == ' ' || json.charAt(i) == '\t')) i++;
-  int start = i;
-  if (i < (int)json.length() && json.charAt(i) == '-') i++;
-  if (i >= (int)json.length() || json.charAt(i) < '0' || json.charAt(i) > '9') return false;
-  while (i < (int)json.length() && json.charAt(i) >= '0' && json.charAt(i) <= '9') i++;
-  if (i == start || (i == start + 1 && json.charAt(start) == '-')) return false;
-  value = json.substring(start, i).toInt();
-  return true;
+  return read == len;
 }
 
 bool isValidShaHex(const String &sha) {
   if (sha.length() != 64) return false;
-  for (unsigned int i = 0; i < 64; i++) {
+  for (unsigned int i = 0; i < sha.length(); i++) {
     char c = sha.charAt(i);
-    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
+    bool ok = (c >= '0' && c <= '9') ||
+              (c >= 'a' && c <= 'f') ||
+              (c >= 'A' && c <= 'F');
+    if (!ok) return false;
   }
   return true;
 }
 
 String normalizeShaHex(const String &sha) {
-  String result = sha;
-  result.toLowerCase();
-  return result;
+  String out = sha;
+  out.toLowerCase();
+  return out;
+}
+
+String extractJsonString(const String &json, const char *key) {
+  String pattern = "\"" + String(key) + "\"";
+  int pos = json.indexOf(pattern);
+  if (pos < 0) return "";
+
+  int colon = json.indexOf(':', pos);
+  if (colon < 0) return "";
+
+  int quoteStart = json.indexOf('"', colon);
+  if (quoteStart < 0) return "";
+
+  int quoteEnd = json.indexOf('"', quoteStart + 1);
+  if (quoteEnd < 0) return "";
+
+  return json.substring(quoteStart + 1, quoteEnd);
+}
+
+bool extractJsonInt(const String &json, const char *key, int &outVal) {
+  String pattern = "\"" + String(key) + "\"";
+  int pos = json.indexOf(pattern);
+  if (pos < 0) return false;
+
+  int colon = json.indexOf(':', pos);
+  if (colon < 0) return false;
+
+  int p = colon + 1;
+  while (p < (int)json.length() && (json.charAt(p) == ' ' || json.charAt(p) == '\t' || json.charAt(p) == '\r' || json.charAt(p) == '\n')) {
+    p++;
+  }
+  if (p >= (int)json.length()) return false;
+
+  if (json.charAt(p) == '"') {
+    p++;
+    int start = p;
+    while (p < (int)json.length() && json.charAt(p) >= '0' && json.charAt(p) <= '9') {
+      p++;
+    }
+    if (p == start) return false;
+    outVal = json.substring(start, p).toInt();
+    return true;
+  }
+
+  if ((json.charAt(p) >= '0' && json.charAt(p) <= '9') || json.charAt(p) == '-') {
+    int start = p;
+    if (json.charAt(p) == '-') p++;
+    while (p < (int)json.length() && json.charAt(p) >= '0' && json.charAt(p) <= '9') {
+      p++;
+    }
+    if (p == start || (p == start + 1 && json.charAt(start) == '-')) return false;
+    outVal = json.substring(start, p).toInt();
+    return true;
+  }
+
+  return false;
+}
+
+bool ensureEpdReady() {
+  if (epdReady) return true;
+
+  Serial.println("EPD init starting");
+  if (DEV_Module_Init() != 0) {
+    Serial.println("DEV_Module_Init failed");
+    return false;
+  }
+
+  EPD_7IN3E_Init();
+  epdReady = true;
+  Serial.println("EPD init ready");
+  return true;
+}
+
+bool displayFrameBuffer(const uint8_t *frame, size_t len) {
+  if (len != 192000) {
+    Serial.printf("display payload mismatch: len=%zu expected=192000\n", len);
+    return false;
+  }
+
+  if (!ensureEpdReady()) {
+    Serial.println("display failed: EPD not ready");
+    return false;
+  }
+
+  Serial.println("EPD DisplayFrame starting");
+  EPD_7IN3E_DisplayFrame(frame);
+  Serial.println("EPD DisplayFrame completed");
+  return true;
 }
 
 bool fetchState(StateInfo &state) {
   HTTPClient http;
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  http.addHeader("Accept", "application/json");
+  String url = endpoint(STATE_ENDPOINT);
 
-  if (!http.begin(endpoint("/api/state.json"))) {
-    Serial.println("state begin failed");
-    return false;
+  Serial.printf("fetchState: %s\n", url.c_str());
+  http.begin(url);
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  if (strlen(DEVICE_SECRET) > 0) {
+    http.addHeader("X-Device-Secret", DEVICE_SECRET);
   }
 
   int code = http.GET();
@@ -182,60 +212,35 @@ bool fetchState(StateInfo &state) {
 
   state.mode = extractJsonString(body, "mode");
   state.frameId = extractJsonString(body, "frameId");
-  state.nextSwitchAt = extractJsonString(body, "nextSwitchLocal");
+  state.nextSwitchAt = extractJsonString(body, "nextSwitchAt");
   state.title = extractJsonString(body, "title");
   state.frameSha256 = extractJsonString(body, "frameSha256");
 
-  Serial.printf("state mode=%s frameId=%s next=%s title=%s sha256=%s\n",
-                state.mode.c_str(), state.frameId.c_str(), state.nextSwitchAt.c_str(), state.title.c_str(),
-                state.frameSha256.length() > 0 ? state.frameSha256.substring(0, 16).c_str() : "(none)");
+  Serial.printf("state mode=%s frameId=%s sha256=%s title=%s\n",
+                state.mode.c_str(),
+                state.frameId.c_str(),
+                state.frameSha256.substring(0, 16).c_str(),
+                state.title.c_str());
+
   return !state.frameId.isEmpty();
 }
 
-bool displayFrameBuffer(const uint8_t *payload, size_t payloadLen) {
-  ensureEpdReady();
-  if (!epdReady) return false;
-
-  if (!EPD_7IN3E_Init()) {
-    Serial.println("display: EPD init failed (BUSY timeout?)");
-    return false;
-  }
-  if (!EPD_7IN3E_Display((UBYTE *)payload)) {
-    Serial.println("display: EPD display failed (BUSY timeout?)");
-    return false;
-  }
-  DEV_Delay_ms(500);
-  if (!EPD_7IN3E_Sleep()) {
-    Serial.println("display: EPD sleep failed");
-    return false;
-  }
-  Serial.printf("displayFrameBuffer done, payload=%u, epd slept\n", (unsigned)payloadLen);
-  return true;
-}
-
 bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
-  if (state.frameId.isEmpty()) return false;
   if (state.frameId == lastFrameId) {
-    Serial.printf("skip refresh, frameId unchanged: %s\n", state.frameId.c_str());
+    Serial.printf("frame %s already displayed, skip download\n", state.frameId.c_str());
     return true;
   }
 
-  if (expectedSha.length() != 64 || !isValidShaHex(expectedSha)) {
-    Serial.printf("fetchFrameAndDisplay reject: invalid expected SHA256 format: %s\n", expectedSha.c_str());
-    return false;
-  }
-
   HTTPClient http;
+  String url = endpoint(FRAME_ENDPOINT);
+  Serial.printf("fetchFrame: %s for %s\n", url.c_str(), state.frameId.c_str());
+
+  http.begin(url);
   http.setTimeout(HTTP_TIMEOUT_MS);
-  http.addHeader("Accept", "application/octet-stream");
-
-  if (!http.begin(endpoint("/api/frame.bin"))) {
-    Serial.println("frame begin failed");
-    return false;
+  http.collectHeaders((const char *[]){"X-Frame-Id"}, 1);
+  if (strlen(DEVICE_SECRET) > 0) {
+    http.addHeader("X-Device-Secret", DEVICE_SECRET);
   }
-
-  const char *responseHeaders[] = {"X-Frame-Id"};
-  http.collectHeaders(responseHeaders, 1);
 
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
@@ -252,120 +257,72 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
     return false;
   }
 
-  int contentLength = http.getSize();
-  Serial.printf("frame download start, contentLength=%d\n", contentLength);
-  if (contentLength <= 0) {
-    Serial.println("EPF1_CONTENT_LENGTH_REQUIRED: Content-Length header missing or non-positive");
-    http.end();
-    return false;
-  }
-  if (contentLength != 192010) {
-    Serial.printf("EPF1_LENGTH_MISMATCH: expected 192010, got %d\n", contentLength);
-    http.end();
-    return false;
-  }
+  // Production Transport Integration with FrameTransport_Evaluate (R4-02)
+  FrameTransportParams trParams;
+  memset(&trParams, 0, sizeof(trParams));
+  trParams.contentLength = http.getSize();
 
   WiFiClient *stream = http.getStreamPtr();
   uint8_t header[10];
-  if (!readExact(stream, header, sizeof(header), HTTP_TIMEOUT_MS)) {
-    Serial.println("short frame header");
-    http.end();
-    return false;
+  if (stream && readExact(stream, header, sizeof(header), HTTP_TIMEOUT_MS)) {
+    trParams.headerBytesRead = 10;
+    memcpy(trParams.header, header, 10);
   }
 
-  if (header[0] != 'E' || header[1] != 'P' || header[2] != 'F' || header[3] != '1') {
-    Serial.printf("bad magic: %02X %02X %02X %02X\n", header[0], header[1], header[2], header[3]);
-    http.end();
-    return false;
+  uint8_t *frame = NULL;
+  long payloadLen = 192000L;
+  if (trParams.headerBytesRead == 10) {
+    frame = (uint8_t *)heap_caps_malloc(payloadLen, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+    if (!frame) frame = (uint8_t *)malloc(payloadLen);
+    if (frame && readExact(stream, frame, payloadLen, HTTP_TIMEOUT_MS)) {
+      trParams.payloadBytesRead = payloadLen;
+    }
   }
 
-  uint16_t width = (uint16_t)header[4] | ((uint16_t)header[5] << 8);
-  uint16_t height = (uint16_t)header[6] | ((uint16_t)header[7] << 8);
-  uint8_t panelIndex = header[8];
-  uint8_t version = header[9];
-  long payloadLen = ((long)width * (long)height + 1L) / 2L;
-  long expectedLen = 10L + payloadLen;
+  trParams.streamHasExtraBytes = (stream && stream->available() > 0);
 
-  Serial.printf("EPF1 header width=%u height=%u panel=%u version=%u payload=%ld total=%ld\n",
-                width, height, panelIndex, version, payloadLen, expectedLen);
-
-  if (version != 1) {
-    Serial.printf("EPF1_VERSION_UNSUPPORTED: version=%u\n", version);
-    http.end();
-    return false;
+  // Full 192010-byte SHA256 calculation
+  bool shaOk = false;
+  if (trParams.payloadBytesRead == payloadLen) {
+    mbedtls_sha256_context shaCtx;
+    mbedtls_sha256_init(&shaCtx);
+    if (mbedtls_sha256_starts_ret(&shaCtx, 0) == 0 &&
+        mbedtls_sha256_update_ret(&shaCtx, trParams.header, 10) == 0 &&
+        mbedtls_sha256_update_ret(&shaCtx, frame, payloadLen) == 0) {
+      uint8_t digest[32];
+      if (mbedtls_sha256_finish_ret(&shaCtx, digest) == 0) {
+        char hex[65];
+        for (int i = 0; i < 32; i++) sprintf(hex + (i * 2), "%02x", digest[i]);
+        hex[64] = '\0';
+        if (String(hex) == expectedSha) {
+          shaOk = true;
+        }
+      }
+    }
+    mbedtls_sha256_free(&shaCtx);
   }
+  trParams.shaMatched = shaOk;
 
-  if (width != 800 || height != 480 || panelIndex != PANEL_INDEX || expectedLen != 192010L) {
-    Serial.println("frame header mismatch");
-    http.end();
-    return false;
+  // Render to EPD
+  bool displayOk = false;
+  if (shaOk && frame) {
+    displayOk = displayFrameBuffer(frame, payloadLen);
   }
+  trParams.displayOk = displayOk;
 
-  uint8_t *frame = (uint8_t *)heap_caps_malloc(payloadLen, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-  if (!frame) frame = (uint8_t *)malloc(payloadLen);
-  if (!frame) {
-    Serial.println("frame malloc failed");
-    http.end();
-    return false;
-  }
-
-  if (!readExact(stream, frame, payloadLen, HTTP_TIMEOUT_MS)) {
-    Serial.println("frame payload read failed");
-    free(frame);
-    http.end();
-    return false;
-  }
-
-  // RF-02: Check for extra trailing bytes in response body stream
-  if (stream->available() > 0) {
-    Serial.println("EPF1_TRAILING_BYTES: response stream has trailing bytes");
-    free(frame);
-    http.end();
-    return false;
-  }
-
+  if (frame) free(frame);
   http.end();
 
-  // Full 192010-byte frame SHA256 verification (header + payload)
-  mbedtls_sha256_context shaCtx;
-  mbedtls_sha256_init(&shaCtx);
-  bool shaOk = true;
-  if (mbedtls_sha256_starts_ret(&shaCtx, 0) != 0) shaOk = false;
-  if (shaOk && mbedtls_sha256_update_ret(&shaCtx, header, sizeof(header)) != 0) shaOk = false;
-  if (shaOk && mbedtls_sha256_update_ret(&shaCtx, frame, payloadLen) != 0) shaOk = false;
-  uint8_t digest[32];
-  if (shaOk && mbedtls_sha256_finish_ret(&shaCtx, digest) != 0) shaOk = false;
-  mbedtls_sha256_free(&shaCtx);
-
-  if (!shaOk) {
-    Serial.println("mbedtls sha256 computation failed");
-    free(frame);
+  // SINGLE AUTHORITATIVE DECISION BY FrameTransport_Evaluate (R4-02)
+  FrameTransportResult trResult = FrameTransport_Evaluate(&trParams);
+  if (trResult != FRAME_TRANSPORT_OK) {
+    Serial.printf("FrameTransport rejected: %s\n", FrameTransportResult_ToString(trResult));
     return false;
   }
 
-  char hex[65];
-  for (int i = 0; i < 32; i++) {
-    sprintf(hex + (i * 2), "%02x", digest[i]);
-  }
-  hex[64] = '\0';
-  String computedSha = String(hex);
-
-  if (computedSha != expectedSha) {
-    Serial.printf("FRAME_SHA256_MISMATCH: computed=%s expected=%s\n",
-                  computedSha.c_str(), expectedSha.c_str());
-    free(frame);
-    return false;
-  }
-  Serial.printf("SHA256 full-frame match: %s\n", computedSha.substring(0, 16).c_str());
-
-  Serial.printf("frame downloaded bytes=%ld\n", payloadLen);
-  bool ok = displayFrameBuffer(frame, payloadLen);
-  free(frame);
-  if (ok) {
-    lastFrameId = state.frameId;
-    Serial.printf("display OK, frameId=%s\n", lastFrameId.c_str());
-  }
-  return ok;
+  lastFrameId = state.frameId;
+  Serial.printf("display OK, frameId=%s\n", lastFrameId.c_str());
+  return true;
 }
 
 void periodicPoll() {
@@ -388,44 +345,38 @@ void periodicPoll() {
 }
 
 void handleMqttNotification() {
-  if (!publicationPending) return;
-  if (!isTimeReached(millis(), mqttRetryMs)) return;
+  if (!mqttState.publicationPending) return;
+  if (!isTimeReached(millis(), mqttState.mqttRetryMs)) return;
 
-  if (pendingFrameId.isEmpty() || pendingFrameId == lastFrameId) {
+  if (mqttState.pendingFrameId[0] == '\0' || strcmp(mqttState.pendingFrameId, lastFrameId.c_str()) == 0) {
     clearPendingMqttNotification();
     return;
   }
 
   bool wifiOk = connectWiFi();
   if (!wifiOk) {
-    mqttRetryMs = millis() + 5000;
+    mqttState.mqttRetryMs = millis() + 5000;
     return;
   }
 
   StateInfo state;
   bool stateOk = fetchState(state);
   if (!stateOk) {
-    mqttRetryMs = millis() + 5000;
+    mqttState.mqttRetryMs = millis() + 5000;
     return;
   }
 
   String stateSha = normalizeShaHex(state.frameSha256);
   bool fetchDisplayOk = false;
 
-  if (state.frameId == pendingFrameId && stateSha == pendingFrameSha256) {
+  if (state.frameId == String(mqttState.pendingFrameId) && stateSha == String(mqttState.pendingFrameSha256)) {
     fetchDisplayOk = fetchFrameAndDisplay(state, stateSha);
   }
 
   MqttNotificationEvalResult res = MqttPendingState_Evaluate(
-    &mqttState, millis(), wifiOk, stateOk,
+    &mqttState, millis(), lastFrameId.c_str(), wifiOk, stateOk,
     state.frameId.c_str(), stateSha.c_str(), fetchDisplayOk
   );
-
-  publicationPending = mqttState.publicationPending;
-  pendingFrameId = String(mqttState.pendingFrameId);
-  pendingSnapshotId = String(mqttState.pendingSnapshotId);
-  pendingFrameSha256 = String(mqttState.pendingFrameSha256);
-  mqttRetryMs = mqttState.mqttRetryMs;
 
   if (res == MQTT_EVAL_SUCCESS_RENDERED) {
     lastPollMs = millis();
@@ -477,7 +428,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     return;
   }
 
-  if (msgFrameId == pendingFrameId || msgFrameId == lastFrameId) {
+  if (msgFrameId == String(mqttState.pendingFrameId) || msgFrameId == lastFrameId) {
     Serial.printf("MQTT ignoring duplicate frameId: %s\n", msgFrameId.c_str());
     return;
   }
@@ -492,20 +443,21 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   // Normalize to lowercase
   msgSha = normalizeShaHex(msgSha);
 
-  // Set pending flag — main loop will handle the HTTP fetch and SHA verification
-  MqttPendingState_SetPending(
+  // Single authoritative pending state update (R4-03)
+  bool ok = MqttPendingState_SetPending(
     &mqttState,
     msgFrameId.c_str(),
     extractJsonString(jsonStr, "snapshotId").c_str(),
     msgSha.c_str()
   );
-  pendingFrameId = String(mqttState.pendingFrameId);
-  pendingSnapshotId = String(mqttState.pendingSnapshotId);
-  pendingFrameSha256 = String(mqttState.pendingFrameSha256);
-  publicationPending = mqttState.publicationPending;
+
+  if (!ok) {
+    Serial.println("MQTT notification rejected: invalid field lengths or format");
+    return;
+  }
 
   Serial.printf("MQTT notification received: frameId=%s sha256=%s\n",
-                pendingFrameId.c_str(), pendingFrameSha256.substring(0, 16).c_str());
+                mqttState.pendingFrameId, String(mqttState.pendingFrameSha256).substring(0, 16).c_str());
 }
 
 void connectMqtt() {
@@ -579,11 +531,7 @@ void loop() {
     }
   }
 
-  if (publicationPending) {
-    handleMqttNotification();
-  }
-
+  handleMqttNotification();
   periodicPoll();
-
-  delay(50);
+  delay(100);
 }
