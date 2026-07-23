@@ -10,6 +10,10 @@
 #include "DEV_Config.h"
 #include "EPD_7in3e.h"
 
+#include "firmware_core/time_utils.h"
+#include "firmware_core/mqtt_pending_state.h"
+#include "firmware_core/frame_transport_policy.h"
+
 struct StateInfo {
   String mode;
   String frameId;
@@ -26,6 +30,7 @@ static bool epdReady = false;
 static WiFiClient mqttWifiClient;
 static PubSubClient mqttClient(mqttWifiClient);
 static bool mqttEnabled = false;
+static MqttPendingState mqttState;
 static bool publicationPending = false;
 static String pendingFrameId;
 static String pendingSnapshotId;
@@ -33,11 +38,8 @@ static String pendingFrameSha256;
 static unsigned long mqttReconnectMs = 0;
 static unsigned long mqttRetryMs = 0;
 
-static bool isTimeReached(uint32_t now, uint32_t deadline) {
-  return (int32_t)(now - deadline) >= 0;
-}
-
 void clearPendingMqttNotification() {
+  MqttPendingState_Clear(&mqttState);
   publicationPending = false;
   pendingFrameId = String();
   pendingSnapshotId = String();
@@ -394,42 +396,41 @@ void handleMqttNotification() {
     return;
   }
 
-  if (!connectWiFi()) {
+  bool wifiOk = connectWiFi();
+  if (!wifiOk) {
     mqttRetryMs = millis() + 5000;
     return;
   }
 
   StateInfo state;
-  if (!fetchState(state)) {
+  bool stateOk = fetchState(state);
+  if (!stateOk) {
     mqttRetryMs = millis() + 5000;
-    return;
-  }
-
-  if (state.frameId != pendingFrameId) {
-    Serial.printf("MQTT pending frameId=%s != server state frameId=%s; dropping stale notification\n",
-                  pendingFrameId.c_str(), state.frameId.c_str());
-    clearPendingMqttNotification();
     return;
   }
 
   String stateSha = normalizeShaHex(state.frameSha256);
-  if (pendingFrameSha256 != stateSha) {
-    Serial.printf("MQTT sha256=%s != server state sha256=%s; aborting refresh\n",
-                  pendingFrameSha256.c_str(), stateSha.c_str());
-    clearPendingMqttNotification();
-    return;
+  bool fetchDisplayOk = false;
+
+  if (state.frameId == pendingFrameId && stateSha == pendingFrameSha256) {
+    fetchDisplayOk = fetchFrameAndDisplay(state, stateSha);
   }
 
-  if (fetchFrameAndDisplay(state, stateSha)) {
-    clearPendingMqttNotification();
+  MqttNotificationEvalResult res = MqttPendingState_Evaluate(
+    &mqttState, millis(), wifiOk, stateOk,
+    state.frameId.c_str(), stateSha.c_str(), fetchDisplayOk
+  );
+
+  publicationPending = mqttState.publicationPending;
+  pendingFrameId = String(mqttState.pendingFrameId);
+  pendingSnapshotId = String(mqttState.pendingSnapshotId);
+  pendingFrameSha256 = String(mqttState.pendingFrameSha256);
+  mqttRetryMs = mqttState.mqttRetryMs;
+
+  if (res == MQTT_EVAL_SUCCESS_RENDERED) {
     lastPollMs = millis();
-  } else {
-    mqttRetryMs = millis() + 5000;
   }
 }
-
-// MQTT callback — MUST be lightweight: no HTTP, no display, no long blocking
-void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
 // MQTT callback — MUST be lightweight: no HTTP, no display, no long blocking
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
@@ -492,10 +493,16 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   msgSha = normalizeShaHex(msgSha);
 
   // Set pending flag — main loop will handle the HTTP fetch and SHA verification
-  pendingFrameId = msgFrameId;
-  pendingSnapshotId = extractJsonString(jsonStr, "snapshotId");
-  pendingFrameSha256 = msgSha;
-  publicationPending = true;
+  MqttPendingState_SetPending(
+    &mqttState,
+    msgFrameId.c_str(),
+    extractJsonString(jsonStr, "snapshotId").c_str(),
+    msgSha.c_str()
+  );
+  pendingFrameId = String(mqttState.pendingFrameId);
+  pendingSnapshotId = String(mqttState.pendingSnapshotId);
+  pendingFrameSha256 = String(mqttState.pendingFrameSha256);
+  publicationPending = mqttState.publicationPending;
 
   Serial.printf("MQTT notification received: frameId=%s sha256=%s\n",
                 pendingFrameId.c_str(), pendingFrameSha256.substring(0, 16).c_str());
@@ -548,6 +555,8 @@ void setup() {
   Serial.println();
   Serial.println("NewsPhoto_esp32wf starting");
   Serial.printf("Content server: %s\n", CONTENT_BASE_URL);
+
+  MqttPendingState_Init(&mqttState);
 
   mqttEnabled = String(MQTT_ENABLED).equalsIgnoreCase("true");
   if (mqttEnabled) {
