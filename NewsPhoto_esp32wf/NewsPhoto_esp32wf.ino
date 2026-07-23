@@ -31,6 +31,14 @@ static String pendingFrameId;
 static String pendingSnapshotId;
 static String pendingFrameSha256;
 static unsigned long mqttReconnectMs = 0;
+static unsigned long mqttRetryMs = 0;
+
+void clearPendingMqttNotification() {
+  publicationPending = false;
+  pendingFrameId = String();
+  pendingSnapshotId = String();
+  pendingFrameSha256 = String();
+}
 
 String endpoint(const char *path) {
   String url = CONTENT_BASE_URL;
@@ -129,22 +137,6 @@ bool extractJsonInt(const String &json, const char *key, int &value) {
   if (i == start || (i == start + 1 && json.charAt(start) == '-')) return false;
   value = json.substring(start, i).toInt();
   return true;
-}
-
-String sha256Hex(const uint8_t *data, size_t len) {
-  uint8_t digest[32];
-  char hex[65];
-  mbedtls_sha256_context ctx;
-  mbedtls_sha256_init(&ctx);
-  mbedtls_sha256_starts_ret(&ctx, 0);
-  mbedtls_sha256_update_ret(&ctx, data, len);
-  mbedtls_sha256_finish_ret(&ctx, digest);
-  mbedtls_sha256_free(&ctx);
-  for (int i = 0; i < 32; i++) {
-    sprintf(hex + (i * 2), "%02x", digest[i]);
-  }
-  hex[64] = '\0';
-  return String(hex);
 }
 
 bool isValidShaHex(const String &sha) {
@@ -279,12 +271,18 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
   uint16_t width = (uint16_t)header[4] | ((uint16_t)header[5] << 8);
   uint16_t height = (uint16_t)header[6] | ((uint16_t)header[7] << 8);
   uint8_t panelIndex = header[8];
-  uint8_t flags = header[9];
+  uint8_t version = header[9];
   long payloadLen = ((long)width * (long)height + 1L) / 2L;
   long expectedLen = 10L + payloadLen;
 
-  Serial.printf("EPF1 header width=%u height=%u panel=%u flags=%u payload=%ld total=%ld\n",
-                width, height, panelIndex, flags, payloadLen, expectedLen);
+  Serial.printf("EPF1 header width=%u height=%u panel=%u version=%u payload=%ld total=%ld\n",
+                width, height, panelIndex, version, payloadLen, expectedLen);
+
+  if (version != 1) {
+    Serial.printf("EPF1_VERSION_UNSUPPORTED: version=%u\n", version);
+    http.end();
+    return false;
+  }
 
   if (width != 800 || height != 480 || panelIndex != PANEL_INDEX || expectedLen != 192010L) {
     Serial.println("frame header mismatch");
@@ -308,6 +306,14 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
 
   if (!readExact(stream, frame, payloadLen, HTTP_TIMEOUT_MS)) {
     Serial.println("frame payload read failed");
+    free(frame);
+    http.end();
+    return false;
+  }
+
+  // RF-02: Check for extra trailing bytes in response body stream
+  if (stream->available() > 0) {
+    Serial.println("EPF1_TRAILING_BYTES: response stream has trailing bytes");
     free(frame);
     http.end();
     return false;
@@ -372,28 +378,36 @@ void periodicPoll() {
 
   String expectedSha = normalizeShaHex(state.frameSha256);
   if (fetchFrameAndDisplay(state, expectedSha)) {
-    publicationPending = false;
-    pendingFrameId = String();
-    pendingFrameSha256 = String();
+    clearPendingMqttNotification();
   }
 }
 
 void handleMqttNotification() {
   if (!publicationPending) return;
-  if (pendingFrameId.isEmpty()) { publicationPending = false; return; }
-  if (pendingFrameId == lastFrameId) { publicationPending = false; pendingFrameId = String(); return; }
+  if (millis() < mqttRetryMs) return;
 
-  if (!connectWiFi()) return;
+  if (pendingFrameId.isEmpty() || pendingFrameId == lastFrameId) {
+    clearPendingMqttNotification();
+    return;
+  }
+
+  if (!connectWiFi()) {
+    clearPendingMqttNotification();
+    mqttRetryMs = millis() + 5000;
+    return;
+  }
 
   StateInfo state;
-  if (!fetchState(state)) { return; }
+  if (!fetchState(state)) {
+    clearPendingMqttNotification();
+    mqttRetryMs = millis() + 5000;
+    return;
+  }
 
   if (state.frameId != pendingFrameId) {
     Serial.printf("MQTT pending frameId=%s != server state frameId=%s; dropping stale notification\n",
                   pendingFrameId.c_str(), state.frameId.c_str());
-    publicationPending = false;
-    pendingFrameId = String();
-    pendingFrameSha256 = String();
+    clearPendingMqttNotification();
     return;
   }
 
@@ -401,21 +415,16 @@ void handleMqttNotification() {
   if (pendingFrameSha256 != stateSha) {
     Serial.printf("MQTT sha256=%s != server state sha256=%s; aborting refresh\n",
                   pendingFrameSha256.c_str(), stateSha.c_str());
-    publicationPending = false;
-    pendingFrameId = String();
-    pendingFrameSha256 = String();
+    clearPendingMqttNotification();
     return;
   }
 
   if (fetchFrameAndDisplay(state, stateSha)) {
-    publicationPending = false;
-    pendingFrameId = String();
-    pendingFrameSha256 = String();
+    clearPendingMqttNotification();
     lastPollMs = millis();
   } else {
-    publicationPending = false;
-    pendingFrameId = String();
-    pendingFrameSha256 = String();
+    clearPendingMqttNotification();
+    mqttRetryMs = millis() + 5000;
   }
 }
 
