@@ -8,9 +8,10 @@ var ERR_NOT_FOUND = 'NOT_FOUND';
 var ERR_INVALID_JSON = 'INVALID_JSON';
 var ERR_IO = 'IO_ERROR';
 
-function JsonError(code, message) {
+function JsonError(code, message, cause) {
   this.code = code;
   this.message = message;
+  if (cause) this.cause = cause;
 }
 
 function JsonStore(filePath, options) {
@@ -23,7 +24,10 @@ function JsonStore(filePath, options) {
       try {
         data = JSON.parse(text);
       } catch(e) {
-        return Promise.reject(new JsonError(ERR_INVALID_JSON, 'JSON parse failed: ' + e.message));
+        var corruptPath = filePath + '.corrupt-' + Date.now();
+        return fsp.copyFile(filePath, corruptPath).catch(function() {}).then(function() {
+          return Promise.reject(new JsonError(ERR_INVALID_JSON, 'JSON parse failed: ' + e.message + ' (backed up to ' + corruptPath + ')', e));
+        });
       }
       if (data && data.schemaVersion !== undefined && data.schemaVersion !== schemaVersion) {
         return Promise.reject(new JsonError(ERR_IO, 'Schema version mismatch: expected ' + schemaVersion + ' got ' + data.schemaVersion));
@@ -31,8 +35,11 @@ function JsonStore(filePath, options) {
       return data;
     }).catch(function(err) {
       if (err instanceof JsonError) return Promise.reject(err);
-      if (err.code === 'ENOENT') return Promise.reject(new JsonError(ERR_NOT_FOUND, 'File not found: ' + filePath));
-      return Promise.reject(new JsonError(ERR_IO, String(err.message || err)));
+      if (err.code === 'ENOENT') return Promise.reject(new JsonError(ERR_NOT_FOUND, 'File not found: ' + filePath, err));
+      if (err.code === 'EACCES' || err.code === 'EPERM') {
+        return Promise.reject(new JsonError(ERR_IO, 'Permission denied reading file: ' + filePath, err));
+      }
+      return Promise.reject(new JsonError(ERR_IO, String(err.message || err), err));
     });
   }
 
@@ -66,3 +73,4 @@ function JsonStore(filePath, options) {
 }
 
 module.exports = { JsonStore: JsonStore, JsonError: JsonError, ERR_NOT_FOUND: ERR_NOT_FOUND, ERR_INVALID_JSON: ERR_INVALID_JSON, ERR_IO: ERR_IO };
+

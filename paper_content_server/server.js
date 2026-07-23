@@ -672,12 +672,8 @@ async function ensureDir(dirPath) {
 }
 
 async function readJson(filePath, fallback) {
-  try {
-    var store = R1_JsonStore(filePath);
-    return await store.read();
-  } catch {
-    return fallback;
-  }
+  var store = R1_JsonStore(filePath);
+  return await store.readOrDefault(fallback);
 }
 
 async function writeJson(filePath, data) {

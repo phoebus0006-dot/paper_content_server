@@ -146,13 +146,11 @@ async function ensureDir(dirPath) {
   await fsp.mkdir(dirPath, { recursive: true });
 }
 
+const { JsonStore } = require('../src/infra/json-store');
+
 async function readJson(filePath, fallback) {
-  try {
-    const text = await fsp.readFile(filePath, 'utf8');
-    return JSON.parse(text);
-  } catch {
-    return fallback;
-  }
+  const store = JsonStore(filePath);
+  return store.readOrDefault(fallback);
 }
 
 async function writeJson(filePath, data) {
