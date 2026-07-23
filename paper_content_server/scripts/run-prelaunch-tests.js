@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// run-prelaunch-tests.js — Cross-platform test runner for prelaunch Node.js & host C++ firmware tests (R3-07)
+// run-prelaunch-tests.js — Cross-platform test runner for prelaunch Node.js & host C++ firmware tests (R3-07, R4-10)
 
 const path = require('path');
 const { spawnSync } = require('child_process');
@@ -76,6 +76,7 @@ console.log('=== Prelaunch Test Runner Starting ===');
 runNodeTest('test/r12/mqtt-frame-sha256-test.js');
 runNodeTest('test/prelaunch/epf1-validator-safety-test.js');
 runNodeTest('test/prelaunch/composition-parity-test.js');
+runNodeTest('test/prelaunch/production-startup-smoke-test.js');
 
 // 2. Run Host C++ tests
 runHostCppTests();
