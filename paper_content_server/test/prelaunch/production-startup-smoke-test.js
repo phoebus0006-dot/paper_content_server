@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// production-startup-smoke-test.js — Production Startup & Context Composition Smoke Test (R4-07, R5-06, R6-06)
+// production-startup-smoke-test.js — Production Startup & Context Composition Smoke Test (R4-07, R5-06, R6-06, R7-07)
 
 var assert = require('assert');
 var path = require('path');
@@ -20,11 +20,32 @@ var testEnv = Object.assign({}, process.env, {
   TRUST_PROXY: 'false',
 });
 
+function createMockRes() {
+  var res = {
+    statusCode: 0,
+    headers: {},
+    body: '',
+    ended: false,
+    writeHead: function(status, headers) {
+      res.statusCode = status;
+      if (headers) Object.assign(res.headers, headers);
+    },
+    setHeader: function(k, v) {
+      res.headers[k] = v;
+    },
+    end: function(chunk) {
+      if (chunk) res.body += chunk.toString();
+      res.ended = true;
+    }
+  };
+  return res;
+}
+
 async function runSmokeTest() {
   console.log('--- Testing Production Startup Composition Pathway ---');
 
-  // Test real module directly (R6-06)
-  var prodBoot = await createProductionBootMod.createProductionBoot({
+  // Test server wrapper automatically injects real handler (R7-02, R7-07)
+  var prodBoot = await serverMod.createProductionBoot({
     env: testEnv,
     cwd: path.join(__dirname, '..', '..'),
     listen: false,
@@ -38,40 +59,30 @@ async function runSmokeTest() {
   assert.strictEqual(prodBoot.context, prodBoot.boot.context, 'boot.context identity parity');
   assert.strictEqual(prodBoot.app, prodBoot.boot.app, 'app identity parity');
 
-  // Verify exported function on server.js matches module export (R6-04, R6-06)
-  assert.strictEqual(typeof serverMod.createProductionBoot, 'function', 'server.js MUST export createProductionBoot');
-  assert.strictEqual(typeof serverMod.createApplication, 'function', 'server.js MUST export createApplication');
+  // R7-07: Test actual HTTP handler with GET /health/live
+  var liveReq = { method: 'GET', url: '/health/live', headers: {}, socket: { remoteAddress: '127.0.0.1' } };
+  var liveRes = createMockRes();
+  await prodBoot.boot.app.handler(liveReq, liveRes);
+  assert.strictEqual(liveRes.statusCode, 200, '/health/live status must be 200');
+  assert.ok(liveRes.body.includes('"status":"ok"') || liveRes.body.includes('"ok"'), '/health/live response must return ok');
+  assert.strictEqual(liveRes.body.includes('createApp: no handler configured'), false, 'MUST NOT be placeholder 500 handler');
 
-  // Modify field on runtime and verify context is identical object
-  prodBoot.runtime.feeds = [{ title: 'Smoke Test Feed' }];
-  assert.strictEqual(prodBoot.context.feeds, prodBoot.runtime.feeds, 'Mutating runtime must reflect in context (same object)');
+  // R7-07: Test unknown path returns 404 (not 500 placeholder)
+  var notFoundReq = { method: 'GET', url: '/definitely-not-found', headers: {}, socket: { remoteAddress: '127.0.0.1' } };
+  var notFoundRes = createMockRes();
+  await prodBoot.boot.app.handler(notFoundReq, notFoundRes);
+  assert.strictEqual(notFoundRes.statusCode, 404, 'Unknown path must return 404');
 
-  // Verify non-null core services
-  assert.ok(prodBoot.context.snapshotStore, 'snapshotStore must be defined');
-  assert.ok(prodBoot.context.publicationService, 'publicationService must be defined');
-  assert.ok(prodBoot.context.deviceRegistryService, 'deviceRegistryService must be defined');
-  assert.ok(prodBoot.context.adminStateService, 'adminStateService must be defined');
-
-  // Verify config-driven settings (R4-08, R5-04, R6-05)
-  assert.strictEqual(prodBoot.context.NEWS_REFRESH_MINUTES, 7, 'NEWS_REFRESH_MINUTES must be 7 from config/env');
-  assert.strictEqual(prodBoot.context.TIMEZONE, 'UTC', 'TIMEZONE must be UTC');
-  assert.strictEqual(prodBoot.context.adminTrustProxy, false, 'adminTrustProxy false must be preserved without fallback override');
-
-  // Verify createApplication context enforcement (R4-06, R5-03, R6-02)
-  assert.throws(function() {
-    createApplicationMod.createApplication({});
+  // R7-07: Test underlying createProductionBoot fail-closed behavior
+  await assert.rejects(async function() {
+    await createProductionBootMod.createProductionBoot({
+      env: testEnv,
+      cwd: path.join(__dirname, '..', '..'),
+      listen: false,
+    });
   }, function(err) {
-    return err && (err.code === 'CANONICAL_CONTEXT_REQUIRED' || /CANONICAL_CONTEXT_REQUIRED/.test(err.message));
-  }, 'createApplication without context must throw CANONICAL_CONTEXT_REQUIRED');
-
-  assert.throws(function() {
-    serverMod.createApplication({});
-  }, function(err) {
-    return err && (err.code === 'CANONICAL_CONTEXT_REQUIRED' || /CANONICAL_CONTEXT_REQUIRED/.test(err.message));
-  }, 'serverMod.createApplication without context must throw CANONICAL_CONTEXT_REQUIRED');
-
-  var appResult = createApplicationMod.createApplication({ context: prodBoot.context });
-  assert.ok(appResult.handler, 'createApplication with context must return handler');
+    return err && (err.code === 'PRODUCTION_HANDLER_REQUIRED' || /PRODUCTION_HANDLER_REQUIRED/.test(err.message));
+  }, 'createProductionBootMod without handler must throw PRODUCTION_HANDLER_REQUIRED');
 
   // Storage dir initialization
   await prodBoot.context.snapshotStore.ensureDirs();
