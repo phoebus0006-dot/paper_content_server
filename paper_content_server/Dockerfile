@@ -37,6 +37,7 @@ ENV BUILD_MODE=$BUILD_MODE
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 COPY --from=build /app/build-manifest.json ./
+COPY --from=build /app/feeds.json ./
 COPY --from=build /app/server.js ./
 COPY --from=build /app/src ./src/
 COPY --from=build /app/lib ./lib/
