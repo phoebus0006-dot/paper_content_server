@@ -359,12 +359,10 @@ async function main() {
     port: PORT,
     notificationPort: notificationPort || undefined,
     mqttClient: mqttClient || undefined,
-    adminAccessMode: ADMIN_ACCESS_MODE,
-    adminToken: ADMIN_TOKEN,
-    adminAllowedCidrs: ADM_ALLOWED_CIDRS,
   });
 
   var requestContext = boot.context;
+  Object.assign(runtime, boot.context);
   runtime.boot = boot;
 
   try {
@@ -4798,6 +4796,47 @@ if (require.main === module) {
   });
 }
 
+function createApplication(options) {
+  options = options || {};
+  var ctx = options.context;
+  if (!ctx) {
+    throw new Error('CANONICAL_CONTEXT_REQUIRED');
+  }
+  return {
+    handler: createHandler(ctx),
+    context: ctx,
+    close: typeof options.close === 'function' ? options.close : function() { return Promise.resolve(); }
+  };
+}
+
+async function createProductionBoot(options) {
+  options = options || {};
+  var env = Object.assign({}, process.env, options.env || {});
+  var cwd = options.cwd || ROOT_DIR;
+  var logger = options.logger || r1Logger;
+
+  var boot = R1_bootstrap({
+    handlerFactory: function(ctx) {
+      return createHandler(ctx);
+    },
+    env: env,
+    cwd: cwd,
+    listen: options.listen !== undefined ? options.listen : false,
+    port: options.port || PORT,
+    logger: logger,
+  });
+
+  var context = boot.context;
+  Object.assign(runtime, context);
+
+  return {
+    boot: boot,
+    context: context,
+    services: boot.services,
+    app: boot.app,
+  };
+}
+
 // ── Runtime injection for test isolation ────────────────────────────────
 // Creates a request handler that passes the provided runtime context
 // to handleRequest via the `ctx` parameter, without mutating the
@@ -4812,6 +4851,7 @@ module.exports = {
   handleRequest: handleRequest,
   main: main,
   createApplication: createApplication,
+  createProductionBoot: createProductionBoot,
   createHandler: createHandler,
   PALETTE: epaperPalette.PALETTE,
   TIMEZONE: TIMEZONE,
