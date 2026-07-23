@@ -167,16 +167,17 @@ async function testAdversarialApiHealthReadiness() {
   boot.setState('starting');
   await boot.startListening(port);
 
-  // When unready/missing dependencies, /api/health.json must report status: "not_ready"
+  // When unready/missing dependencies, /health/ready must report HTTP 503 and status: "not_ready"
   const resUnready = await new Promise((resolve) => {
-    http.get(`http://127.0.0.1:${port}/api/health.json`, (res) => {
+    http.get(`http://127.0.0.1:${port}/health/ready`, (res) => {
       let body = '';
       res.on('data', c => body += c);
-      res.on('end', () => resolve(JSON.parse(body)));
+      res.on('end', () => resolve({ statusCode: res.statusCode, body: JSON.parse(body) }));
     });
   });
 
-  assert.strictEqual(resUnready.status, 'not_ready', '/api/health.json must report not_ready when blockers exist');
+  assert.strictEqual(resUnready.statusCode, 503, '/health/ready must return HTTP 503 when blockers exist');
+  assert.strictEqual(resUnready.body.status, 'not_ready', '/health/ready must report not_ready when blockers exist');
 
   await boot.shutdown();
   fs.rmSync(tmpDir, { recursive: true, force: true });

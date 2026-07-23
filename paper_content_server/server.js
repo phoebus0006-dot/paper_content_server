@@ -4621,11 +4621,8 @@ async function handleRequest(req, res, ctx) {
         var hIdxPath = (R && R.IMAGE_INDEX_FILE) || path.join(R.DATA_DIR || DATA_DIR, 'image_index.json');
         if (fs.existsSync(hIdxPath)) { hPhotoCount = JSON.parse(fs.readFileSync(hIdxPath, 'utf8')).length; }
       } catch(e) {}
-      var isReady = R.boot && typeof R.boot.getState === 'function' && R.boot.getState() === 'ready' &&
-                    !!R.snapshotStore && !!R.deviceRegistryService &&
-                    (R.feeds && Array.isArray(R.feeds) && R.feeds.length > 0 && R.feeds.filter(function(f) { return f && f.enabled !== false; }).length > 0);
       respondJson(res, {
-        status: isReady ? 'ok' : 'not_ready', uptimeSeconds: uptime, timezone: (R && R.TIMEZONE) || TIMEZONE,
+        status: 'ok', uptimeSeconds: uptime, timezone: (R && R.TIMEZONE) || TIMEZONE,
         currentMode: hSnap ? hSnap.mode : null,
         currentSlot: hSnap ? hSnap.slotKey : null,
         frameId: hSnap ? hSnap.frameId : null,
