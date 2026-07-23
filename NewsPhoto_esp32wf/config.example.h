@@ -6,9 +6,13 @@
 
 #define WIFI_SSID "YOUR_WIFI_SSID"
 #define WIFI_PASS "YOUR_WIFI_PASSWORD"
+#define WIFI_TIMEOUT_MS 10000UL
 
 // Replace with your content server LAN IP and port.
 #define CONTENT_BASE_URL "http://YOUR_SERVER_IP:8787"
+#define STATE_ENDPOINT "/api/state.json"
+#define FRAME_ENDPOINT "/api/frame.bin?panel=49"
+#define DEVICE_SECRET ""
 
 // MQTT notification (optional, set to "true" to enable)
 #define MQTT_ENABLED "false"

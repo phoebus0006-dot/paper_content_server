@@ -185,7 +185,7 @@ bool displayFrameBuffer(const uint8_t *frame, size_t len) {
   }
 
   Serial.println("EPD DisplayFrame starting");
-  EPD_7IN3E_DisplayFrame(frame);
+  EPD_7IN3E_Display((UBYTE *)frame);
   Serial.println("EPD DisplayFrame completed");
   return true;
 }
@@ -243,7 +243,8 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
 
   http.begin(url);
   http.setTimeout(HTTP_TIMEOUT_MS);
-  http.collectHeaders((const char *[]){"X-Frame-Id"}, 1);
+  static const char *headerKeys[] = {"X-Frame-Id"};
+  http.collectHeaders(headerKeys, 1);
   if (strlen(DEVICE_SECRET) > 0) {
     http.addHeader("X-Device-Secret", DEVICE_SECRET);
   }
