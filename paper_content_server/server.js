@@ -349,48 +349,23 @@ async function main() {
     }
   }
 
-  // Create the request context — populated after bootstrap, but the handler
-  // captures it by reference so mutations are visible to incoming requests.
-  var requestContext = {
-    cachedFrames: new Map(),
-    cachedSnapshots: new Map(),
-    serverStartTime: Date.now(),
-    DATA_DIR: DATA_DIR,
-    IMAGE_INDEX_FILE: IMAGE_INDEX_FILE,
-    LIBRARY_STATE_FILE: LIBRARY_STATE_FILE,
-    NEWS_CACHE_FILE: NEWS_CACHE_FILE,
-    NEWS_ROTATION_FILE: NEWS_ROTATION_FILE,
-    FEEDS_FILE: FEEDS_FILE,
-    LAST_GOOD_NEWS_FILE: LAST_GOOD_NEWS_FILE,
-    FALLBACK_STUDY_DIR: FALLBACK_STUDY_DIR,
-    TIMEZONE: TIMEZONE,
-    NEWS_REFRESH_MINUTES: NEWS_REFRESH_MINUTES,
-    adminAccessMode: ADMIN_ACCESS_MODE,
-    adminToken: ADMIN_TOKEN,
-    adminAllowedCidrs: ADM_PARSED_CIDRS,
-    adminTrustProxy: TRUST_PROXY,
-    adminTrustedProxyCidrs: ADM_TRUSTED_PROXY_CIDRS,
-    adminAllowHeaderlessWrite: ADMIN_ALLOW_HEADERLESS_WRITE,
-    renderCount: 0,
-  };
-
   var boot = R1_bootstrap({
-    handler: createHandler(requestContext),
+    handlerFactory: function(ctx) {
+      return createHandler(ctx);
+    },
     env: process.env,
     cwd: ROOT_DIR,
     listen: false,
     port: PORT,
     notificationPort: notificationPort || undefined,
     mqttClient: mqttClient || undefined,
-  });
-
-  var builtContext = buildRequestContext(boot, {
     adminAccessMode: ADMIN_ACCESS_MODE,
     adminToken: ADMIN_TOKEN,
     adminAllowedCidrs: ADM_ALLOWED_CIDRS,
   });
-  Object.assign(requestContext, builtContext);
-  Object.assign(runtime, builtContext);
+
+  var requestContext = boot.context;
+  runtime.boot = boot;
 
   try {
     // Ensure data directories exist

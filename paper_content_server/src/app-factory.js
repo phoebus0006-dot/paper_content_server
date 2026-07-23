@@ -23,10 +23,9 @@ function createApplication(options) {
   var serverMod = require('../server.js');
   var lg = options.logger || { info: function() {}, warn: function() {}, error: function() {} };
   var { bootstrap } = require('./app/bootstrap');
-  var { buildRequestContext } = require('./app/build-request-context');
   var R3_snapshotModel = require('../src/snapshot/snapshot-model');
 
-  var testEnv = Object.assign({}, process.env, options.env || {}, { DATA_DIR: dataDir });
+  var testEnv = Object.assign({}, process.env, options.env || {}, { DATA_DIR: dataDir, ADMIN_TOKEN: adminToken });
 
   var serviceOverrides = Object.assign({}, options.serviceOverrides || {});
   if (options.deviceRegistryService) {
@@ -39,10 +38,11 @@ function createApplication(options) {
     clock: options.clock,
     logger: lg,
     listen: false,
+    adminToken: adminToken,
     serviceOverrides: serviceOverrides,
   });
 
-  var requestContext = buildRequestContext(boot, { adminToken: adminToken });
+  var requestContext = boot.context;
 
   var snapshotStore = requestContext.snapshotStore;
   var operatingModeService = requestContext.operatingModeService;

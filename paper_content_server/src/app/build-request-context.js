@@ -1,6 +1,5 @@
 // build-request-context.js — Single authoritative request context builder
-// Constructs the canonical request context for server.js (production) and app-factory.js (test)
-// ensuring 100% service identity parity and config path consistency.
+// Derives ALL production configuration strictly from loaded boot.config (R3-06).
 
 function buildRequestContext(boot, options) {
   options = options || {};
@@ -8,6 +7,9 @@ function buildRequestContext(boot, options) {
   var services = boot.services || {};
   var deps = boot.deps || {};
   var paths = config.paths || {};
+
+  var adminConfig = config.admin || {};
+  var serverConfig = config.server || {};
 
   var context = {
     snapshotStore: deps.snapshotStore || null,
@@ -65,14 +67,16 @@ function buildRequestContext(boot, options) {
     FEEDS_FILE: paths.feedsFile,
     LAST_GOOD_NEWS_FILE: paths.lastGoodNewsFile,
     FALLBACK_STUDY_DIR: paths.fallbackStudyDir,
-    TIMEZONE: 'UTC',
+    TIMEZONE: serverConfig.timezone || 'UTC',
     NEWS_REFRESH_MINUTES: 15,
-    adminAccessMode: options.adminAccessMode || 'token',
-    adminToken: options.adminToken || (config.admin && config.admin.token) || null,
-    adminAllowedCidrs: options.adminAllowedCidrs || { valid: true, parsed: [{ network: 2130706432, mask: 4294967040 }] },
-    adminTrustProxy: false,
-    adminTrustedProxyCidrs: [],
-    adminAllowHeaderlessWrite: false,
+
+    // Production settings derived directly from loaded config (R3-06)
+    adminAccessMode: options.adminAccessMode || adminConfig.accessMode || 'token',
+    adminToken: options.adminToken || adminConfig.token || null,
+    adminAllowedCidrs: options.adminAllowedCidrs || adminConfig.allowedCidrs || { valid: true, parsed: [{ network: 2130706432, mask: 4294967040 }] },
+    adminTrustProxy: options.adminTrustProxy !== undefined ? options.adminTrustProxy : (adminConfig.trustProxy || false),
+    adminTrustedProxyCidrs: options.adminTrustedProxyCidrs || (adminConfig.trustedProxyCidrs && adminConfig.trustedProxyCidrs.parsed) || [],
+    adminAllowHeaderlessWrite: options.adminAllowHeaderlessWrite !== undefined ? options.adminAllowHeaderlessWrite : (adminConfig.allowHeaderlessWrite || false),
   };
 
   return context;

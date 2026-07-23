@@ -81,35 +81,33 @@ function bootstrap(overrides) {
     serviceOverrides: overrides.serviceOverrides || overrides.services || {},
   });
 
+  var buildRequestContext = require('./build-request-context').buildRequestContext;
+
+  var bootObject = {
+    config: config,
+    services: services,
+    deps: { clock: clock, logger: logger, stores: stores, httpClient: httpClient, snapshotStore: snapshotStore, snapshotCache: snapshotCache, pinStore: pinStore, publicationLock: publicationLock, operatingModeService: operatingModeService, publicationHistory: publicationHistory, notificationPort: notificationPort, mqttClient: mqttClient },
+  };
+
+  var context = buildRequestContext(bootObject, overrides.contextOptions || {
+    adminAccessMode: overrides.adminAccessMode,
+    adminToken: overrides.adminToken,
+    adminAllowedCidrs: overrides.adminAllowedCidrs,
+  });
+
+  var handler = overrides.handler;
+  if (!handler && typeof overrides.handlerFactory === 'function') {
+    handler = overrides.handlerFactory(context);
+  }
+
   var app = createApp({
-    handler: overrides.handler,
+    handler: handler,
     config: config,
     clock: clock,
     logger: logger,
     stores: stores,
     httpClient: httpClient,
-    services: {
-      snapshotStore: snapshotStore,
-      snapshotCache: snapshotCache,
-      pinStore: pinStore,
-      publicationLock: publicationLock,
-      operatingModeService: operatingModeService,
-      publicationHistory: publicationHistory,
-      notificationPort: notificationPort,
-      publicationService: services.publicationService,
-      deviceRegistryService: services.deviceRegistryService,
-      adminStateService: services.adminStateService,
-      newsTitleService: services.newsTitleService,
-      safeImagePath: services.safeImagePath,
-      imageRasterizer: services.imageRasterizer,
-      imageRecipeService: services.imageRecipeService,
-      overridePersistence: services.overridePersistence,
-      assetRepository: services.assetRepository,
-      newsPipeline: services.newsPipeline,
-      adminQueryService: services.adminQueryService,
-      featureFlagView: services.featureFlagView,
-      renderShadow: services.renderShadow,
-    },
+    services: services,
   });
 
   // MQTT disconnect port — wraps mqttClient.end(callback) into a Promise that
@@ -203,8 +201,9 @@ function bootstrap(overrides) {
     return shutdownPromise;
   }
 
-  return {
+  var boot = {
     app: app,
+    context: context,
     config: config,
     server: server,
     services: services,
@@ -215,6 +214,9 @@ function bootstrap(overrides) {
     startListening: startListening,
     deps: { clock: clock, logger: logger, stores: stores, httpClient: httpClient, snapshotStore: snapshotStore, snapshotCache: snapshotCache, pinStore: pinStore, publicationLock: publicationLock, operatingModeService: operatingModeService, publicationHistory: publicationHistory, notificationPort: notificationPort, mqttClient: mqttClient },
   };
+  context.boot = boot;
+
+  return boot;
 }
 
 bootstrap.BootstrapError = BootstrapError;
