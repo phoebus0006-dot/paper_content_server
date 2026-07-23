@@ -1,28 +1,29 @@
 #!/usr/bin/env node
-// composition-parity-test.js — Tests 100% object identity parity and path consistency across bootstrap & request context (R2-05, R2-06, R2-07, R2-08)
+// composition-parity-test.js — Tests 100% object identity parity and path consistency across bootstrap & request context (R3-05, R3-08)
 
 var assert = require('assert');
 var path = require('path');
 var fs = require('fs');
 
 var { bootstrap } = require('../../src/app/bootstrap');
-var { buildRequestContext } = require('../../src/app/build-request-context');
 var { createApplication } = require('../../src/app-factory');
 
 var dataDir = path.join(__dirname, '..', '..', 'qa', 'runtime', 'parity-test-' + Date.now());
 fs.mkdirSync(dataDir, { recursive: true });
 
-var testEnv = Object.assign({}, process.env, { DATA_DIR: dataDir });
+var testEnv = Object.assign({}, process.env, { DATA_DIR: dataDir, ADMIN_TOKEN: 'test-token' });
 
 var boot = bootstrap({
   env: testEnv,
   cwd: path.join(__dirname, '..', '..'),
   listen: false,
+  adminToken: 'test-token',
 });
 
-var context = buildRequestContext(boot, { adminToken: 'test-token' });
+var context = boot.context;
+assert.ok(context, 'bootstrap() must directly own and return boot.context');
 
-// 1. Strict object identity parity checks
+// 1. Strict object identity parity checks (boot.context vs boot.deps & boot.services)
 assert.strictEqual(context.snapshotStore, boot.deps.snapshotStore, 'snapshotStore identity parity');
 assert.strictEqual(context.snapshotCache, boot.deps.snapshotCache, 'snapshotCache identity parity');
 assert.strictEqual(context.pinStore, boot.deps.pinStore, 'pinStore identity parity');
@@ -42,7 +43,7 @@ assert.strictEqual(context.deviceRegistryService, boot.services.deviceRegistrySe
 assert.strictEqual(context.overridePersistence, boot.services.overridePersistence, 'overridePersistence identity parity');
 assert.strictEqual(context.assetRepository, boot.services.assetRepository, 'assetRepository identity parity');
 
-// 2. Strict config path parity checks
+// 2. Strict config path parity checks (boot.context vs boot.config.paths)
 assert.strictEqual(context.DATA_DIR, boot.config.paths.dataDir, 'DATA_DIR path parity');
 assert.strictEqual(context.IMAGE_INDEX_FILE, boot.config.paths.imageIndexFile, 'IMAGE_INDEX_FILE path parity');
 assert.strictEqual(context.LIBRARY_STATE_FILE, boot.config.paths.libraryStateFile, 'LIBRARY_STATE_FILE path parity');
@@ -52,24 +53,25 @@ assert.strictEqual(context.FEEDS_FILE, boot.config.paths.feedsFile, 'FEEDS_FILE 
 assert.strictEqual(context.LAST_GOOD_NEWS_FILE, boot.config.paths.lastGoodNewsFile, 'LAST_GOOD_NEWS_FILE path parity');
 assert.strictEqual(context.FALLBACK_STUDY_DIR, boot.config.paths.fallbackStudyDir, 'FALLBACK_STUDY_DIR path parity');
 
-// 3. Test Service Override Injection in Composition Phase (R2-06)
+// 3. Test Service Override Injection in Composition Phase (R2-06, R3-08)
 var mockDeviceRegistry = { _isMock: true, provisioningEnabled: false };
 var bootWithOverride = bootstrap({
   env: testEnv,
   cwd: path.join(__dirname, '..', '..'),
   listen: false,
+  adminToken: 'test-token',
   serviceOverrides: {
     deviceRegistryService: mockDeviceRegistry,
   },
 });
 
-var contextWithOverride = buildRequestContext(bootWithOverride, {});
 assert.strictEqual(bootWithOverride.services.deviceRegistryService, mockDeviceRegistry, 'Override must flow into boot.services');
-assert.strictEqual(contextWithOverride.deviceRegistryService, mockDeviceRegistry, 'Override must flow into context');
-assert.strictEqual(contextWithOverride.deviceRegistryService, bootWithOverride.services.deviceRegistryService, 'Override identity parity');
+assert.strictEqual(bootWithOverride.context.deviceRegistryService, mockDeviceRegistry, 'Override must flow into boot.context');
+assert.strictEqual(bootWithOverride.context.deviceRegistryService, bootWithOverride.services.deviceRegistryService, 'Override identity parity');
 
-// 4. Test app-factory creation using buildRequestContext
+// 4. Test app-factory runtime identity (R3-08)
 var appInstance = createApplication({ adminToken: 'factory-token' });
+assert.strictEqual(appInstance.runtime, appInstance.runtime.boot.context, 'app-factory runtime MUST BE boot.context');
 assert.strictEqual(appInstance.runtime.deviceRegistryService, appInstance.runtime.boot.services.deviceRegistryService, 'app-factory identity parity');
 assert.strictEqual(appInstance.runtime.DATA_DIR, appInstance.runtime.boot.config.paths.dataDir, 'app-factory path parity');
 
