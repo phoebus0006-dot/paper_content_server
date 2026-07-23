@@ -2930,25 +2930,27 @@ function readBody(req, limit) {
     var chunks = [];
     var total = 0;
     var maxLimit = limit || 1048576;
-    var destroyed = false;
-    req.on('data', function(c) {
-      if (destroyed) return;
+    var overflow = false;
+    function onData(c) {
+      if (overflow) return;
       total += c.length;
       if (total > maxLimit) {
-        destroyed = true;
-        req.destroy();
+        overflow = true;
+        req.removeListener('data', onData);
+        if (typeof req.pause === 'function') req.pause();
         var err = new Error('payload too large');
         err.code = 'PAYLOAD_TOO_LARGE';
         fail(err);
         return;
       }
       chunks.push(c);
-    });
+    }
+    req.on('data', onData);
     req.on('end', function() {
-      if (!destroyed) ok(Buffer.concat(chunks).toString('utf8'));
+      if (!overflow) ok(Buffer.concat(chunks).toString('utf8'));
     });
     req.on('error', function(err) {
-      if (!destroyed) fail(err);
+      if (!overflow) fail(err);
     });
   });
 }
@@ -4619,8 +4621,11 @@ async function handleRequest(req, res, ctx) {
         var hIdxPath = (R && R.IMAGE_INDEX_FILE) || path.join(R.DATA_DIR || DATA_DIR, 'image_index.json');
         if (fs.existsSync(hIdxPath)) { hPhotoCount = JSON.parse(fs.readFileSync(hIdxPath, 'utf8')).length; }
       } catch(e) {}
+      var isReady = R.boot && typeof R.boot.getState === 'function' && R.boot.getState() === 'ready' &&
+                    !!R.snapshotStore && !!R.deviceRegistryService &&
+                    (R.feeds && Array.isArray(R.feeds) && R.feeds.length > 0 && R.feeds.filter(function(f) { return f && f.enabled !== false; }).length > 0);
       respondJson(res, {
-        status: 'ok', uptimeSeconds: uptime, timezone: (R && R.TIMEZONE) || TIMEZONE,
+        status: isReady ? 'ok' : 'not_ready', uptimeSeconds: uptime, timezone: (R && R.TIMEZONE) || TIMEZONE,
         currentMode: hSnap ? hSnap.mode : null,
         currentSlot: hSnap ? hSnap.slotKey : null,
         frameId: hSnap ? hSnap.frameId : null,
