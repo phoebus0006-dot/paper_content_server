@@ -41,6 +41,11 @@ const { createRouteRegistry } = require('./src/http/route-registry');
 const { handleHealthLive, handleHealthReady, handleHealthJson } = require('./src/http/handlers/health-handler');
 const { handleStateJson } = require('./src/http/handlers/state-handler');
 const { handleFrameBin } = require('./src/http/handlers/frame-handler');
+
+// Phase A3 — Service boundary
+const { SnapshotRepository } = require('./src/repositories/snapshot-repository');
+const { SnapshotService } = require('./src/services/snapshot-service');
+
 var p0Routes = (() => {
   var r = createRouteRegistry();
   r.get('/health/live', handleHealthLive);
@@ -2940,7 +2945,10 @@ async function handleRequest(req, res, ctx) {
 
   try {
     // Phase A2: P0 routes via route registry
-    if (await p0Routes.dispatch(req, res, { R, panelIndex, now, BUILD_GIT_SHA, APP_CONFIG, DATA_DIR, TIMEZONE }) !== 'NOT_FOUND') return;
+    // Phase A3: snapshotService wired into dispatch context
+    const snapshotRepo = new SnapshotRepository(R);
+    const snapshotService = new SnapshotService(snapshotRepo);
+    if (await p0Routes.dispatch(req, res, { R, snapshotService, panelIndex, now, BUILD_GIT_SHA, APP_CONFIG, DATA_DIR, TIMEZONE }) !== 'NOT_FOUND') return;
 
     if (parsed.pathname === '/') {
       const state = computeSnapshot(now, R);
