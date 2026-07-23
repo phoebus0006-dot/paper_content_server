@@ -157,6 +157,7 @@ function bootstrap(overrides) {
     var tasks = [];
     if (server) {
       tasks.push(new Promise(function(resolve, reject) {
+        if (!server.listening) { resolve(); return; }
         server.close(function(err) { if (err) reject(err); else resolve(); });
       }));
     }

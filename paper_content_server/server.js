@@ -4610,7 +4610,7 @@ async function handleRequest(req, res, ctx) {
 
     if (parsed.pathname === '/api/health.json') {
       var uptime = Math.floor((Date.now() - R.serverStartTime) / 1000);
-      var hSnap = R.cachedFrames.size > 0 ? Array.from(R.cachedFrames.values())[0].snapshot : null;
+      var hSnap = (R.cachedFrames && R.cachedFrames.size > 0) ? Array.from(R.cachedFrames.values())[0].snapshot : null;
       var hNewsCount = 0;
       try {
         var hLgPath = (R && R.LAST_GOOD_NEWS_FILE) || path.join(R.DATA_DIR || DATA_DIR, 'last_good_news.json');
@@ -4629,8 +4629,8 @@ async function handleRequest(req, res, ctx) {
         currentMode: hSnap ? hSnap.mode : null,
         currentSlot: hSnap ? hSnap.slotKey : null,
         frameId: hSnap ? hSnap.frameId : null,
-        frameCacheEntries: R.cachedFrames.size,
-        frameRenderCount: R.renderCount,
+        frameCacheEntries: R.cachedFrames ? R.cachedFrames.size : 0,
+        frameRenderCount: R.renderCount || 0,
         newsItemCount: hNewsCount,
         photoCount: hPhotoCount,
         mqttEnabled: !!APP_CONFIG.mqtt && APP_CONFIG.mqtt.enabled,
