@@ -132,6 +132,13 @@ function loadConfig(opts) {
     geminiApiBase: String(env.GEMINI_API_BASE || '').replace(/\/+$/, ''),
   };
 
+  // News
+  var refreshMins = Number(env.NEWS_REFRESH_MINUTES || fileConfig.newsRefreshMinutes || 15);
+  if (!Number.isFinite(refreshMins) || refreshMins <= 0) refreshMins = 15;
+  config.news = {
+    refreshMinutes: refreshMins,
+  };
+
   // Photo
   config.photo = {
     quantMode: String(env.PHOTO_QUANT_MODE || fileConfig.photoQuantMode || 'clean').toLowerCase(),
