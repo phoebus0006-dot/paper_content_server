@@ -75,6 +75,7 @@ function createApplication(options) {
   var safeImagePath = new SafeImagePath({ rootDir: path.join(__dirname, '..') });
   var imageRasterizer = new ImageRasterizer();
   var imageRecipeService = new ImageRecipeService();
+  var devicesStore = R1_JsonStore(path.join(dataDir, 'devices.json'), { schemaVersion: 1 });
   var loadConfig = require('./config/load-config').loadConfig;
   var appConfig = loadConfig({ env: options.env || process.env, cwd: path.join(__dirname, '..') });
   var deviceRegistryService = options.deviceRegistryService || new DeviceRegistryService({

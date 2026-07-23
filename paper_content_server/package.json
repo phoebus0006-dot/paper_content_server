@@ -5,6 +5,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
+    "test": "npm run test:p0-remediation",
+    "test:p0-remediation": "node test/test_json_store_remediation.js && node test/test_bootstrap_remediation.js && node test/test_readiness_remediation.js && node test/test_devices_body_limits_remediation.js && node test/test_provenance_remediation.js",
     "check": "node --check server.js && node --check scripts/fetch-images.js && node --check scripts/process-images.js && node --check scripts/import-images.js",
     "test:unit": "node --test qa/tests/unit/*.js && npm run test:device",
     "test:device": "node --test test/devices/device-registry-test.js",
