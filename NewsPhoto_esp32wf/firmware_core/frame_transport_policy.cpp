@@ -1,10 +1,12 @@
 #include "frame_transport_policy.h"
 
-// Note on terminal body evaluation policy (R3-04):
+// Note on transport evaluation policy (R5-01):
 // Content-Length == 192010 is the primary protocol contract.
 // Cumulative bytes read must exactly match (10-byte header + 192000-byte payload).
 // streamHasExtraBytes (stream->available() > 0) is evaluated as a secondary diagnostic check
 // after payload read to detect buffered extra data.
+// FrameTransport_Evaluate ONLY evaluates frame transport and SHA validity.
+// Display execution happens ONLY after FrameTransport_Evaluate returns FRAME_TRANSPORT_OK.
 
 FrameTransportResult FrameTransport_Evaluate(const FrameTransportParams *params) {
   if (!params) return FRAME_TRANSPORT_CONTENT_LENGTH_MISSING;
@@ -51,10 +53,6 @@ FrameTransportResult FrameTransport_Evaluate(const FrameTransportParams *params)
     return FRAME_TRANSPORT_SHA_MISMATCH;
   }
 
-  if (!params->displayOk) {
-    return FRAME_TRANSPORT_DISPLAY_FAILED;
-  }
-
   return FRAME_TRANSPORT_OK;
 }
 
@@ -70,7 +68,6 @@ const char *FrameTransportResult_ToString(FrameTransportResult result) {
     case FRAME_TRANSPORT_PAYLOAD_READ_FAILED: return "FRAME_TRANSPORT_PAYLOAD_READ_FAILED";
     case FRAME_TRANSPORT_EXTRA_TRAILING_BYTES: return "FRAME_TRANSPORT_EXTRA_TRAILING_BYTES";
     case FRAME_TRANSPORT_SHA_MISMATCH: return "FRAME_TRANSPORT_SHA_MISMATCH";
-    case FRAME_TRANSPORT_DISPLAY_FAILED: return "FRAME_TRANSPORT_DISPLAY_FAILED";
     default: return "FRAME_TRANSPORT_UNKNOWN";
   }
 }

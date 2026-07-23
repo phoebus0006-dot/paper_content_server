@@ -13,6 +13,7 @@
 #include "firmware_core/time_utils.h"
 #include "firmware_core/mqtt_pending_state.h"
 #include "firmware_core/frame_transport_policy.h"
+#include "firmware_core/frame_render_gate.h"
 
 struct StateInfo {
   String mode;
@@ -26,7 +27,7 @@ static String lastFrameId;
 static unsigned long lastPollMs = 0;
 static bool epdReady = false;
 
-// MQTT state — SINGLE AUTHORITATIVE OBJECT (R4-03)
+// MQTT state — SINGLE AUTHORITATIVE OBJECT (R4-03, R5-05)
 static WiFiClient mqttWifiClient;
 static PubSubClient mqttClient(mqttWifiClient);
 static bool mqttEnabled = false;
@@ -189,6 +190,11 @@ bool displayFrameBuffer(const uint8_t *frame, size_t len) {
   return true;
 }
 
+static bool arduinoDisplayCallback(const uint8_t *frame, size_t len, void *userData) {
+  (void)userData;
+  return displayFrameBuffer(frame, len);
+}
+
 bool fetchState(StateInfo &state) {
   HTTPClient http;
   String url = endpoint(STATE_ENDPOINT);
@@ -257,7 +263,6 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
     return false;
   }
 
-  // Production Transport Integration with FrameTransport_Evaluate (R4-02)
   FrameTransportParams trParams;
   memset(&trParams, 0, sizeof(trParams));
   trParams.contentLength = http.getSize();
@@ -303,20 +308,19 @@ bool fetchFrameAndDisplay(const StateInfo &state, const String &expectedSha) {
   }
   trParams.shaMatched = shaOk;
 
-  // Render to EPD
-  bool displayOk = false;
-  if (shaOk && frame) {
-    displayOk = displayFrameBuffer(frame, payloadLen);
-  }
-  trParams.displayOk = displayOk;
-
-  if (frame) free(frame);
   http.end();
 
-  // SINGLE AUTHORITATIVE DECISION BY FrameTransport_Evaluate (R4-02)
-  FrameTransportResult trResult = FrameTransport_Evaluate(&trParams);
-  if (trResult != FRAME_TRANSPORT_OK) {
-    Serial.printf("FrameTransport rejected: %s\n", FrameTransportResult_ToString(trResult));
+  // R5-01 / R5-07: Display function is called ONLY AFTER FrameTransport_Evaluate returns FRAME_TRANSPORT_OK
+  FrameRenderResult renderRes = FrameRenderGate_Execute(&trParams, frame, payloadLen, arduinoDisplayCallback, NULL);
+  if (frame) free(frame);
+
+  if (renderRes.transportResult != FRAME_TRANSPORT_OK) {
+    Serial.printf("FrameTransport rejected: %s\n", FrameTransportResult_ToString(renderRes.transportResult));
+    return false;
+  }
+
+  if (!renderRes.displaySuccess) {
+    Serial.println("Display execution failed");
     return false;
   }
 
@@ -340,46 +344,45 @@ void periodicPoll() {
 
   String expectedSha = normalizeShaHex(state.frameSha256);
   if (fetchFrameAndDisplay(state, expectedSha)) {
-    clearPendingMqttNotification();
+    MqttPendingState_Clear(&mqttState);
   }
 }
 
 void handleMqttNotification() {
-  if (!mqttState.publicationPending) return;
-  if (!isTimeReached(millis(), mqttState.mqttRetryMs)) return;
-
-  if (mqttState.pendingFrameId[0] == '\0' || strcmp(mqttState.pendingFrameId, lastFrameId.c_str()) == 0) {
-    clearPendingMqttNotification();
+  // R5-05: ALL state transitions handled by production C++ helper events
+  MqttPendingDecision canAttempt = MqttPendingState_CanAttempt(&mqttState, millis(), lastFrameId.c_str());
+  if (canAttempt == MQTT_DECISION_CLEAR_ALREADY_RENDERED) {
+    MqttPendingState_Clear(&mqttState);
+    return;
+  }
+  if (canAttempt != MQTT_DECISION_ATTEMPT) {
     return;
   }
 
   bool wifiOk = connectWiFi();
   if (!wifiOk) {
-    mqttState.mqttRetryMs = millis() + 5000;
+    MqttPendingState_OnTemporaryFailure(&mqttState, millis());
     return;
   }
 
   StateInfo state;
   bool stateOk = fetchState(state);
   if (!stateOk) {
-    mqttState.mqttRetryMs = millis() + 5000;
+    MqttPendingState_OnTemporaryFailure(&mqttState, millis());
     return;
   }
 
   String stateSha = normalizeShaHex(state.frameSha256);
-  bool fetchDisplayOk = false;
-
-  if (state.frameId == String(mqttState.pendingFrameId) && stateSha == String(mqttState.pendingFrameSha256)) {
-    fetchDisplayOk = fetchFrameAndDisplay(state, stateSha);
+  MqttPendingDecision stateDecision = MqttPendingState_OnServerState(&mqttState, state.frameId.c_str(), stateSha.c_str());
+  if (stateDecision != MQTT_DECISION_ATTEMPT) {
+    return;
   }
 
-  MqttNotificationEvalResult res = MqttPendingState_Evaluate(
-    &mqttState, millis(), lastFrameId.c_str(), wifiOk, stateOk,
-    state.frameId.c_str(), stateSha.c_str(), fetchDisplayOk
-  );
-
-  if (res == MQTT_EVAL_SUCCESS_RENDERED) {
+  if (fetchFrameAndDisplay(state, stateSha)) {
+    MqttPendingState_OnSuccess(&mqttState);
     lastPollMs = millis();
+  } else {
+    MqttPendingState_OnTemporaryFailure(&mqttState, millis());
   }
 }
 
@@ -443,7 +446,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   // Normalize to lowercase
   msgSha = normalizeShaHex(msgSha);
 
-  // Single authoritative pending state update (R4-03)
+  // Single authoritative pending state update (R4-03, R5-05)
   bool ok = MqttPendingState_SetPending(
     &mqttState,
     msgFrameId.c_str(),

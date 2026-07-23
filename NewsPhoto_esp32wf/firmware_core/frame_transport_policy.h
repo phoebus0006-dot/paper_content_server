@@ -19,8 +19,7 @@ typedef enum {
   FRAME_TRANSPORT_HEADER_MISMATCH = 6,
   FRAME_TRANSPORT_PAYLOAD_READ_FAILED = 7,
   FRAME_TRANSPORT_EXTRA_TRAILING_BYTES = 8,
-  FRAME_TRANSPORT_SHA_MISMATCH = 9,
-  FRAME_TRANSPORT_DISPLAY_FAILED = 10
+  FRAME_TRANSPORT_SHA_MISMATCH = 9
 } FrameTransportResult;
 
 typedef struct {
@@ -30,7 +29,6 @@ typedef struct {
   size_t payloadBytesRead;
   bool streamHasExtraBytes;
   bool shaMatched;
-  bool displayOk;
 } FrameTransportParams;
 
 FrameTransportResult FrameTransport_Evaluate(const FrameTransportParams *params);
