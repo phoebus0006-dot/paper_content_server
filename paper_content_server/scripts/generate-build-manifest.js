@@ -37,7 +37,10 @@ var envTree = process.env.BUILD_GIT_TREE || '';
 var envDirty = process.env.BUILD_DIRTY || '';
 
 if (envSha && envSha !== 'unknown') {
-  // release Docker build: use passed env vars
+  if (envSha.length !== 40) {
+    console.error('BUILD_GIT_SHA must be full 40-character SHA (got: ' + envSha + ')');
+    process.exit(1);
+  }
   manifest.gitSha = envSha;
   manifest.gitTree = envTree || 'unknown';
   manifest.dirty = envDirty === 'true' || envDirty === '1';
@@ -63,14 +66,14 @@ if (envSha && envSha !== 'unknown') {
   } catch(e) { manifest.dirty = true; }
 }
 
-// release / build: refuse unknown or dirty
-if (!manifest.gitSha || manifest.gitSha === 'unknown') {
-  console.error('BUILD_GIT_SHA is missing or unknown');
+// release / build: refuse unknown, non-40-char SHA, or dirty
+if (!manifest.gitSha || manifest.gitSha === 'unknown' || manifest.gitSha.length !== 40) {
+  console.error('BUILD_GIT_SHA is missing, unknown, or not 40 characters (got: ' + manifest.gitSha + ')');
   process.exit(1);
 }
 
-if (!manifest.gitTree || manifest.gitTree === 'unknown') {
-  console.error('BUILD_GIT_TREE is missing or unknown');
+if (!manifest.gitTree || manifest.gitTree === 'unknown' || manifest.gitTree.length !== 40) {
+  console.error('BUILD_GIT_TREE is missing, unknown, or not 40 characters (got: ' + manifest.gitTree + ')');
   process.exit(1);
 }
 
@@ -88,6 +91,11 @@ try {
   console.error('package-lock.json not readable');
   process.exit(1);
 }
+
+try {
+  var serverCode = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+  manifest.sourceSha256 = crypto.createHash('sha256').update(serverCode).digest('hex');
+} catch(e) {}
 
 manifest.builtAt = new Date().toISOString();
 

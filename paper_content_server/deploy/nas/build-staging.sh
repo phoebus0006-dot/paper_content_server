@@ -19,16 +19,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-GIT_SHA="${1:-}"
-GIT_TREE="${2:-}"
+cd "$SRC_DIR"
 
-if [ -z "$GIT_SHA" ] || [ -z "$GIT_TREE" ]; then
-  echo "FAIL: usage: $0 <git-sha-12-or-40> <git-tree-sha-40>"
-  echo "Example: $0 145c7c35e349 62c51b70923faf9dc8b487f127048772f85ed7e3"
+GIT_SHA=$(git rev-parse HEAD)
+GIT_TREE=$(git rev-parse HEAD^{tree} 2>/dev/null || git rev-parse HEAD^^{tree})
+STATUS_OUT=$(git status --porcelain || true)
+
+if [ -n "$STATUS_OUT" ]; then
+  BUILD_DIRTY="true"
+else
+  BUILD_DIRTY="false"
+fi
+
+if [ "${ALLOW_DIRTY:-false}" != "true" ] && [ "$BUILD_DIRTY" = "true" ]; then
+  echo "FAIL: Worktree is dirty. Release build requires a clean worktree."
+  echo "$STATUS_OUT"
   exit 1
 fi
 
-# 12-char tag
 TAG="${GIT_SHA:0:12}"
 IMAGE="paper-content-server:$TAG"
 
@@ -51,24 +59,18 @@ esac
 echo "=== Clean Docker build ==="
 echo "GIT_SHA=$GIT_SHA"
 echo "GIT_TREE=$GIT_TREE"
+echo "BUILD_DIRTY=$BUILD_DIRTY"
 echo "TAG=$TAG"
 echo "IMAGE=$IMAGE"
 echo "DOCKER_BUILD_NETWORK=$DOCKER_BUILD_NETWORK"
 
-cd "$SRC_DIR"
-
-# node_modules on host is NOT a reason to fail — .dockerignore excludes it
-# from the build context. We do not refuse builds based on host tree state.
-
 # Build: --no-cache ensures no stale layers.
-# --network=host is added ONLY when DOCKER_BUILD_NETWORK=host.
-# TLS verification stays ON — no env vars weaken certificate checks.
 docker build \
   --no-cache \
   "${NETWORK_ARGS[@]}" \
   --build-arg "BUILD_GIT_SHA=$GIT_SHA" \
   --build-arg "BUILD_GIT_TREE=$GIT_TREE" \
-  --build-arg "BUILD_DIRTY=false" \
+  --build-arg "BUILD_DIRTY=$BUILD_DIRTY" \
   -t "$IMAGE" \
   .
 
