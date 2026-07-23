@@ -96,7 +96,7 @@ function bootstrap(overrides) {
   });
 
   var handler = overrides.handler;
-  if (!handler && typeof overrides.handlerFactory === 'function') {
+  if (typeof handler !== 'function' && typeof overrides.handlerFactory === 'function') {
     handler = overrides.handlerFactory(context);
   }
 

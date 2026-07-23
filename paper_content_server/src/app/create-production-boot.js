@@ -1,11 +1,14 @@
-// create-production-boot.js — Production Boot Composition Module (R6-01, R7-01, R7-06)
+// create-production-boot.js — Production Boot Composition Module (R6-01, R7-01, R7-06, R8-03)
 
 var bootstrap = require('./bootstrap').bootstrap;
 
 async function createProductionBoot(options) {
   options = options || {};
 
-  if (!options.handler && typeof options.handlerFactory !== 'function') {
+  var hasHandler = typeof options.handler === 'function';
+  var hasFactory = typeof options.handlerFactory === 'function';
+
+  if (!hasHandler && !hasFactory) {
     var errReq = new Error('PRODUCTION_HANDLER_REQUIRED');
     errReq.code = 'PRODUCTION_HANDLER_REQUIRED';
     throw errReq;
@@ -30,8 +33,8 @@ async function createProductionBoot(options) {
     mqttClient: mqttClient,
     serviceOverrides: serviceOverrides,
     contextOptions: options.contextOptions,
-    handler: options.handler,
-    handlerFactory: options.handlerFactory,
+    handler: hasHandler ? options.handler : undefined,
+    handlerFactory: hasFactory ? options.handlerFactory : undefined,
     requireHandler: true,
   });
 
