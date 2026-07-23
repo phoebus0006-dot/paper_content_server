@@ -1,5 +1,4 @@
 #ifndef FIRMWARE_TIME_UTILS_H
-#ifndef FIRMWARE_TIME_UTILS_H
 #define FIRMWARE_TIME_UTILS_H
 
 #include <stdint.h>
